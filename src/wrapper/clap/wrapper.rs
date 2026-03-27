@@ -707,33 +707,41 @@ impl<P: ClapPlugin> Wrapper<P> {
         // from the vtable functions
         wrapper.clap_plugin.borrow_mut().plugin_data = Arc::as_ptr(&wrapper) as *mut _;
 
+        // Initialize the background thread **before** the editor!
+        *wrapper.background_thread.borrow_mut() =
+            Some(BackgroundThread::get_or_create(Arc::downgrade(&wrapper)));
+
         // The editor also needs to be initialized later so the Async executor can work.
         *wrapper.editor.borrow_mut() = wrapper
             .plugin
             .lock()
             .editor(AsyncExecutor {
                 execute_background: Arc::new({
-                    let wrapper = wrapper.clone();
-
+                    let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
+                        let wrapper = match wrapper.upgrade() {
+                            Some(wrapper) => wrapper,
+                            None => return,
+                        };
+
                         let task_posted = wrapper.schedule_background(Task::PluginTask(task));
                         nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
                     }
                 }),
                 execute_gui: Arc::new({
-                    let wrapper = wrapper.clone();
-
+                    let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
+                        let wrapper = match wrapper.upgrade() {
+                            Some(wrapper) => wrapper,
+                            None => return,
+                        };
+
                         let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
                         nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
                     }
                 }),
             })
             .map(Mutex::new);
-
-        // Same with the background thread
-        *wrapper.background_thread.borrow_mut() =
-            Some(BackgroundThread::get_or_create(Arc::downgrade(&wrapper)));
 
         wrapper
     }

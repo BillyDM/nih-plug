@@ -332,17 +332,25 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             .lock()
             .editor(AsyncExecutor {
                 execute_background: Arc::new({
-                    let wrapper = wrapper.clone();
-
+                    let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
+                        let wrapper = match wrapper.upgrade() {
+                            Some(wrapper) => wrapper,
+                            None => return,
+                        };
+
                         let task_posted = wrapper.schedule_background(Task::PluginTask(task));
                         nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
                     }
                 }),
                 execute_gui: Arc::new({
-                    let wrapper = wrapper.clone();
-
+                    let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
+                        let wrapper = match wrapper.upgrade() {
+                            Some(wrapper) => wrapper,
+                            None => return,
+                        };
+
                         let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
                         nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
                     }
