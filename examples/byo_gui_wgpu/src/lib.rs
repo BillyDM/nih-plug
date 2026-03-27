@@ -180,25 +180,32 @@ impl baseview::WindowHandler for CustomWgpuWindow {
     fn on_frame(&mut self, window: &mut baseview::Window) {
         // Do rendering here.
 
+        let mut recreate_surface = false;
         let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Success(texture) => Some(texture),
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
-                self.configure_surface();
-                return;
+                None
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 unreachable!("No error scope registered, so validation errors will panic")
             }
             wgpu::CurrentSurfaceTexture::Lost => {
+                recreate_surface = true;
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            if recreate_surface {
                 let target = baseview_window_to_surface_target(window);
                 let instance =
                     wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
                 self.surface = unsafe { instance.create_surface_unsafe(target) }.unwrap();
-
-                self.configure_surface();
-                return;
             }
+
+            self.configure_surface();
+            return;
         };
 
         let view = frame
@@ -255,7 +262,7 @@ impl baseview::WindowHandler for CustomWgpuWindow {
                     self.surface_config.width = window_info.physical_size().width;
                     self.surface_config.height = window_info.physical_size().height;
 
-                    self.surface.configure(&self.device, &self.surface_config);
+                    //self.configure_surface();
                 }
                 _ => {}
             },
