@@ -25,15 +25,27 @@ quickly get started with NIH-plug.
 
 ### Table of contents
 
+- [Baseview adapters](#baseview-adapters)
 - [Framework](#framework)
   - [Current features](#current-features)
-  - [Baseview adapters](#baseview-adapters)
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
 - [Licensing](#licensing)
 
+## Baseview adapters
+
+This repository contains [baseview](https://github.com/RustAudio/baseview) adapters
+for popular Rust GUI frameworks. These can be used on their own without the rest of
+the NIH-plug framework.
+
+- [egui-baseview](baseview-adapters/egui-baseview/) - adapter for
+[egui](crates/nih_plug_egui)
+
 ## Framework
+
+For a list of available crate flags, see
+[crates/nih_plug/Cargo.toml](crates/nih_plug/Cargo.toml).
 
 ### Current features
 
@@ -86,7 +98,7 @@ quickly get started with NIH-plug.
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
   widgets for them that integrate with NIH-plug's parameter system:
-    - [egui](crates/nih_plug_egui) - See the [egui-baseview](crates/egui-baseview/)
+    - [egui](crates/nih_plug_egui) - See the [egui-baseview](baseview-adapters/egui-baseview/)
     crate for prerequisites.
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
@@ -113,14 +125,6 @@ quickly get started with NIH-plug.
   [yabridge](https://github.com/robbert-vdh/yabridge).
 - See the [`Plugin`](src/plugin.rs) trait's documentation for an incomplete list
   of the functionality that has currently not yet been implemented.
-
-### Baseview adapters
-
-This repository also contains [baseview](https://github.com/RustAudio/baseview)
-adapters for popular Rust GUI frameworks. These can be used on their own without
-the rest of the NIH-plug framework.
-
-- [egui-baseview](crates/egui-baseview/) - adapter for [egui](crates/nih_plug_egui)
 
 ### Building
 
@@ -151,16 +155,19 @@ examples.
 - [**gain**](examples/gain) is a simple smoothed gain plugin that shows
   off a couple other parts of the API, like support for storing arbitrary
   serializable state.
-- **gain-gui** is the same plugin as gain, but with a GUI to control the
+- **gain_\<gui\>** are the same plugins as gain, but with a GUI to control the
   parameter and a digital peak meter.
-    - [egui](examples/gain_gui_egui)
+    - [**gain_egui**](examples/gain_gui_egui) - See the
+    [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
     <!-- TODO
     - [iced](examples/gain_gui_iced), and
     - [VIZIA](examples/gain_gui_vizia).
     -->
-    - There are also examples for making custom GUIs with
-      [OpenGL](examples/byo_gui_gl), [wgpu](examples/byo_gui_wgpu),
-      and [softbuffer](examples/byo_gui_softbuffer).
+- Examples for adding your own custom GUI framework on top of raw rendering APIs:
+  - [**byo_gui_gl**](examples/byo_gui_gl) - for rendering with OpenGL
+  - [**byo_gui_wgpu**](examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)
+  - [**byo_gui_softbuffer**](examples/byo_gui_softbuffer) - for rendering with
+  [softbuffer](https://github.com/rust-windowing/softbuffer) (software rendering)
 - [**midi_inverter**](examples/midi_inverter) takes note/MIDI events and
   flips around the note, channel, expression, pressure, and CC values. This
   example demonstrates how to receive and output those events.
@@ -181,11 +188,10 @@ examples.
 
 > Check each crate's Cargo.toml file for more information.
 
-The framework, most of the crates in `crates/`, and the example plugins in
+The framework, all of the crates in `crates/`, and the example plugins in
 `examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
 
-The crate `egui-baseview` in `crates/egui-baseview` is licensed under
-"MIT or Apache-2.0". 
+All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0". 
 
 However, the [VST3 bindings](https://github.com/RustAudio/vst3-sys) used by
 `nih_export_vst3!()` are licensed under the GPLv3 license. This means that

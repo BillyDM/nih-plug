@@ -22,8 +22,8 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 [dependencies]
 baseview.workspace = true
 raw-window-handle.workspace = true
-nih_plug = { path = "../../" }
-egui-baseview = { path = "../egui-baseview", default-features = false, features = ["nih_log"] }
+nih_plug = { path = "../nih_plug" }
+egui-baseview = { path = "../../baseview-adapters/egui-baseview", default-features = false, features = ["nih_log"] }
 egui.workspace = true
 crossbeam.workspace = true
 parking_lot.workspace = true

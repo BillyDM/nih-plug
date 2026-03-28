@@ -15,7 +15,7 @@ crate-type = ["cdylib", "lib"]
 # NOTE: OpenGL support is not needed here, but rust-analyzer gets confused when
 #       some crates do use it and others don't. You should disable the opengl
 #       feature in nih_plug and baseview in your crate.
-nih_plug = { path = "../../", features = ["assert_process_allocs", "standalone", "standalone-opengl"] }
+nih_plug = { path = "../../crates/nih_plug", features = ["assert_process_allocs", "standalone", "standalone-opengl"] }
 baseview = { workspace = true, features = ["opengl"] }
 wgpu = "29"
 # Reduce wgpu log spam

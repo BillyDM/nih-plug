@@ -34,7 +34,7 @@ wgpu = { version = "29", optional = true }
 keyboard-types = { version = "0.6", default-features = false }
 raw-window-handle-06 = { package = "raw-window-handle", version = "0.6", optional = true }
 copypasta = { version = "0.10", default-features = false, features = ["x11"] }
-nih_plug = { path = "../../", optional = true }
+nih_plug = { path = "../../crates/nih_plug", optional = true }
 tracing = { workspace = true, optional = true }
 open.workspace = true
 pollster = { workspace = true, optional = true }

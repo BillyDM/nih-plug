@@ -10,5 +10,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-nih_plug = { path = "../../", features = ["assert_process_allocs"] }
+nih_plug = { path = "../../crates/nih_plug", features = ["assert_process_allocs"] }
 parking_lot.workspace = true
