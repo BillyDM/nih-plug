@@ -10,6 +10,30 @@ Since there is no stable release yet, the changes are organized per day in
 reverse chronological order. The main purpose of this document in its current
 state is to list breaking changes.
 
+## [2026-03-28]
+
+### Breaking changes
+- `nih_plug_egui` now uses egui 0.34
+- `nih_plug_iced` now uses iced 0.14
+- `nih_plug_vizia` was removed
+- The new "standalone-opengl" feature must be enabled for OpenGL support
+- Flushing denormals to zero is now disabled by default. This can be re-enabled
+using the new "unsafe_flush_denormals" feature.
+- Updated workspace resolver to version 3, Cargo edition to version 2024, and
+minimum rust compiler version to 1.85.
+
+### Added
+- Moved `egui-baseview` and `iced-baseview` crates into this repository for easier
+maintanance.
+
+### Changed
+- Hard forked into new repository
+- Reorganized workspace
+- Crates now use workspace dependencies where possible.
+- Edited readme's
+- Updated many dependencies
+- GPLv3-licensed plugins were removed from the repository.
+
 ## [2025-02-23]
 
 ### Breaking changes

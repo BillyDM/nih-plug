@@ -19,7 +19,7 @@ iced-baseview = { git = "https://github.com/BillyDM/nih-plug", branch = "main" }
 or if you want to use a specific revision:
 
 ```toml
-iced-baseview = { git = "https://github.com/BillyDM/nih-plug", rev = "57c8e47de03cb8d9a5b5455caf65ca2b6d55edf3" }
+iced-baseview = { git = "https://github.com/BillyDM/nih-plug", rev = "8225a2d94a7a27a212c64aa814467801faa9585c" }
 ```
 
 ## Prerequisites
