@@ -1,0 +1,36 @@
+[package]
+name = "gain_egui"
+version = "0.1.0"
+authors = [
+    "Billy Messenger <billydm@noreply.codeberg.org>",
+    "Robbert van der Helm <mail@robbertvanderhelm.nl>",
+]
+description = "A simple gain plugin with an egui GUI"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[lib]
+# The `lib` artifact is needed for the standalone target
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+egui = { workspace = true, features = ["default_fonts"] }
+nih_plug = { path = "../../", default-features = true, features = [
+    "assert_process_allocs",
+    "standalone",
+    "standalone-opengl",
+] }
+nih_plug_egui = { path = "../../crates/nih_plug_egui", default-features = false, features = ["opengl"] }
+baseview = { workspace = true, features = ["opengl"] }
+atomic_float.workspace = true
+# Optional, only include if you want to pass messages between the
+# GUI and the audio thread.
+rtrb.workspace = true
+# Optional, only include if you want to sync complex state between
+# the GUI and the audio thread.
+triple_buffer.workspace = true
+# If using wgpu, use the following to reduce log spam:
+log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+tracing = { version = "0.1", features = ["max_level_info", "release_max_level_info"] }

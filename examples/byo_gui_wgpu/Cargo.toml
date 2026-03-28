@@ -19,7 +19,7 @@ nih_plug = { path = "../../", features = ["assert_process_allocs", "standalone",
 baseview = { workspace = true, features = ["opengl"] }
 wgpu = "29"
 # Reduce wgpu log spam
-log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }
+log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 tracing = { version = "0.1", features = ["max_level_info", "release_max_level_info"] }
 raw-window-handle = "0.5"
 raw-window-handle-06 = { package = "raw-window-handle", version = "0.6" }

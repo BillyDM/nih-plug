@@ -24,9 +24,10 @@ resolver = "2"
 members = [
   "crates/nih_plug_derive",
   "crates/nih_plug_xtask",
-
   "crates/cargo_nih_plug",
   "crates/xtask",
+  "crates/egui-baseview",
+  "crates/nih_plug_egui",
 
   "examples/byo_gui_gl",
   "examples/byo_gui_softbuffer",
@@ -37,6 +38,7 @@ members = [
   "examples/sine",
   "examples/stft",
   "examples/sysex",
+  "examples/gain_egui",
 
   "plugins/soft_vacuum",
   "plugins/buffr_glitch",
@@ -118,6 +120,9 @@ rtrb = "0.3.3"
 semver = "1.0.27"
 pollster = "0.4.0"
 parking_lot = "0.12"
+thiserror = "2.0"
+tracing = "0.1"
+egui = { version = "0.34.1", default-features = false, features = ["bytemuck"] }
 
 [dependencies]
 nih_plug_derive = { path = "crates/nih_plug_derive" }

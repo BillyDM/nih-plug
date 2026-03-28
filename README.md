@@ -52,21 +52,21 @@ Scroll down for more information on the underlying plugin framework.
   corresponding to that note's frequency and use that as a single waveform
   cycle. This can end up sounding like an in-tune glitch when used sparingly, or
   like a weird synthesizer when used less subtly.
-<!-- TODO
-- [**Crisp**](plugins/crisp) adds a bright crispy top end to any low bass sound.
-  Inspired by Polarity's [Fake Distortion](https://youtu.be/MKfFn4L1zeg) video.
--->
+  <!-- TODO
+  - [**Crisp**](plugins/crisp) adds a bright crispy top end to any low bass sound.
+    Inspired by Polarity's [Fake Distortion](https://youtu.be/MKfFn4L1zeg) video.
+  -->
 - [**Crossover**](plugins/crossover) is as boring as it sounds. It cleanly
   splits the signal into two to five bands using a variety of algorithms. Those
   bands are then sent to auxiliary outputs so they can be accessed and processed
   individually. Meant as an alternative to Bitwig's Multiband FX devices but
   with cleaner crossovers and a linear-phase option.
-<!-- TODO
-- [**Diopser**](plugins/diopser) is a totally original phase rotation plugin.
-  Useful for oomphing up kickdrums and basses, transforming synths into their
-  evil phase-y cousin, and making everything sound like a cheap Sci-Fi laser
-  beam.
--->
+  <!-- TODO
+  - [**Diopser**](plugins/diopser) is a totally original phase rotation plugin.
+    Useful for oomphing up kickdrums and basses, transforming synths into their
+    evil phase-y cousin, and making everything sound like a cheap Sci-Fi laser
+    beam.
+  -->
 - [**Loudness War Winner**](plugins/loudness_war_winner) does what it says on
   the tin. Have you ever wanted to show off your dominance by winning the
   loudness war? Neither have I. Dissatisfaction guaranteed.
@@ -89,13 +89,13 @@ Scroll down for more information on the underlying plugin framework.
   liked the distortion and just wished it had oversampling. All credit goes to
   Chris from Airwindows. I just wanted to share this in case anyone else finds
   it useful.
-<!-- TODO
-- [**Spectral Compressor**](plugins/spectral_compressor) can squash anything
-  into pink noise, apply simultaneous upwards and downwards compressor to
-  dynamically match the sidechain signal's spectrum and morph one sound into
-  another, and lots more. Have you ever wondered what a 16384 band OTT would
-  sound like? Neither have I.
--->
+  <!-- TODO
+  - [**Spectral Compressor**](plugins/spectral_compressor) can squash anything
+    into pink noise, apply simultaneous upwards and downwards compressor to
+    dynamically match the sidechain signal's spectrum and morph one sound into
+    another, and lots more. Have you ever wondered what a 16384 band OTT would
+    sound like? Neither have I.
+  -->
 
 ## Framework
 
@@ -148,15 +148,9 @@ Scroll down for more information on the underlying plugin framework.
   `true`.
 - Optional support for compressing the human readable JSON state files using
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
-<!-- TODO
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
   widgets for them that integrate with NIH-plug's parameter system. Currently
-  there's support for [egui](nih_plug_egui), [iced](nih_plug_iced) and
-  [VIZIA](nih_plug_vizia).
-  - A simple and safe API for state saving and restoring from the editor is
-    provided by the framework if you want to do your own internal preset
-    management.
--->
+  there's support for [egui](crates/nih_plug_egui), and [iced]() (TODO).
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
@@ -213,12 +207,12 @@ examples.
   off a couple other parts of the API, like support for storing arbitrary
   serializable state.
 - **gain-gui** is the same plugin as gain, but with a GUI to control the
-  parameter and a digital peak meter. Comes in three exciting flavors:
-  <!-- TODO
+  parameter and a digital peak meter.
     - [egui](examples/gain_gui_egui),
+    <!-- TODO
     - [iced](examples/gain_gui_iced), and
     - [VIZIA](examples/gain_gui_vizia).
-  -->
+    -->
     - There are also examples for making custom GUIs with
       [OpenGL](examples/byo_gui_gl), [wgpu](examples/byo_gui_wgpu),
       and [softbuffer](examples/byo_gui_softbuffer).
