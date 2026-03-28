@@ -1,14 +1,15 @@
 # NIH-plug
 
-[![Automated builds](https://github.com/BillyDM/nih-plug/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/BillyDM/nih-plug/actions/workflows/build.yml?query=branch%3Amain)
 [![Tests](https://github.com/BillyDM/nih-plug/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/BillyDM/nih-plug/actions/workflows/test.yml?query=branch%3Amain)
 <!-- TODO: [![Docs](https://github.com/BillyDM/nih-plug/actions/workflows/docs.yml/badge.svg?branch=main)](https://nih-plug.robbertvanderhelm.nl/) -->
 
 > This is a hard fork of https://github.com/robbert-vdh/nih-plug, since the
 > original author is no longer maintaining it.
+>
+> This fork does not contain the original collection of plugins. If you are looking
+> for those, go to the original repository linked above.
 
-NIH-plug is an API-agnostic audio plugin framework written in Rust, as well as a
-small collection of plugins.
+NIH-plug is an API-agnostic audio plugin framework written in Rust.
 
 The idea is to have a stateful yet simple plugin API that gets rid of as much
 unnecessary ceremony wherever possible, while also keeping the amount of magic to
@@ -24,78 +25,12 @@ quickly get started with NIH-plug.
 
 ### Table of contents
 
-- [Plugins](#plugins)
 - [Framework](#framework)
   - [Current features](#current-features)
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
 - [Licensing](#licensing)
-
-## Plugins
-
-Check each plugin's readme file for more details on what the plugin actually
-does. You can download the development binaries for Linux, Windows and macOS
-from the [automated
-builds](https://github.com/BillyDM/nih-plug/actions/workflows/build.yml?query=branch%3Amain)
-page. Or if you're not signed in on GitHub, then you can also find the latest
-nightly build
-[here](https://nightly.link/BillyDM/nih-plug/workflows/build/main). You
-may need to [disable Gatekeeper](https://disable-gatekeeper.github.io/) on macOS
-to be able to use the plugins.
-
-Scroll down for more information on the underlying plugin framework.
-
-- [**Buffr Glitch**](plugins/buffr_glitch) is the plugin for you if you enjoy
-  the sound of a CD player skipping This plugin is essentially a MIDI triggered
-  buffer repeat plugin. When you play a note, the plugin will sample the period
-  corresponding to that note's frequency and use that as a single waveform
-  cycle. This can end up sounding like an in-tune glitch when used sparingly, or
-  like a weird synthesizer when used less subtly.
-  <!-- TODO
-  - [**Crisp**](plugins/crisp) adds a bright crispy top end to any low bass sound.
-    Inspired by Polarity's [Fake Distortion](https://youtu.be/MKfFn4L1zeg) video.
-  -->
-- [**Crossover**](plugins/crossover) is as boring as it sounds. It cleanly
-  splits the signal into two to five bands using a variety of algorithms. Those
-  bands are then sent to auxiliary outputs so they can be accessed and processed
-  individually. Meant as an alternative to Bitwig's Multiband FX devices but
-  with cleaner crossovers and a linear-phase option.
-  <!-- TODO
-  - [**Diopser**](plugins/diopser) is a totally original phase rotation plugin.
-    Useful for oomphing up kickdrums and basses, transforming synths into their
-    evil phase-y cousin, and making everything sound like a cheap Sci-Fi laser
-    beam.
-  -->
-- [**Loudness War Winner**](plugins/loudness_war_winner) does what it says on
-  the tin. Have you ever wanted to show off your dominance by winning the
-  loudness war? Neither have I. Dissatisfaction guaranteed.
-- [**Puberty Simulator**](plugins/puberty_simulator) is that patent pending One
-  Weird Plugin that simulates the male voice change during puberty! If it was
-  not already obvious from that sentence, this plugin is a joke, but it might
-  actually be useful (or at least interesting) in some situations. This plugin
-  pitches the signal down an octave, but it also has the side effect of causing
-  things to sound like a cracking voice or to make them sound slightly out of
-  tune.
-- [**Safety Limiter**](plugins/safety_limiter) is a simple tool to prevent ear
-  damage. As soon as there is a peak above 0 dBFS or the specified threshold,
-  the plugin will cut over to playing SOS in Morse code, gradually fading out
-  again when the input returns back to safe levels. Made for personal use during
-  plugin development and intense sound design sessions, but maybe you'll find it
-  useful too!
-- [**Soft Vacuum**](plugins/soft_vacuum) is a straightforward port of
-  Airwindows' [Hard Vacuum](https://www.airwindows.com/hard-vacuum-vst/) plugin
-  with parameter smoothing and up to 16x linear-phase oversampling, because I
-  liked the distortion and just wished it had oversampling. All credit goes to
-  Chris from Airwindows. I just wanted to share this in case anyone else finds
-  it useful.
-  <!-- TODO
-  - [**Spectral Compressor**](plugins/spectral_compressor) can squash anything
-    into pink noise, apply simultaneous upwards and downwards compressor to
-    dynamically match the sidechain signal's spectrum and morph one sound into
-    another, and lots more. Have you ever wondered what a 16384 band OTT would
-    sound like? Neither have I.
-  -->
 
 ## Framework
 
@@ -234,14 +169,16 @@ examples.
 
 ## Licensing
 
-The framework, its libraries, and the example plugins in `examples/` are
-all licensed under the [ISC license](https://www.isc.org/licenses/).
+> Check each crate's Cargo.toml file for more information.
+
+The framework, most of the crates in `crates/`, and the example plugins in
+`examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
+
+The crate `egui-baseview` in `crates/egui-baseview` is licensed under
+"MIT or Apache-2.0". 
 
 However, the [VST3 bindings](https://github.com/RustAudio/vst3-sys) used by
 `nih_export_vst3!()` are licensed under the GPLv3 license. This means that
 unless you replace these bindings with your own bindings made from scratch, any
 VST3 plugins built with NIH-plug need to be able to comply with the terms of the
 GPLv3 license.
-
-The other plugins in the `plugins/` directory are licensed under the GPLv3
-license. Check the plugin's `Cargo.toml` file for more information.
