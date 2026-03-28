@@ -27,6 +27,7 @@ quickly get started with NIH-plug.
 
 - [Framework](#framework)
   - [Current features](#current-features)
+  - [Baseview adapters](#baseview-adapters)
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
@@ -84,8 +85,9 @@ quickly get started with NIH-plug.
 - Optional support for compressing the human readable JSON state files using
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
-  widgets for them that integrate with NIH-plug's parameter system. Currently
-  there's support for [egui](crates/nih_plug_egui), and [iced]() (TODO).
+  widgets for them that integrate with NIH-plug's parameter system:
+    - [egui](crates/nih_plug_egui) - See the [egui-baseview](crates/egui-baseview/)
+    crate for prerequisites.
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
@@ -111,6 +113,14 @@ quickly get started with NIH-plug.
   [yabridge](https://github.com/robbert-vdh/yabridge).
 - See the [`Plugin`](src/plugin.rs) trait's documentation for an incomplete list
   of the functionality that has currently not yet been implemented.
+
+### Baseview adapters
+
+This repository also contains [baseview](https://github.com/RustAudio/baseview)
+adapters for popular Rust GUI frameworks. These can be used on their own without
+the rest of the NIH-plug framework.
+
+- [egui-baseview](crates/egui-baseview/) - adapter for [egui](crates/nih_plug_egui)
 
 ### Building
 
@@ -143,7 +153,7 @@ examples.
   serializable state.
 - **gain-gui** is the same plugin as gain, but with a GUI to control the
   parameter and a digital peak meter.
-    - [egui](examples/gain_gui_egui),
+    - [egui](examples/gain_gui_egui)
     <!-- TODO
     - [iced](examples/gain_gui_iced), and
     - [VIZIA](examples/gain_gui_vizia).

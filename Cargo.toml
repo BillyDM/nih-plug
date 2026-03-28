@@ -39,17 +39,6 @@ members = [
   "examples/stft",
   "examples/sysex",
   "examples/gain_egui",
-
-  "plugins/soft_vacuum",
-  "plugins/buffr_glitch",
-  "plugins/crossover",
-  "plugins/loudness_war_winner",
-  "plugins/puberty_simulator",
-  "plugins/safety_limiter",
-  # TODO: Create updated GUIs for these plugins
-  #"plugins/crisp",
-  #"plugins/diopser",
-  #"plugins/spectral_compressor",
 ]
 
 [features]

@@ -320,13 +320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "buffr_glitch"
-version = "0.2.0"
-dependencies = [
- "nih_plug",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -818,14 +811,6 @@ name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
-
-[[package]]
-name = "crossover"
-version = "0.1.0"
-dependencies = [
- "nih_plug",
- "realfft",
-]
 
 [[package]]
 name = "crunchy"
@@ -1723,13 +1708,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
-name = "loudness_war_winner"
-version = "0.1.0"
-dependencies = [
- "nih_plug",
-]
-
-[[package]]
 name = "mach2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2614,14 +2592,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eb8486b569e12e2c32ad3e204dbaba5e4b5b216e9367044f25f1dba42341773"
 
 [[package]]
-name = "puberty_simulator"
-version = "0.1.0"
-dependencies = [
- "nih_plug",
- "realfft",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2839,13 +2809,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
-name = "safety_limiter"
-version = "0.1.0"
-dependencies = [
- "nih_plug",
-]
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3015,14 +2978,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "soft_vacuum"
-version = "0.1.0"
-dependencies = [
- "approx",
- "nih_plug",
 ]
 
 [[package]]

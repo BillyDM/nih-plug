@@ -10,6 +10,7 @@ description = "A baseview backend for egui"
 documentation = "https://docs.rs/egui-baseview"
 keywords = ["gui", "ui", "graphics", "interface", "widgets"]
 categories = ["gui"]
+readme = "README.md"
 
 [features]
 default = ["opengl", "tracing"]
