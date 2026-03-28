@@ -40,7 +40,9 @@ for popular Rust GUI frameworks. These can be used on their own without the rest
 the NIH-plug framework.
 
 - [egui-baseview](baseview-adapters/egui-baseview/) - adapter for
-[egui](crates/nih_plug_egui)
+[egui](https://github.com/emilk/egui)
+- [iced_baseview](baseview-adapters/iced-baseview/) - adapter for
+[Iced](https://iced.rs/)
 
 ## Framework
 
@@ -98,8 +100,10 @@ For a list of available crate flags, see
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
   widgets for them that integrate with NIH-plug's parameter system:
-    - [egui](crates/nih_plug_egui) - See the [egui-baseview](baseview-adapters/egui-baseview/)
-    crate for prerequisites.
+    - [nih_plug_egui](crates/nih_plug_egui) - Adapter for [egui](https://github.com/emilk/egui).
+    See the [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
+    - [nih_plug_iced](crates/nih_plug_iced) - Adapter for [Iced](https://iced.rs/).
+    See the [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
@@ -157,12 +161,10 @@ examples.
   serializable state.
 - **gain_\<gui\>** are the same plugins as gain, but with a GUI to control the
   parameter and a digital peak meter.
-    - [**gain_egui**](examples/gain_gui_egui) - See the
+    - [**gain_egui**](examples/gain_egui) - See the
     [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
-    <!-- TODO
-    - [iced](examples/gain_gui_iced), and
-    - [VIZIA](examples/gain_gui_vizia).
-    -->
+    - [**gain_iced**](examples/gain_iced) - See the
+    [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
 - Examples for adding your own custom GUI framework on top of raw rendering APIs:
   - [**byo_gui_gl**](examples/byo_gui_gl) - for rendering with OpenGL
   - [**byo_gui_wgpu**](examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)

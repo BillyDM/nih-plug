@@ -10,6 +10,8 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-nih_plug = { path = "../../crates/nih_plug", features = ["assert_process_allocs"] }
+nih_plug = { path = "../../crates/nih_plug", features = [
+    "assert_process_allocs",
+] }
 rand = "0.10.0"
 rand_pcg = "0.10.1"

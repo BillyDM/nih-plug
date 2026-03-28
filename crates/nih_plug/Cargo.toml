@@ -19,7 +19,14 @@ assert_process_allocs = ["dep:assert_no_alloc"]
 # Enables an export target for standalone binaries through the
 # `nih_export_standalone()` function. Disabled by default as this requires
 # building additional dependencies for audio and MIDI handling.
-standalone = ["dep:baseview", "dep:clap", "dep:cpal", "dep:jack", "dep:midir", "dep:rtrb"]
+standalone = [
+  "dep:baseview",
+  "dep:clap",
+  "dep:cpal",
+  "dep:jack",
+  "dep:midir",
+  "dep:rtrb",
+]
 # Enables opengl support in standalone mode.
 # TODO: Send PR to baseview to derive Default for WindowOpenOptions so that
 # this isn't necessary.
@@ -70,7 +77,7 @@ backtrace = "0.3.65"
 bitflags.workspace = true
 cfg-if.workspace = true
 # This supports CLAP 1.2.2
-clap-sys = {  git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156" }
+clap-sys = { git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156" }
 crossbeam.workspace = true
 log = "0.4"
 midi-consts = "0.1"
@@ -80,11 +87,17 @@ raw-window-handle.workspace = true
 serde_json = "1.0"
 widestring = "1.2.1"
 # Used for the `assert_process_allocs` feature
-assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", branch = "feature/nested-permit-forbid", features = ["backtrace", "log"], optional = true }
+assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", branch = "feature/nested-permit-forbid", features = [
+  "backtrace",
+  "log",
+], optional = true }
 # Used for the `standalone` feature
 baseview = { workspace = true, optional = true }
 # All the claps!
-clap = { version = "4.1.8", features = ["derive", "wrap_help"], optional = true }
+clap = { version = "4.1.8", features = [
+  "derive",
+  "wrap_help",
+], optional = true }
 cpal = { version = "0.16", optional = true }
 jack = { version = "0.13.5", optional = true }
 midir = { version = "0.10.3", optional = true }
@@ -113,4 +126,7 @@ features = [
 
 [dev-dependencies]
 approx.workspace = true
-log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+log = { version = "0.4", features = [
+  "max_level_debug",
+  "release_max_level_info",
+] }

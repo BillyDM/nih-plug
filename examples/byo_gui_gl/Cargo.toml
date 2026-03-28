@@ -12,7 +12,10 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nih_plug = { path = "../../crates/nih_plug", features = ["assert_process_allocs", "standalone-opengl"] }
+nih_plug = { path = "../../crates/nih_plug", features = [
+    "assert_process_allocs",
+    "standalone-opengl",
+] }
 baseview = { workspace = true, features = ["opengl"] }
 raw-window-handle.workspace = true
 glow = "0.17"

@@ -7,7 +7,6 @@ A [`baseview`](https://github.com/RustAudio/baseview) backend for [`egui`](https
     <img src="screenshot.png">
 </div>
 
-
 ## How to use with your own custom plugin framework
 
 Add the following to your `Cargo.toml`:

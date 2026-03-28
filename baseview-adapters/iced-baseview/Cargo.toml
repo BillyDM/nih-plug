@@ -1,0 +1,120 @@
+[package]
+name = "iced_baseview"
+version = "0.1.0"
+authors = [
+  "Billy Messenger <BillyDM@protonmail.com>",
+  "Robbert van der Helm <mail@robbertvanderhelm.nl>",
+  "Joakim Frostegård <joakim.frostegard@gmail.com>",
+]
+description = "A baseview backend for Iced"
+keywords = ["gui", "ui", "graphics", "interface", "widgets"]
+categories = ["gui"]
+license = "MIT OR Apache-2.0"
+edition.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[features]
+default = [
+  "tracing",
+  "app-builder",
+  "wgpu",
+  "tiny-skia",
+  "crisp",
+  "web-colors",
+  "thread-pool",
+  "x11",
+]
+# Enables logging using NIH-plug's logging feature
+nih_log = ["dep:nih_plug"]
+# Enable this if `nih_log` is disabled
+tracing = ["dep:tracing"]
+# Enable the default application builder method. Disable this if you wish to create your own
+# custom wrapper for users.
+app-builder = []
+# Enables the `wgpu` GPU-accelerated renderer with all its default features (Vulkan, Metal, DX12, OpenGL, and WebGPU)
+# This can be disabled if you wish to reduce the binary size of plugins with simple GUIs.
+wgpu = ["wgpu-bare", "iced_renderer/wgpu"]
+# Enables the `wgpu` GPU-accelerated renderer with the minimum required features (no backends!)
+wgpu-bare = ["iced_renderer/wgpu-bare"]
+# Enables the `tiny-skia` software renderer
+tiny-skia = ["iced_renderer/tiny-skia"]
+# Enables the `image` widget
+image = ["image-without-codecs", "image/default"]
+# Enables the `image` widget, without any built-in codecs of the `image` crate
+image-without-codecs = ["iced_widget/image", "dep:image"]
+# Enables the `svg` widget
+svg = ["iced_widget/svg"]
+# Enables the `canvas` widget
+canvas = ["iced_widget/canvas"]
+# Enables the `qr_code` widget
+qr_code = ["iced_widget/qr_code"]
+# Enables the `markdown` widget
+markdown = ["iced_widget/markdown"]
+# Enables lazy widgets
+lazy = ["iced_widget/lazy"]
+# Enables debug metrics (press F12)
+debug = ["dep:iced_devtools", "iced_debug/enable"]
+# Enables time-travel debugging (very experimental!)
+time-travel = ["debug", "iced_devtools/time-travel"]
+# Enables hot reloading (very experimental!)
+hot = ["debug", "iced_debug/hot"]
+# Enables the `thread-pool` futures executor as the `executor::Default`
+thread-pool = ["iced_futures/thread-pool"]
+# Enables `tokio` as the `executor::Default`
+tokio = ["iced_futures/tokio"]
+# Enables `smol` as the `executor::Default`
+smol = ["iced_futures/smol"]
+# Enables querying system information
+sysinfo = ["dep:sysinfo"]
+# Enables broken "sRGB linear" blending to reproduce color management of the Web
+web-colors = ["iced_renderer/web-colors"]
+# Enables pixel snapping for crisp edges by default (can cause jitter!)
+crisp = ["iced_core/crisp", "iced_widget/crisp"]
+# Enables syntax highlighting
+highlighter = ["dep:iced_highlighter", "iced_widget/highlighter"]
+# Enables the `widget::selector` module
+selector = ["iced_runtime/selector"]
+# Enables the advanced module
+advanced = ["iced_core/advanced", "iced_widget/advanced"]
+# Embeds Fira Sans into the final application; useful as an easy way to have consistent looks between platforms
+fira-sans = ["iced_renderer/fira-sans"]
+# Enables basic text shaping by default
+basic-shaping = ["iced_core/basic-shaping"]
+# Enables advanced text shaping by default
+advanced-shaping = ["iced_core/advanced-shaping"]
+# Enables strict assertions for debugging purposes at the expense of performance
+strict-assertions = ["iced_renderer/strict-assertions"]
+# Redraws on every runtime event, and not only when a widget requests it
+unconditional-rendering = []
+# Enables support for the `sipper` library
+sipper = ["iced_runtime/sipper"]
+# Enables the Unix X11 backend
+x11 = ["iced_renderer/x11", "window_clipboard/x11"]
+rustanalyzer_opengl_workaround = []
+
+[dependencies]
+iced_debug = "0.14"
+iced_program = "0.14"
+iced_renderer = "0.14"
+iced_widget = "0.14"
+iced_devtools = { version = "0.14", optional = true }
+iced_futures = "0.14"
+iced_core = "0.14"
+iced_runtime = "0.14"
+iced_highlighter = { version = "0.14", optional = true }
+window_clipboard = { version = "0.5", default-features = false }
+sysinfo = { version = "0.38", optional = true }
+image = { version = "0.25", default-features = false, optional = true }
+keyboard-types = { version = "0.6", default-features = false }
+baseview.workspace = true
+raw-window-handle.workspace = true
+raw-window-handle-06 = { package = "raw-window-handle", version = "0.6" }
+thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+nih_plug = { path = "../../crates/nih_plug", optional = true }
+
+[dev-dependencies]
+tracing-subscriber = "0.3.22"
+baseview = { workspace = true, features = ["opengl"] }
+iced_baseview = { path = ".", features = ["rustanalyzer_opengl_workaround"] }

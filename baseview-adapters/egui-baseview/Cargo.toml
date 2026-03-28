@@ -7,7 +7,6 @@ authors.workspace = true
 repository.workspace = true
 license = "MIT OR Apache-2.0"
 description = "A baseview backend for egui"
-documentation = "https://docs.rs/egui-baseview"
 keywords = ["gui", "ui", "graphics", "interface", "widgets"]
 categories = ["gui"]
 readme = "README.md"

@@ -7,19 +7,22 @@ members = [
   "crates/cargo_nih_plug",
   "crates/xtask",
   "crates/nih_plug_egui",
+  "crates/nih_plug_iced",
 
   "baseview-adapters/egui-baseview",
+  "baseview-adapters/iced-baseview",
 
   "examples/byo_gui_gl",
   "examples/byo_gui_softbuffer",
   "examples/byo_gui_wgpu",
   "examples/gain",
+  "examples/gain_egui",
+  "examples/gain_iced",
   "examples/midi_inverter",
   "examples/poly_mod_synth",
   "examples/sine",
   "examples/stft",
   "examples/sysex",
-  "examples/gain_egui",
 ]
 default-members = ["crates/nih_plug"]
 
@@ -28,7 +31,7 @@ edition = "2024"
 rust-version = "1.85"
 authors = [
   "Robbert van der Helm <mail@robbertvanderhelm.nl>",
-  "Billy Messenger <billydm@noreply.codeberg.org>"
+  "Billy Messenger <billydm@noreply.codeberg.org>",
 ]
 license = "ISC"
 repository = "https://github.com/BillyDM/nih-plug"
@@ -55,6 +58,11 @@ thiserror = "2.0"
 tracing = "0.1"
 egui = { version = "0.34.1", default-features = false, features = ["bytemuck"] }
 
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+
+# Enable more optimization in the release profile at the cost of compile time.
 [profile.release]
 codegen-units = 1
 lto = "thin"
