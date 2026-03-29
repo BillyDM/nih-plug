@@ -6,8 +6,9 @@
 > This is a hard fork of https://github.com/robbert-vdh/nih-plug, since the
 > original author is no longer maintaining it.
 >
-> This fork does not contain the original collection of plugins. If you are looking
-> for those, go to the original repository linked above.
+> This fork does NOT contain the original collection of plugins. If you are looking
+> for those, go to the original repository linked above. Please do NOT post any
+> issues about the original plugins here, this is for the development framework only!
 
 NIH-plug is an API-agnostic audio plugin framework written in Rust.
 
