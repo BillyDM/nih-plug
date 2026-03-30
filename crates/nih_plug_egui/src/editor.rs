@@ -2,11 +2,10 @@
 
 use crate::EguiSettings;
 use crate::EguiState;
-use baseview::PhySize;
-use baseview::{Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
 use crossbeam::atomic::AtomicCell;
 use egui::Context;
 use egui::{Vec2, ViewportCommand};
+use egui_baseview::baseview::{PhySize, Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
 use egui_baseview::{EguiWindow, Queue};
 use nih_plug::prelude::{Editor, GuiContext, ParamSetter, ParentWindowHandle};
 use parking_lot::Mutex;

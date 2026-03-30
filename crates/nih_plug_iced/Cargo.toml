@@ -80,7 +80,6 @@ rustanalyzer_opengl_workaround = [
 ]
 
 [dependencies]
-baseview.workspace = true
 raw-window-handle.workspace = true
 nih_plug = { path = "../../crates/nih_plug", default-features = false }
 iced_futures = "0.14"

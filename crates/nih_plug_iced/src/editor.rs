@@ -1,5 +1,5 @@
-use baseview::{Size, WindowOpenOptions, WindowScalePolicy};
 use crossbeam_utils::atomic::AtomicCell;
+use iced_baseview::baseview::{Size, WindowOpenOptions, WindowScalePolicy};
 use iced_baseview::{
     IcedBaseviewSettings, PollSubNotifier, Program, message, shell::window::WindowHandle,
 };

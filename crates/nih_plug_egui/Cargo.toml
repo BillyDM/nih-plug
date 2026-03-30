@@ -20,7 +20,6 @@ wgpu = ["egui-baseview/wgpu"]
 keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 
 [dependencies]
-baseview.workspace = true
 raw-window-handle.workspace = true
 nih_plug = { path = "../nih_plug" }
 egui-baseview = { path = "../../baseview-adapters/egui-baseview", default-features = false, features = [

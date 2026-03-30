@@ -30,7 +30,9 @@ const AARCH64_FTZ_BIT: u64 = 1 << 24;
     feature = "assert_process_allocs",
     all(windows, target_env = "gnu")
 ))]
-compile_error!("The 'assert_process_allocs' feature does not work correctly in combination with the 'x86_64-pc-windows-gnu' target, see https://github.com/Windfisch/rust-assert-no-alloc/issues/7");
+compile_error!(
+    "The 'assert_process_allocs' feature does not work correctly in combination with the 'x86_64-pc-windows-gnu' target, see https://github.com/Windfisch/rust-assert-no-alloc/issues/7"
+);
 
 #[cfg(all(debug_assertions, feature = "assert_process_allocs"))]
 #[global_allocator]
