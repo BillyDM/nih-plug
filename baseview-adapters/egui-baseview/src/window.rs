@@ -445,6 +445,17 @@ where
     fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
         let mut return_status = EventStatus::Captured;
 
+        // Parent/embedded windows do not always gain keyboard focus
+        // Automatically on click. Request focus explicitly before forwarding the event.
+        #[cfg(not(target_os = "linux"))]
+        if matches!(
+            event,
+            Event::Mouse(baseview::MouseEvent::ButtonPressed { .. })
+        ) && !window.has_focus()
+        {
+            window.focus();
+        }
+
         match &event {
             baseview::Event::Mouse(event) => match event {
                 baseview::MouseEvent::CursorMoved {
