@@ -127,6 +127,15 @@ impl<P: Program + 'static> WindowHandler for IcedWindowHandler<P> {
             return EventStatus::Ignored;
         }
 
+        // Parent/embedded windows do not always gain keyboard focus
+        // Automatically on click. Request focus explicitly before forwarding the event.
+        if matches!(
+            event, 
+            Event::Mouse(baseview::MouseEvent::ButtonPressed { .. })
+        ) && !window.has_focus() {
+            window.focus();
+        }
+
         let status = if requests_exit(&event) {
             self.processed_close_signal = true;
 
