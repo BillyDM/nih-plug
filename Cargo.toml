@@ -34,7 +34,7 @@ authors = [
   "Billy Messenger <billydm@noreply.codeberg.org>",
 ]
 license = "ISC"
-repository = "https://github.com/BillyDM/nih-plug"
+repository = "https://codeberg.org/BillyDM/nih-plug"
 
 [workspace.dependencies]
 anyhow = "1.0"

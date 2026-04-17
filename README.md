@@ -1,14 +1,15 @@
 # NIH-plug
 
-[![Tests](https://github.com/BillyDM/nih-plug/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/BillyDM/nih-plug/actions/workflows/test.yml?query=branch%3Amain)
-<!-- TODO: [![Docs](https://github.com/BillyDM/nih-plug/actions/workflows/docs.yml/badge.svg?branch=main)](https://nih-plug.robbertvanderhelm.nl/) -->
-
 > This is a hard fork of https://github.com/robbert-vdh/nih-plug, since the
 > original author is no longer maintaining it.
 >
 > This fork does NOT contain the original collection of plugins. If you are looking
 > for those, go to the original repository linked above. Please do NOT post any
 > issues about the original plugins here, this is for the development framework only!
+>
+> This repository has moved to Codeberg https://codeberg.org/BillyDM/nih-plug. Please
+> only post issues and pull requests there. A read-only mirror is available at
+> https://github.com/BillyDM/nih-plug for users who prefer that.
 
 NIH-plug is an API-agnostic audio plugin framework written in Rust.
 
@@ -186,6 +187,17 @@ examples.
   compositional `Buffer` interfaces.
 - [**sysex**](examples/sysex) is a simple example of how to send and
   receive SysEx messages by defining custom message types.
+
+## Contributing
+
+Please refer to the Rust Audio community's policy an AI usage:
+https://rust.audio/community/ai/
+
+Nih-plug uses optional nightly features. To make rust analyzer happy, you can
+enable the nightly compiler for your local repository with:
+```
+rustup override add nightly
+```
 
 ## Licensing
 
