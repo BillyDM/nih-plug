@@ -12,8 +12,117 @@ use vst3_sys::utils::SharedVstPtr;
 
 use super::inner::{Task, WrapperInner};
 use super::util::{ObjectPtr, VstPtr};
+use crate::editor::{Modifiers, VirtualKeyCode};
 use crate::plugin::vst3::Vst3Plugin;
 use crate::prelude::{Editor, ParentWindowHandle};
+
+/// Lowest VST3 virtual key code (`KEY_BACK` in the VST3 SDK
+/// `VirtualKeyCodes` enum, `pluginterfaces/base/keycodes.h`). Values
+/// below this are not virtual keys in the VST3 sense.
+const VKEY_FIRST_CODE: i16 = 1;
+
+/// Highest VST3 virtual key code (`KEY_SUPER` in the VST3 SDK
+/// `VirtualKeyCodes` enum). Values at `VKEY_FIRST_ASCII = 128` and
+/// above encode printable ASCII characters rather than virtual keys
+/// and are not routed to [`Editor::on_virtual_key_from_host`].
+const VKEY_LAST_CODE: i16 = 77;
+
+/// Maps a VST3 virtual key code (as passed to `IPlugView::onKeyDown`
+/// / `onKeyUp`) to the corresponding [`VirtualKeyCode`] variant.
+/// Callers should gate on `VKEY_FIRST_CODE..=VKEY_LAST_CODE` first;
+/// codes outside that range (including `0`, and ASCII offsets at
+/// `VKEY_FIRST_ASCII = 128` and above) return `None`.
+fn vst3_virtual_key_code(raw: i16) -> Option<VirtualKeyCode> {
+    Some(match raw {
+        1 => VirtualKeyCode::Backspace,
+        2 => VirtualKeyCode::Tab,
+        3 => VirtualKeyCode::Clear,
+        4 => VirtualKeyCode::Return,
+        5 => VirtualKeyCode::Pause,
+        6 => VirtualKeyCode::Escape,
+        7 => VirtualKeyCode::Space,
+        8 => VirtualKeyCode::Next,
+        9 => VirtualKeyCode::End,
+        10 => VirtualKeyCode::Home,
+        11 => VirtualKeyCode::ArrowLeft,
+        12 => VirtualKeyCode::ArrowUp,
+        13 => VirtualKeyCode::ArrowRight,
+        14 => VirtualKeyCode::ArrowDown,
+        15 => VirtualKeyCode::PageUp,
+        16 => VirtualKeyCode::PageDown,
+        17 => VirtualKeyCode::Select,
+        18 => VirtualKeyCode::Print,
+        19 => VirtualKeyCode::NumpadEnter,
+        20 => VirtualKeyCode::Snapshot,
+        21 => VirtualKeyCode::Insert,
+        22 => VirtualKeyCode::Delete,
+        23 => VirtualKeyCode::Help,
+        24 => VirtualKeyCode::Numpad0,
+        25 => VirtualKeyCode::Numpad1,
+        26 => VirtualKeyCode::Numpad2,
+        27 => VirtualKeyCode::Numpad3,
+        28 => VirtualKeyCode::Numpad4,
+        29 => VirtualKeyCode::Numpad5,
+        30 => VirtualKeyCode::Numpad6,
+        31 => VirtualKeyCode::Numpad7,
+        32 => VirtualKeyCode::Numpad8,
+        33 => VirtualKeyCode::Numpad9,
+        34 => VirtualKeyCode::NumpadMultiply,
+        35 => VirtualKeyCode::NumpadAdd,
+        36 => VirtualKeyCode::NumpadSeparator,
+        37 => VirtualKeyCode::NumpadSubtract,
+        38 => VirtualKeyCode::NumpadDecimal,
+        39 => VirtualKeyCode::NumpadDivide,
+        40 => VirtualKeyCode::F1,
+        41 => VirtualKeyCode::F2,
+        42 => VirtualKeyCode::F3,
+        43 => VirtualKeyCode::F4,
+        44 => VirtualKeyCode::F5,
+        45 => VirtualKeyCode::F6,
+        46 => VirtualKeyCode::F7,
+        47 => VirtualKeyCode::F8,
+        48 => VirtualKeyCode::F9,
+        49 => VirtualKeyCode::F10,
+        50 => VirtualKeyCode::F11,
+        51 => VirtualKeyCode::F12,
+        52 => VirtualKeyCode::NumLock,
+        53 => VirtualKeyCode::ScrollLock,
+        54 => VirtualKeyCode::Shift,
+        55 => VirtualKeyCode::Control,
+        56 => VirtualKeyCode::Alt,
+        57 => VirtualKeyCode::Equals,
+        58 => VirtualKeyCode::ContextMenu,
+        59 => VirtualKeyCode::MediaPlay,
+        60 => VirtualKeyCode::MediaStop,
+        61 => VirtualKeyCode::MediaPrevTrack,
+        62 => VirtualKeyCode::MediaNextTrack,
+        63 => VirtualKeyCode::VolumeUp,
+        64 => VirtualKeyCode::VolumeDown,
+        65 => VirtualKeyCode::F13,
+        66 => VirtualKeyCode::F14,
+        67 => VirtualKeyCode::F15,
+        68 => VirtualKeyCode::F16,
+        69 => VirtualKeyCode::F17,
+        70 => VirtualKeyCode::F18,
+        71 => VirtualKeyCode::F19,
+        72 => VirtualKeyCode::F20,
+        73 => VirtualKeyCode::F21,
+        74 => VirtualKeyCode::F22,
+        75 => VirtualKeyCode::F23,
+        76 => VirtualKeyCode::F24,
+        77 => VirtualKeyCode::Super,
+        _ => return None,
+    })
+}
+
+/// Convert the raw VST3 modifier bitmask (`KeyModifier` in the VST3
+/// SDK: `kShiftKey = 1`, `kAlternateKey = 2`, `kCommandKey = 4`,
+/// `kControlKey = 8`) to a [`Modifiers`] bitflags value. The VST3
+/// spec only defines bits 0-3; higher bits from a misbehaving host
+/// are dropped.
+fn vst3_modifiers(raw: i16) -> Modifiers {
+    Modifiers::from_bits_truncate(((raw as u32) & 0x0F) as u8)
+}
 
 // Alias needed for the VST3 attribute macro
 use vst3_sys as vst3_com;
@@ -175,6 +284,38 @@ impl<P: Vst3Plugin> WrapperView<P> {
     #[cfg(not(target_os = "linux"))]
     pub fn do_maybe_in_run_loop(&self, task: Task<P>) -> Result<(), Task<P>> {
         Err(task)
+    }
+
+    /// Forward a VST3 `IPlugView::onKey{Down,Up}` event to the editor's
+    /// host-virtual-key hook.
+    ///
+    /// Only forwards keys that carry a VST3 virtual key code in
+    /// [`VKEY_FIRST_CODE`]`..=`[`VKEY_LAST_CODE`]. Those are the keys
+    /// the host (notably REAPER) may intercept as accelerators before
+    /// they reach our native view: Space, Backspace, arrows, function
+    /// keys, modifier-only presses, etc. ASCII characters arrive with
+    /// `key_code >= VKEY_FIRST_ASCII (128)` per the VST3 SDK
+    /// (`pluginterfaces/base/keycodes.h`); those flow through the
+    /// plug-in window's native keyboard path (on macOS, AppKit
+    /// `keyDown:` + NSTextInputContext) and consuming them here would
+    /// double-dispatch text input.
+    fn dispatch_virtual_key(&self, key_code: i16, is_down: bool, modifiers: i16) -> tresult {
+        if !(VKEY_FIRST_CODE..=VKEY_LAST_CODE).contains(&key_code) {
+            return kResultFalse;
+        }
+        let Some(key_code) = vst3_virtual_key_code(key_code) else {
+            return kResultFalse;
+        };
+        let modifiers = vst3_modifiers(modifiers);
+        if self
+            .editor
+            .lock()
+            .on_virtual_key_from_host(key_code, is_down, modifiers)
+        {
+            kResultOk
+        } else {
+            kResultFalse
+        }
     }
 }
 
@@ -339,19 +480,19 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
     unsafe fn on_key_down(
         &self,
         _key: vst3_sys::base::char16,
-        _key_code: i16,
-        _modifiers: i16,
+        key_code: i16,
+        modifiers: i16,
     ) -> tresult {
-        kNotImplemented
+        self.dispatch_virtual_key(key_code, true, modifiers)
     }
 
     unsafe fn on_key_up(
         &self,
         _key: vst3_sys::base::char16,
-        _key_code: i16,
-        _modifiers: i16,
+        key_code: i16,
+        modifiers: i16,
     ) -> tresult {
-        kNotImplemented
+        self.dispatch_virtual_key(key_code, false, modifiers)
     }
 
     unsafe fn get_size(&self, size: *mut ViewRect) -> tresult {
