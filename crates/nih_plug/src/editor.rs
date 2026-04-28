@@ -1,5 +1,6 @@
 //! Traits for working with plugin editors.
 
+use bitflags::bitflags;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::any::Any;
 use std::ffi::c_void;
@@ -69,6 +70,45 @@ pub trait Editor: Send {
     /// loaded.
     fn param_values_changed(&self);
 
+    /// Called when the host delivers a virtual-key event to the plugin's
+    /// view. Return `true` if the editor consumed the key (the wrapper
+    /// will tell the host to skip its own accelerator handling); return
+    /// `false` to let the host process the key normally.
+    ///
+    /// The wrapper only invokes this for non-character "virtual" keys
+    /// ([`VirtualKeyCode::Backspace`], the arrow keys, function keys,
+    /// modifier presses, etc.). Plain printable characters arrive through
+    /// the plugin window's native keyboard path (on macOS, AppKit
+    /// `keyDown:` + NSTextInputContext) and are not routed here; consuming
+    /// them through this hook would double-dispatch text input.
+    ///
+    /// Both key-down and key-up events are delivered; `is_down` is
+    /// `true` for press, `false` for release. Plug-ins that consume a
+    /// key on press should generally also return `true` for the
+    /// matching release so the host doesn't pick up the release as a
+    /// separate accelerator.
+    ///
+    /// This is primarily for text-input routing in hosts (notably
+    /// REAPER) that intercept certain keys (Space, Backspace, arrows,
+    /// Cmd-shortcuts) before they reach the plugin's native view. The
+    /// editor should only return `true` if a text input in the editor
+    /// currently has focus and can consume the key.
+    ///
+    /// # Parameters
+    ///
+    /// - `key_code`: the virtual key the host reports.
+    /// - `is_down`: `true` for key-down, `false` for key-up.
+    /// - `modifiers`: which modifier keys were held when the event was
+    ///   generated.
+    fn on_virtual_key_from_host(
+        &self,
+        _key_code: VirtualKeyCode,
+        _is_down: bool,
+        _modifiers: Modifiers,
+    ) -> bool {
+        false
+    }
+
     // TODO: Reconsider adding a tick function here for the Linux `IRunLoop`. To keep this platform
     //       and API agnostic, add a way to ask the GuiContext if the wrapper already provides a
     //       tick function. If it does not, then the Editor implementation must handle this by
@@ -109,5 +149,124 @@ unsafe impl HasRawWindowHandle for ParentWindowHandle {
                 RawWindowHandle::Win32(handle)
             }
         }
+    }
+}
+
+/// A non-character key delivered to
+/// [`Editor::on_virtual_key_from_host`]. Variant names mirror standard
+/// keyboard nomenclature; printable ASCII characters never appear here
+/// because they flow through the plugin window's native keyboard path
+/// instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum VirtualKeyCode {
+    Backspace,
+    Tab,
+    Clear,
+    Return,
+    Pause,
+    Escape,
+    Space,
+    Next,
+    End,
+    Home,
+    ArrowLeft,
+    ArrowUp,
+    ArrowRight,
+    ArrowDown,
+    PageUp,
+    PageDown,
+    Select,
+    Print,
+    /// Numpad enter (distinct from [`VirtualKeyCode::Return`]).
+    NumpadEnter,
+    Snapshot,
+    Insert,
+    Delete,
+    Help,
+    Numpad0,
+    Numpad1,
+    Numpad2,
+    Numpad3,
+    Numpad4,
+    Numpad5,
+    Numpad6,
+    Numpad7,
+    Numpad8,
+    Numpad9,
+    NumpadMultiply,
+    NumpadAdd,
+    NumpadSeparator,
+    NumpadSubtract,
+    NumpadDecimal,
+    NumpadDivide,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    NumLock,
+    ScrollLock,
+    /// Shift key, delivered as a press/release on the modifier itself.
+    /// For most text-input purposes you want
+    /// [`Modifiers::SHIFT`] on the event's modifier set instead; the
+    /// dedicated press is useful only for editors that react to
+    /// modifier-only gestures.
+    Shift,
+    /// Control key (macOS Ctrl, platform-Ctrl elsewhere). See the note
+    /// on [`VirtualKeyCode::Shift`].
+    Control,
+    /// Alt / Option key. See the note on [`VirtualKeyCode::Shift`].
+    Alt,
+    Equals,
+    ContextMenu,
+    MediaPlay,
+    MediaStop,
+    MediaPrevTrack,
+    MediaNextTrack,
+    VolumeUp,
+    VolumeDown,
+    F13,
+    F14,
+    F15,
+    F16,
+    F17,
+    F18,
+    F19,
+    F20,
+    F21,
+    F22,
+    F23,
+    F24,
+    /// Super / Command / Windows key. See the note on
+    /// [`VirtualKeyCode::Shift`].
+    Super,
+}
+
+bitflags! {
+    /// Modifier keys held while a keyboard event was generated, as
+    /// reported by [`Editor::on_virtual_key_from_host`]. Use the
+    /// standard `bitflags` API (`contains`, `intersects`, `is_empty`,
+    /// etc.) to query individual modifiers.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+    pub struct Modifiers: u8 {
+        /// Shift key.
+        const SHIFT = 1 << 0;
+        /// Alt / Option key.
+        const ALT = 1 << 1;
+        /// Command key. On Windows / Linux this is typically the Ctrl
+        /// key. See [`Modifiers::CONTROL`] for the macOS Control key
+        /// specifically.
+        const COMMAND = 1 << 2;
+        /// Control key (macOS Ctrl, distinct from
+        /// [`Modifiers::COMMAND`]).
+        const CONTROL = 1 << 3;
     }
 }
