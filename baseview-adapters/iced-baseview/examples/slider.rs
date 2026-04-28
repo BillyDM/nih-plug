@@ -62,17 +62,17 @@ impl MyProgram {
     pub fn view(&self) -> Column<'_, Message> {
         let h_slider = container(
             slider(0.0..=1.0, self.value, Message::SliderChanged)
-                .default(0.5)
-                .step(0.01)
-                .shift_step(0.1),
+                .default(0.5f32)
+                .step(0.01f32)
+                .shift_step(0.1f32),
         )
         .width(250);
 
         let v_slider = container(
             vertical_slider(0.0..=1.0, self.value, Message::SliderChanged)
-                .default(0.5)
-                .step(0.01)
-                .shift_step(0.1),
+                .default(0.5f32)
+                .step(0.01f32)
+                .shift_step(0.1f32),
         )
         .height(200);
 

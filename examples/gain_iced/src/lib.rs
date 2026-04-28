@@ -284,7 +284,7 @@ impl MyGui {
                 params.gain.modulated_normalized_value(),
                 Message::GainChanged
             )
-            .step(0.001),
+            .step(0.001f32),
             text(
                 params
                     .gain
