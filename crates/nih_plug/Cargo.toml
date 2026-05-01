@@ -27,10 +27,6 @@ standalone = [
   "dep:midir",
   "dep:rtrb",
 ]
-# Enables opengl support in standalone mode.
-# TODO: Send PR to baseview to derive Default for WindowOpenOptions so that
-# this isn't necessary.
-standalone-opengl = ["standalone", "baseview?/opengl"]
 # Enables the `nih_export_vst3!()` macro. Enabled by default. This feature
 # exists mostly for GPL-compliance reasons, since even if you don't use the VST3
 # wrapper you might otherwise still include a couple (unused) symbols from the

@@ -28,13 +28,3 @@ log = { version = "0.4", features = ["max_level_debug"] }
 tracing = { version = "0.1.44", default-features = true, features = [
     "max_level_info",
 ] }
-
-[dev-dependencies]
-nih_plug = { path = "../../crates/nih_plug", default-features = true, features = [
-    "assert_process_allocs",
-    "standalone",
-    "standalone-opengl",
-] }
-nih_plug_iced = { path = "../../crates/nih_plug_iced", features = [
-    "rustanalyzer_opengl_workaround",
-] }

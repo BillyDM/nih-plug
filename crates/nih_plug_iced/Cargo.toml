@@ -75,9 +75,6 @@ unconditional-rendering = ["iced_baseview/unconditional-rendering"]
 sipper = ["iced_baseview/sipper"]
 # Enables the Unix X11 backend
 x11 = ["iced_baseview/x11"]
-rustanalyzer_opengl_workaround = [
-    "iced_baseview/rustanalyzer_opengl_workaround",
-]
 
 [dependencies]
 raw-window-handle.workspace = true
@@ -91,5 +88,3 @@ crossbeam-utils = "0.8"
 # To make the state persistable
 serde.workspace = true
 
-[dev-dependencies]
-nih_plug_iced = { path = ".", features = ["rustanalyzer_opengl_workaround"] }

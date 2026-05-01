@@ -21,7 +21,6 @@ egui = { workspace = true, features = ["default_fonts"] }
 nih_plug = { path = "../../crates/nih_plug", default-features = true, features = [
     "assert_process_allocs",
     "standalone",
-    "standalone-opengl",
 ] }
 nih_plug_egui = { path = "../../crates/nih_plug_egui", default-features = false, features = [
     "opengl",

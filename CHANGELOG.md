@@ -10,6 +10,18 @@ Since there is no stable release yet, the changes are organized per day in
 reverse chronological order. The main purpose of this document in its current
 state is to list breaking changes.
 
+## [2026-05-01]
+
+### Breaking changes
+- The `standalone-opengl` feature has been removed from the `nih_plug` crate as it's
+no longer needed.
+- The `rustanalyzer_opengl_workaround` feature has been removed from `nih_plug_iced`
+as it's no longer needed.
+
+### Changed
+- The `baseview` dependency has been updated to the latest commit from the official
+RustAudio repository.
+
 ## [2026-03-28]
 
 ### Breaking changes

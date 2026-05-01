@@ -64,8 +64,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
                     scale: scaling_factor
                         .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
                         .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-                    #[cfg(feature = "rustanalyzer_opengl_workaround")]
-                    gl_config: None,
+                    ..Default::default()
                 },
                 ignore_non_modifier_keys: self.settings.ignore_non_modifier_keys,
                 always_redraw: self.settings.always_redraw,

@@ -342,8 +342,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                             height: height as f64,
                         },
                         scale: scaling_policy,
-                        #[cfg(feature = "standalone-opengl")]
-                        gl_config: None,
+                        ..Default::default()
                     },
                     move |window| {
                         let parent_handle = match window.raw_window_handle() {

@@ -90,22 +90,36 @@ where
 
         let (unscaled_width, unscaled_height) = self.egui_state.size();
         let scaling_factor = self.scaling_factor.load();
+
+        #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
+        let window_settings = WindowOpenOptions {
+            title: String::from("egui window"),
+            // Baseview should be doing the DPI scaling for us
+            size: Size::new(unscaled_width as f64, unscaled_height as f64),
+            // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
+            //       not the mouse events.
+            scale: scaling_factor
+                .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+                .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+            gl_config: Some(gl_config),
+        };
+
+        #[cfg(feature = "wgpu")]
+        let window_settings = WindowOpenOptions {
+            title: String::from("egui window"),
+            // Baseview should be doing the DPI scaling for us
+            size: Size::new(unscaled_width as f64, unscaled_height as f64),
+            // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
+            //       not the mouse events.
+            scale: scaling_factor
+                .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+                .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+            ..Default::default()
+        };
+
         let window = EguiWindow::open_parented(
             &ParentWindowHandleAdapter(parent),
-            WindowOpenOptions {
-                title: String::from("egui window"),
-                // Baseview should be doing the DPI scaling for us
-                size: Size::new(unscaled_width as f64, unscaled_height as f64),
-                // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-                //       not the mouse events.
-                scale: scaling_factor
-                    .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                    .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-                #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-                gl_config: Some(gl_config),
-                #[cfg(feature = "wgpu")]
-                gl_config: None,
-            },
+            window_settings,
             self.settings.graphics_config.clone(),
             state,
             move |egui_ctx, queue, state| build(egui_ctx, queue, &mut state.lock()),
