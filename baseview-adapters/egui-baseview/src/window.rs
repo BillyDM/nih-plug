@@ -442,7 +442,8 @@ where
         }
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    #[allow(unused_variables)]
+    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus {
         let mut return_status = EventStatus::Captured;
 
         // Parent/embedded windows do not always gain keyboard focus
