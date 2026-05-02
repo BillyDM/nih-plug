@@ -7,8 +7,9 @@
 
 use crossbeam::atomic::AtomicCell;
 use egui::{Context, Ui};
-use nih_plug::params::persist::PersistentField;
-use nih_plug::prelude::{Editor, ParamSetter};
+use nih_plug_core::context::gui::ParamSetter;
+use nih_plug_core::editor::Editor;
+use nih_plug_core::params::persist::PersistentField;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -113,7 +114,7 @@ where
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EguiState {
     /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nih_plug::params::persist::serialize_atomic_cell")]
+    #[serde(with = "nih_plug_core::params::persist::serialize_atomic_cell")]
     size: AtomicCell<(u32, u32)>,
 
     /// The new size of the window, if it was requested to resize by the GUI.

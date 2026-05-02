@@ -2,8 +2,12 @@
 
 use std::sync::Arc;
 
+use crate::{
+    params::{Param, internals::ParamPtr},
+    plugin::{Plugin, PluginState},
+};
+
 use super::PluginApi;
-use crate::prelude::{Param, ParamPtr, Plugin, PluginState};
 
 /// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
 /// values. This is passed to the plugin during [`Editor::spawn()`][crate::prelude::Editor::spawn()]. All of
@@ -83,6 +87,18 @@ pub trait GuiContext: Send + Sync + 'static {
 pub struct AsyncExecutor<P: Plugin> {
     pub(crate) execute_background: Arc<dyn Fn(P::BackgroundTask) + Send + Sync>,
     pub(crate) execute_gui: Arc<dyn Fn(P::BackgroundTask) + Send + Sync>,
+}
+
+impl<P: Plugin> AsyncExecutor<P> {
+    pub fn new(
+        execute_background: Arc<dyn Fn(P::BackgroundTask) + Send + Sync>,
+        execute_gui: Arc<dyn Fn(P::BackgroundTask) + Send + Sync>,
+    ) -> Self {
+        Self {
+            execute_background,
+            execute_gui,
+        }
+    }
 }
 
 // Can't derive this since Rust then requires `P` to also be `Clone`able

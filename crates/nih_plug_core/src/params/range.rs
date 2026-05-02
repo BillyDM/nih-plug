@@ -1,6 +1,6 @@
 //! Different ranges for numeric parameters.
 
-use crate::util;
+use crate::{nih_debug_assert, util};
 
 /// A distribution for a floating point parameter's range. All range endpoints are inclusive.
 #[derive(Debug, Clone, Copy)]

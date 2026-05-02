@@ -2,16 +2,24 @@ use atomic_refcell::AtomicRefMut;
 use clap_sys::ext::remote_controls::{CLAP_REMOTE_CONTROLS_COUNT, clap_remote_controls_page};
 use clap_sys::id::{CLAP_INVALID_ID, clap_id};
 use clap_sys::string_sizes::CLAP_NAME_SIZE;
+use nih_plug_core::context::PluginApi;
+use nih_plug_core::context::gui::GuiContext;
+use nih_plug_core::context::init::InitContext;
+use nih_plug_core::context::process::{ProcessContext, Transport};
+use nih_plug_core::context::remote_controls::{
+    RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
+};
+use nih_plug_core::midi::PluginNoteEvent;
+use nih_plug_core::params::Param;
+use nih_plug_core::params::internals::ParamPtr;
+use nih_plug_core::plugin::PluginState;
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use super::wrapper::{OutputParamEvent, Task, Wrapper};
 use crate::event_loop::EventLoop;
-use crate::prelude::{
-    ClapPlugin, GuiContext, InitContext, ParamPtr, PluginApi, PluginNoteEvent, ProcessContext,
-    RemoteControlsContext, RemoteControlsPage, RemoteControlsSection, Transport,
-};
+use crate::wrapper::clap::ClapPlugin;
 use crate::wrapper::util::strlcpy;
 
 /// An [`InitContext`] implementation for the wrapper.
@@ -97,12 +105,12 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
 
     fn execute_background(&self, task: P::BackgroundTask) {
         let task_posted = self.wrapper.schedule_background(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     fn execute_gui(&self, task: P::BackgroundTask) {
         let task_posted = self.wrapper.schedule_gui(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     #[inline]
@@ -145,13 +153,13 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                     .wrapper
                     .queue_parameter_event(OutputParamEvent::BeginGesture { param_hash: *hash });
 
-                nih_debug_assert!(
+                crate::nih_debug_assert!(
                     success,
                     "Parameter output event queue was full, parameter change will not be sent to \
                      the host"
                 );
             }
-            None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+            None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
         }
 
         #[cfg(debug_assertions)]
@@ -160,7 +168,7 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                 .param_gesture_checker
                 .borrow_mut()
                 .begin_set_parameter(param_id),
-            None => nih_debug_assert_failure!(
+            None => crate::nih_debug_assert_failure!(
                 "raw_begin_set_parameter() called with an unknown ParamPtr"
             ),
         }
@@ -183,13 +191,13 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                         clap_plain_value,
                     });
 
-                nih_debug_assert!(
+                crate::nih_debug_assert!(
                     success,
                     "Parameter output event queue was full, parameter change will not be sent to \
                      the host"
                 );
             }
-            None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+            None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
         }
 
         #[cfg(debug_assertions)]
@@ -199,7 +207,9 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                 .borrow_mut()
                 .set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }
@@ -211,13 +221,13 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                     .wrapper
                     .queue_parameter_event(OutputParamEvent::EndGesture { param_hash: *hash });
 
-                nih_debug_assert!(
+                crate::nih_debug_assert!(
                     success,
                     "Parameter output event queue was full, parameter change will not be sent to \
                      the host"
                 );
             }
-            None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+            None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
         }
 
         #[cfg(debug_assertions)]
@@ -227,16 +237,18 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                 .borrow_mut()
                 .end_set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_end_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_end_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }
 
-    fn get_state(&self) -> crate::wrapper::state::PluginState {
+    fn get_state(&self) -> PluginState {
         self.wrapper.get_state_object()
     }
 
-    fn set_state(&self, state: crate::wrapper::state::PluginState) {
+    fn set_state(&self, state: PluginState) {
         self.wrapper.set_state_object_from_gui(state)
     }
 }
@@ -295,7 +307,7 @@ impl<'a> RemoteControlPages<'a> {
             }
         }
 
-        nih_debug_assert!(
+        crate::nih_debug_assert!(
             params.next().is_none(),
             "More than eight parameters were passed to 'RemoteControlPages::add_page()', this is \
              a NIH-plug bug."
@@ -310,7 +322,7 @@ impl<'a> RemoteControlPages<'a> {
         match self.param_ptr_to_hash.get(&ptr) {
             Some(id) => *id,
             None => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "An unknown parameter was added to a remote control page, ignoring..."
                 );
 
@@ -367,7 +379,7 @@ impl RemoteControlsSection for Section {
 }
 
 impl RemoteControlsPage for Page {
-    fn add_param(&mut self, param: &impl crate::prelude::Param) {
+    fn add_param(&mut self, param: &impl Param) {
         self.params.push(Some(param.as_ptr()));
     }
 

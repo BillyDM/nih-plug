@@ -3,7 +3,8 @@
 use std::num::NonZeroU32;
 use std::ptr::NonNull;
 
-use crate::prelude::{AudioIOLayout, Buffer};
+use nih_plug_core::audio_setup::AudioIOLayout;
+use nih_plug_core::buffer::Buffer;
 
 /// Buffers created using [`create_buffers`]. At some point the main `Plugin::process()` should
 /// probably also take an argument like this instead of main+aux buffers if we also want to provide
@@ -74,7 +75,7 @@ impl BufferManager {
     /// Initialize managed buffers for a specific audio IO layout. The actual buffers can be set up
     /// using channel pointer data using [`create_buffers()`][Self::create_buffers()].
     pub fn for_audio_io_layout(max_buffer_size: usize, audio_io_layout: AudioIOLayout) -> Self {
-        nih_debug_assert!(
+        crate::nih_debug_assert!(
             audio_io_layout
                 .main_input_channels
                 .map(NonZeroU32::get)
@@ -187,7 +188,7 @@ impl BufferManager {
             self.main_buffer.set_slices(num_samples, |output_slices| {
                 match self.main_output_channel_pointers {
                     Some(output_channel_pointers) => {
-                        nih_debug_assert_eq!(
+                        crate::nih_debug_assert_eq!(
                             output_slices.len(),
                             output_channel_pointers.num_channels
                         );
@@ -210,7 +211,7 @@ impl BufferManager {
                         output_slices[output_channel_pointers.num_channels..].fill_with(|| &mut [])
                     }
                     None => {
-                        nih_debug_assert_eq!(output_slices.len(), 0);
+                        crate::nih_debug_assert_eq!(output_slices.len(), 0);
 
                         // Same as above
                         output_slices.fill_with(|| &mut [])
@@ -275,10 +276,13 @@ impl BufferManager {
         {
             // Since these buffers are backed by our own storage, we can fill them with zeroes if
             // the pointers are missing for whatever reason that might be
-            nih_debug_assert!(input_channel_pointers.is_some());
+            crate::nih_debug_assert!(input_channel_pointers.is_some());
             match input_channel_pointers {
                 Some(input_channel_pointers) => {
-                    nih_debug_assert_eq!(input_channel_pointers.num_channels, input_storage.len());
+                    crate::nih_debug_assert_eq!(
+                        input_channel_pointers.num_channels,
+                        input_storage.len()
+                    );
                     for (channel_idx, channel) in input_storage
                         .iter_mut()
                         .enumerate()
@@ -287,7 +291,7 @@ impl BufferManager {
                         let input_channel_pointer =
                             unsafe { input_channel_pointers.ptrs.as_ptr().add(channel_idx) };
 
-                        nih_debug_assert!(num_samples <= channel.capacity());
+                        crate::nih_debug_assert!(num_samples <= channel.capacity());
                         channel.resize(num_samples, 0.0);
                         channel.copy_from_slice(unsafe {
                             std::slice::from_raw_parts_mut(
@@ -339,7 +343,7 @@ impl BufferManager {
                 output_buffer.set_slices(num_samples, |output_slices| {
                     match output_channel_pointers {
                         Some(output_channel_pointers) => {
-                            nih_debug_assert_eq!(
+                            crate::nih_debug_assert_eq!(
                                 output_slices.len(),
                                 output_channel_pointers.num_channels
                             );
@@ -367,7 +371,7 @@ impl BufferManager {
                                 .fill_with(|| &mut [])
                         }
                         None => {
-                            nih_debug_assert_eq!(output_slices.len(), 0);
+                            crate::nih_debug_assert_eq!(output_slices.len(), 0);
 
                             // Same as above
                             output_slices.fill_with(|| &mut [])
@@ -392,8 +396,9 @@ impl BufferManager {
 
 #[cfg(any(miri, test))]
 mod miri {
+    use nih_plug_core::audio_setup::{PortNames, new_nonzero_u32};
+
     use super::*;
-    use crate::prelude::{PortNames, new_nonzero_u32};
 
     const BUFFER_SIZE: usize = 512;
     const NUM_MAIN_INPUT_CHANNELS: usize = 1;

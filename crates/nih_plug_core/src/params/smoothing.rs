@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 // Re-exported here because it's sued in `SmoothingStyle`.
 pub use atomic_float::AtomicF32;
 
+use crate::{nih_debug_assert, nih_debug_assert_ne};
+
 /// Controls if and how parameters gets smoothed.
 #[derive(Debug, Clone)]
 pub enum SmoothingStyle {

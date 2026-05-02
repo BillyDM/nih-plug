@@ -83,32 +83,14 @@
 //! figure out the rest by reading through the examples and the API documentation. Good luck!
 
 #![cfg_attr(feature = "docs", feature(doc_auto_cfg))]
-#![cfg_attr(feature = "simd", feature(portable_simd))]
 
-// These macros are also in the crate root and in the prelude, but having the module itself be pub
-// as well makes it easy to import _just_ the macros without using `#[macro_use] extern crate nih_plug;`
-#[macro_use]
-pub mod debug;
-
-/// A re-export of the `log` crate for use in the debug macros. This should not be used directly.
-pub use log;
+pub use nih_plug_core::*;
 
 /// Everything you'll need to use NIH-plug. Import this with `use nih_plug::prelude::*;`.
 pub mod prelude;
-
-// These modules are also re-exported in the prelude
-pub mod formatters;
-pub mod util;
-
-pub mod audio_setup;
-pub mod buffer;
-pub mod context;
-pub mod editor;
-mod event_loop;
-pub mod midi;
-pub mod params;
-pub mod plugin;
 pub mod wrapper;
+
+mod event_loop;
 
 // This is also re-exported from the prelude but since the other export entry points are macros and
 // macros are always accessible from the crate's root, it seems like a good idea to keep the

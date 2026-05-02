@@ -21,7 +21,7 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 
 [dependencies]
 raw-window-handle.workspace = true
-nih_plug = { path = "../nih_plug" }
+nih_plug_core = { path = "../nih_plug_core", version = "0.1" }
 egui-baseview = { path = "../../baseview-adapters/egui-baseview", default-features = false, features = [
     "nih_log",
 ] }

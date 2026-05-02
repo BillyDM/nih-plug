@@ -16,7 +16,7 @@ use std::time::Instant;
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::{debug, error, warn};
+use nih_plug_core::log::{debug, error, warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::{debug, error, warn};

@@ -4,7 +4,7 @@ use crate::core::clipboard::Kind;
 use raw_window_handle_06::HasDisplayHandle;
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::warn;
+use nih_plug_core::log::warn;
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::warn;
 

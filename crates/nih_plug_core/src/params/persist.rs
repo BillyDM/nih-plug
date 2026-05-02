@@ -200,7 +200,7 @@ impl_persistent_atomic!(std::sync::atomic::AtomicUsize, usize);
 impl_persistent_atomic!(atomic_float::AtomicF32, f32);
 impl_persistent_atomic!(atomic_float::AtomicF64, f64);
 
-impl<'a, T> PersistentField<'a, T> for crossbeam::atomic::AtomicCell<T>
+impl<'a, T> PersistentField<'a, T> for crossbeam_utils::atomic::AtomicCell<T>
 where
     T: serde::Serialize + serde::Deserialize<'a> + Copy + Send,
 {
@@ -214,13 +214,13 @@ where
         f(&self.load())
     }
 }
-impl_persistent_arc!(crossbeam::atomic::AtomicCell<T>,
+impl_persistent_arc!(crossbeam_utils::atomic::AtomicCell<T>,
                      T: serde::Serialize + serde::Deserialize<'a> + Copy + Send);
 
 /// Can be used with the `#[serde(with = "nih_plug::params::internals::serialize_atomic_cell")]`
 /// attribute to serialize `AtomicCell<T>`s.
 pub mod serialize_atomic_cell {
-    use crossbeam::atomic::AtomicCell;
+    use crossbeam_utils::atomic::AtomicCell;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S, T>(cell: &AtomicCell<T>, serializer: S) -> Result<S::Ok, S::Error>

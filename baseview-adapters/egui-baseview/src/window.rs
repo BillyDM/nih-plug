@@ -12,7 +12,7 @@ use raw_window_handle::HasRawWindowHandle;
 use crate::{GraphicsConfig, renderer::Renderer};
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::{error, warn};
+use nih_plug_core::log::{error, warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::{error, warn};

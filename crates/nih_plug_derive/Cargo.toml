@@ -2,8 +2,11 @@
 name = "nih_plug_derive"
 version = "0.1.0"
 edition.workspace = true
-authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Proc macros for the NIH-plug framework"
+keywords = ["audio", "plugin", "vst", "vst3"]
 
 [lib]
 proc-macro = true

@@ -1,7 +1,8 @@
 //! A context passed during the process function.
 
+use crate::{midi::PluginNoteEvent, plugin::Plugin};
+
 use super::PluginApi;
-use crate::prelude::{Plugin, PluginNoteEvent};
 
 /// Contains both context data and callbacks the plugin can use during processing. Most notably this
 /// is how a plugin sends and receives note events, gets transport information, and accesses
@@ -123,38 +124,38 @@ pub struct Transport {
     // XXX: VST3 also has a continuous time in samples that ignores loops, but we can't reconstruct
     //      something similar in CLAP so it may be best to just ignore that so you can't rely on it
     /// The position in the song in samples. Can be used to calculate the time in seconds if needed.
-    pub(crate) pos_samples: Option<i64>,
+    pub pos_samples: Option<i64>,
     /// The position in the song in seconds. Can be used to calculate the time in samples if needed.
-    pub(crate) pos_seconds: Option<f64>,
+    pub pos_seconds: Option<f64>,
     /// The position in the song in quarter notes. Can be calculated from the time in seconds and
     /// the tempo if needed.
-    pub(crate) pos_beats: Option<f64>,
+    pub pos_beats: Option<f64>,
     /// The last bar's start position in beats. Can be calculated from the beat position and time
     /// signature if needed.
-    pub(crate) bar_start_pos_beats: Option<f64>,
+    pub bar_start_pos_beats: Option<f64>,
     /// The number of the bar at `bar_start_pos_beats`. This starts at 0 for the very first bar at
     /// the start of the song. Can be calculated from the beat position and time signature if
     /// needed.
-    pub(crate) bar_number: Option<i32>,
+    pub bar_number: Option<i32>,
 
     /// The loop range in samples, if the loop is active and this information is available. None of
     /// the plugin API docs mention whether this is exclusive or inclusive, but just assume that the
     /// end is exclusive. Can be calculated from the other loop range information if needed.
-    pub(crate) loop_range_samples: Option<(i64, i64)>,
+    pub loop_range_samples: Option<(i64, i64)>,
     /// The loop range in seconds, if the loop is active and this information is available. None of
     /// the plugin API docs mention whether this is exclusive or inclusive, but just assume that the
     /// end is exclusive. Can be calculated from the other loop range information if needed.
-    pub(crate) loop_range_seconds: Option<(f64, f64)>,
+    pub loop_range_seconds: Option<(f64, f64)>,
     /// The loop range in quarter notes, if the loop is active and this information is available.
     /// None of the plugin API docs mention whether this is exclusive or inclusive, but just assume
     /// that the end is exclusive. Can be calculated from the other loop range information if
     /// needed.
-    pub(crate) loop_range_beats: Option<(f64, f64)>,
+    pub loop_range_beats: Option<(f64, f64)>,
 }
 
 impl Transport {
     /// Initialize the transport struct without any information.
-    pub(crate) fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
             playing: false,
             recording: false,

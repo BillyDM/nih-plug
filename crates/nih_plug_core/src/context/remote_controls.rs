@@ -2,7 +2,7 @@
 //! pages](https://github.com/free-audio/clap/blob/main/include/clap/ext/draft/remote-controls.h)
 //! for CLAP plugins.
 
-use crate::prelude::Param;
+use crate::params::Param;
 
 /// A context for defining plugin-specific [remote
 /// pages](https://github.com/free-audio/clap/blob/main/include/clap/ext/draft/remote-controls.h)

@@ -128,6 +128,8 @@ impl<'a> Buffer<'a> {
 
         #[cfg(debug_assertions)]
         for slice in &self.output_slices {
+            use crate::nih_debug_assert_eq;
+
             nih_debug_assert_eq!(slice.len(), num_samples);
         }
     }

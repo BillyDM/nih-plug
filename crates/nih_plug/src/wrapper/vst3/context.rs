@@ -1,14 +1,22 @@
 use atomic_refcell::AtomicRefMut;
+use nih_plug_core::{
+    context::{
+        PluginApi,
+        gui::GuiContext,
+        init::InitContext,
+        process::{ProcessContext, Transport},
+    },
+    midi::PluginNoteEvent,
+    params::internals::ParamPtr,
+    plugin::PluginState,
+};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use vst3_sys::vst::IComponentHandler;
 
-use crate::prelude::{
-    GuiContext, InitContext, ParamPtr, PluginApi, PluginNoteEvent, PluginState, ProcessContext,
-    Transport, Vst3Plugin,
-};
+use crate::wrapper::vst3::Vst3Plugin;
 
 use super::inner::{Task, WrapperInner};
 
@@ -88,12 +96,12 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
 
     fn execute_background(&self, task: P::BackgroundTask) {
         let task_posted = self.inner.schedule_background(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     fn execute_gui(&self, task: P::BackgroundTask) {
         let task_posted = self.inner.schedule_gui(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     #[inline]
@@ -125,7 +133,7 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
 
     fn request_resize(&self) -> bool {
         let task_posted = self.inner.schedule_gui(Task::RequestResize);
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
 
         // TODO: We don't handle resize request failures right now. In practice this should however
         //       not happen.
@@ -140,9 +148,9 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                 Some(hash) => unsafe {
                     handler.begin_edit(*hash);
                 },
-                None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+                None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
-            None => nih_debug_assert_failure!("Component handler not yet set"),
+            None => crate::nih_debug_assert_failure!("Component handler not yet set"),
         }
 
         #[cfg(debug_assertions)]
@@ -151,7 +159,7 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                 .param_gesture_checker
                 .borrow_mut()
                 .begin_set_parameter(param_id),
-            None => nih_debug_assert_failure!(
+            None => crate::nih_debug_assert_failure!(
                 "raw_begin_set_parameter() called with an unknown ParamPtr"
             ),
         }
@@ -183,9 +191,9 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                         handler.perform_edit(*hash, normalized as f64);
                     }
                 }
-                None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+                None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
-            None => nih_debug_assert_failure!("Component handler not yet set"),
+            None => crate::nih_debug_assert_failure!("Component handler not yet set"),
         }
 
         #[cfg(debug_assertions)]
@@ -195,7 +203,9 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                 .borrow_mut()
                 .set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }
@@ -206,9 +216,9 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                 Some(hash) => unsafe {
                     handler.end_edit(*hash);
                 },
-                None => nih_debug_assert_failure!("Unknown parameter: {:?}", param),
+                None => crate::nih_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
-            None => nih_debug_assert_failure!("Component handler not yet set"),
+            None => crate::nih_debug_assert_failure!("Component handler not yet set"),
         }
 
         #[cfg(debug_assertions)]
@@ -218,7 +228,9 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                 .borrow_mut()
                 .end_set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_end_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_end_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }

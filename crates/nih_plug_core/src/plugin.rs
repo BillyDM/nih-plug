@@ -3,14 +3,17 @@
 
 use std::sync::Arc;
 
-use crate::prelude::{
-    AsyncExecutor, AudioIOLayout, AuxiliaryBuffers, Buffer, BufferConfig, Editor, InitContext,
-    MidiConfig, Params, PluginState, ProcessContext, SysExMessage,
-};
+mod state;
+pub use state::*;
 
-pub mod clap;
-#[cfg(feature = "vst3")]
-pub mod vst3;
+use crate::{
+    audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig},
+    buffer::Buffer,
+    context::{gui::AsyncExecutor, init::InitContext, process::ProcessContext},
+    editor::Editor,
+    midi::{MidiConfig, sysex::SysExMessage},
+    params::Params,
+};
 
 /// A function that can execute a plugin's [`BackgroundTask`][Plugin::BackgroundTask]s. A plugin can
 /// dispatch these tasks from the `initialize()` function, the `process()` function, or the GUI, so

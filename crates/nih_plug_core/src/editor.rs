@@ -6,7 +6,7 @@ use std::any::Any;
 use std::ffi::c_void;
 use std::sync::Arc;
 
-use crate::prelude::GuiContext;
+use crate::context::gui::GuiContext;
 
 /// An editor for a [`Plugin`][crate::prelude::Plugin].
 pub trait Editor: Send {

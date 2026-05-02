@@ -5,10 +5,12 @@ use std::fmt::{Debug, Display};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use crate::nih_debug_assert;
+
 use super::internals::ParamPtr;
 use super::range::FloatRange;
 use super::smoothing::{Smoother, SmoothingStyle};
-use super::{Param, ParamFlags, ParamMut};
+use super::{InternalParamMut, Param, ParamFlags};
 
 /// A floating point parameter that's stored unnormalized. The range is used for the normalization
 /// process.
@@ -203,8 +205,8 @@ impl Param for FloatParam {
     }
 }
 
-impl ParamMut for FloatParam {
-    fn set_plain_value(&self, plain: Self::Plain) -> bool {
+impl InternalParamMut for FloatParam {
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool {
         let unmodulated_value = plain;
         let unmodulated_normalized_value = self.preview_normalized(plain);
 
@@ -239,23 +241,23 @@ impl ParamMut for FloatParam {
         }
     }
 
-    fn set_normalized_value(&self, normalized: f32) -> bool {
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool {
         // NOTE: The double conversion here is to make sure the state is reproducible. State is
         //       saved and restored using plain values, and the new normalized value will be
         //       different from `normalized`. This is not necessary for the modulation as these
         //       values are never shown to the host.
-        self.set_plain_value(self.preview_plain(normalized))
+        unsafe { self._internal_set_plain_value(self.preview_plain(normalized)) }
     }
 
-    fn modulate_value(&self, modulation_offset: f32) -> bool {
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool {
         self.modulation_offset
             .store(modulation_offset, Ordering::Relaxed);
 
         // TODO: This renormalizes this value, which is not necessary
-        self.set_plain_value(self.unmodulated_plain_value())
+        unsafe { self._internal_set_plain_value(self.unmodulated_plain_value()) }
     }
 
-    fn update_smoother(&self, sample_rate: f32, reset: bool) {
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool) {
         if reset {
             self.smoothed.reset(self.modulated_plain_value());
         } else {

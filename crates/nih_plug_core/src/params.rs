@@ -191,8 +191,9 @@ pub trait Param: Display + Debug + sealed::Sealed {
     fn as_ptr(&self) -> internals::ParamPtr;
 }
 
-/// Contains the setters for parameters. These should not be exposed to plugins to avoid confusion.
-pub(crate) trait ParamMut: Param {
+/// Contains the setters for parameters. Only to be used by nih-plug's internal libraries.
+/// These are exposed as unsafe methods to avoid confusion.
+pub trait InternalParamMut: Param {
     /// Set this parameter based on a plain, unnormalized value. This does not snap to step sizes
     /// for continuous parameters (i.e. [`FloatParam`]). If
     /// [`modulate_value()`][Self::modulate_value()] has previously been called with a non zero
@@ -202,7 +203,10 @@ pub(crate) trait ParamMut: Param {
     /// has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn set_plain_value(&self, plain: Self::Plain) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool;
 
     /// Set this parameter based on a normalized value. The normalized value will be snapped to the
     /// step size for continuous parameters (i.e. [`FloatParam`]). If
@@ -213,7 +217,10 @@ pub(crate) trait ParamMut: Param {
     /// has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn set_normalized_value(&self, normalized: f32) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool;
 
     /// Add a modulation offset to the value's unmodulated value. This value sticks until this
     /// function is called again with a 0.0 value. Out of bound values will be clamped to the
@@ -224,12 +231,18 @@ pub(crate) trait ParamMut: Param {
     /// has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn modulate_value(&self, modulation_offset: f32) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool;
 
     /// Update the smoother state to point to the current value. Also used when initializing and
     /// restoring a plugin so everything is in sync. In that case the smoother should completely
     /// reset to the current value.
-    fn update_smoother(&self, sample_rate: f32, reset: bool);
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool);
 }
 
 /// Describes a struct containing parameters and other persistent fields.

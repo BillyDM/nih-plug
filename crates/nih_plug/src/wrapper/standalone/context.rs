@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
+use nih_plug_core::context::PluginApi;
+use nih_plug_core::context::gui::GuiContext;
+use nih_plug_core::context::init::InitContext;
+use nih_plug_core::context::process::{ProcessContext, Transport};
+use nih_plug_core::midi::PluginNoteEvent;
+use nih_plug_core::params::internals::ParamPtr;
+use nih_plug_core::plugin::{Plugin, PluginState};
+
 use super::backend::Backend;
 use super::wrapper::{Task, Wrapper};
-use crate::prelude::{
-    GuiContext, InitContext, ParamPtr, Plugin, PluginApi, PluginNoteEvent, ProcessContext,
-    Transport,
-};
 
 /// An [`InitContext`] implementation for the standalone wrapper.
 pub(crate) struct WrapperInitContext<'a, P: Plugin, B: Backend<P>> {
@@ -61,12 +65,12 @@ impl<P: Plugin, B: Backend<P>> ProcessContext<P> for WrapperProcessContext<'_, P
 
     fn execute_background(&self, task: P::BackgroundTask) {
         let task_posted = self.wrapper.schedule_background(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     fn execute_gui(&self, task: P::BackgroundTask) {
         let task_posted = self.wrapper.schedule_gui(Task::PluginTask(task));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     #[inline]
@@ -118,7 +122,7 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
                 .param_gesture_checker
                 .borrow_mut()
                 .begin_set_parameter(param_id),
-            None => nih_debug_assert_failure!(
+            None => crate::nih_debug_assert_failure!(
                 "raw_begin_set_parameter() called with an unknown ParamPtr"
             ),
         }
@@ -134,7 +138,9 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
                 .borrow_mut()
                 .set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }
@@ -147,16 +153,18 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
                 .borrow_mut()
                 .end_set_parameter(param_id),
             None => {
-                nih_debug_assert_failure!("raw_end_set_parameter() called with an unknown ParamPtr")
+                crate::nih_debug_assert_failure!(
+                    "raw_end_set_parameter() called with an unknown ParamPtr"
+                )
             }
         }
     }
 
-    fn get_state(&self) -> crate::wrapper::state::PluginState {
+    fn get_state(&self) -> PluginState {
         self.wrapper.get_state_object()
     }
 
-    fn set_state(&self, state: crate::wrapper::state::PluginState) {
+    fn set_state(&self, state: PluginState) {
         self.wrapper.set_state_object_from_gui(state)
     }
 }

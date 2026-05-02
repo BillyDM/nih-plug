@@ -7,6 +7,11 @@ use crossbeam::sync::{Parker, Unparker};
 use midir::{
     MidiInput, MidiInputConnection, MidiInputPort, MidiOutput, MidiOutputConnection, MidiOutputPort,
 };
+use nih_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers};
+use nih_plug_core::buffer::Buffer;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
+use nih_plug_core::plugin::Plugin;
 use parking_lot::Mutex;
 use rtrb::RingBuffer;
 use std::borrow::Borrow;
@@ -17,10 +22,6 @@ use std::thread::ScopedJoinHandle;
 use super::super::config::WrapperConfig;
 use super::Backend;
 use crate::midi::MidiResult;
-use crate::prelude::{
-    AudioIOLayout, AuxiliaryBuffers, Buffer, MidiConfig, NoteEvent, Plugin, PluginNoteEvent,
-    Transport,
-};
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 
 const MIDI_EVENT_QUEUE_CAPACITY: usize = 2048;
@@ -140,7 +141,7 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                 let error_cb = {
                     let input_unparker = input_unparker.clone();
                     move |err| {
-                        nih_error!("Error during capture: {err:#}");
+                        crate::nih_error!("Error during capture: {err:#}");
                         input_unparker.clone().unpark();
                     }
                 };
@@ -204,7 +205,9 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                         }),
                         Err(err) => {
                             // We won't retry once this fails
-                            nih_error!("Could not create the MIDI input connection: {err:#}");
+                            crate::nih_error!(
+                                "Could not create the MIDI input connection: {err:#}"
+                            );
                             midi_input_rb_consumer = None;
 
                             None
@@ -239,18 +242,24 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                                     MidiOutputTask::Send(event) => match event.as_midi() {
                                         Some(MidiResult::Basic(midi_data)) => {
                                             if let Err(err) = connection.send(&midi_data) {
-                                                nih_error!("Could not send MIDI event: {err}");
+                                                crate::nih_error!(
+                                                    "Could not send MIDI event: {err}"
+                                                );
                                             }
                                         }
                                         Some(MidiResult::SysEx(padded_sysex_buffer, length)) => {
                                             // The SysEx buffer may contain padding
                                             let padded_sysex_buffer = padded_sysex_buffer.borrow();
-                                            nih_debug_assert!(length <= padded_sysex_buffer.len());
+                                            crate::nih_debug_assert!(
+                                                length <= padded_sysex_buffer.len()
+                                            );
 
                                             if let Err(err) =
                                                 connection.send(&padded_sysex_buffer[..length])
                                             {
-                                                nih_error!("Could not send MIDI event: {err}");
+                                                crate::nih_error!(
+                                                    "Could not send MIDI event: {err}"
+                                                );
                                             }
                                         }
                                         None => (),
@@ -268,7 +277,9 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                             }
                         })),
                         Err(err) => {
-                            nih_error!("Could not create the MIDI output connection: {err:#}");
+                            crate::nih_error!(
+                                "Could not create the MIDI output connection: {err:#}"
+                            );
                             midi_output_rb_producer = None;
 
                             None
@@ -283,7 +294,7 @@ impl<P: Plugin> Backend<P> for CpalMidir {
             let error_cb = {
                 let unparker = unparker.clone();
                 move |err| {
-                    nih_error!("Error during playback: {err:#}");
+                    crate::nih_error!("Error during playback: {err:#}");
                     unparker.clone().unpark();
                 }
             };
@@ -368,17 +379,17 @@ impl CpalMidir {
         let host = cpal::host_from_id(cpal_host_id).context("The Audio API is unavailable")?;
 
         if config.input_device.is_none() && audio_io_layout.main_input_channels.is_some() {
-            nih_log!(
+            crate::nih_log!(
                 "Audio inputs are not connected automatically to prevent feedback. Use the \
                  '--input-device' option to choose an input device."
             )
         }
 
         if config.midi_input.is_none() && P::MIDI_INPUT >= MidiConfig::Basic {
-            nih_log!("Use the '--midi-input' option to select a MIDI input device.")
+            crate::nih_log!("Use the '--midi-input' option to select a MIDI input device.")
         }
         if config.midi_output.is_none() && P::MIDI_OUTPUT >= MidiConfig::Basic {
-            nih_log!("Use the '--midi-output' option to select a MIDI output device.")
+            crate::nih_log!("Use the '--midi-output' option to select a MIDI output device.")
         }
 
         // No input device is connected unless requested by the user to avoid feedback loops
@@ -526,10 +537,10 @@ impl CpalMidir {
         // There's no obvious way to do sidechain inputs and additional outputs with the CPAL
         // backends like there is with JACK. So we'll just provide empty buffers instead.
         if !audio_io_layout.aux_input_ports.is_empty() {
-            nih_warn!("Sidechain inputs are not supported with this audio backend");
+            crate::nih_warn!("Sidechain inputs are not supported with this audio backend");
         }
         if !audio_io_layout.aux_output_ports.is_empty() {
-            nih_warn!("Auxiliary outputs are not supported with this audio backend");
+            crate::nih_warn!("Auxiliary outputs are not supported with this audio backend");
         }
 
         let midi_input = match &config.midi_input {
@@ -663,7 +674,7 @@ impl CpalMidir {
             // the timings to the first sample in the buffer
             if let Ok(event) = NoteEvent::from_midi(0, midi_data) {
                 if midi_input_rb_producer.push(event).is_err() {
-                    nih_error!("The MIDI input event queue was full, dropping event");
+                    crate::nih_error!("The MIDI input event queue was full, dropping event");
                 }
             }
         }
@@ -915,7 +926,7 @@ impl CpalMidir {
                         .try_send(MidiOutputTask::Send(event))
                         .is_err()
                     {
-                        nih_error!("The MIDI output event queue was full, dropping event");
+                        crate::nih_error!("The MIDI output event queue was full, dropping event");
                         break;
                     }
                 }

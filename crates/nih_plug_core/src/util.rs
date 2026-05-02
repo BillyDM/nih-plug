@@ -15,7 +15,7 @@ pub const NOTES: [&str; 12] = [
 /// `assert_process_allocs` feature.
 #[cfg(all(debug_assertions, feature = "assert_process_allocs"))]
 pub fn permit_alloc<T, F: FnOnce() -> T>(func: F) -> T {
-    assert_no_alloc::permit_alloc(func)
+    nih_assert_no_alloc::permit_alloc(func)
 }
 
 /// Temporarily allow allocations within `func` if NIH-plug was configured with the

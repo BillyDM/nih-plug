@@ -63,6 +63,15 @@ use clap_sys::stream::{clap_istream, clap_ostream};
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::{self, SendTimeoutError};
 use crossbeam::queue::ArrayQueue;
+use nih_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig, ProcessMode};
+use nih_plug_core::context::gui::AsyncExecutor;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::editor::{Editor, ParentWindowHandle};
+use nih_plug_core::midi::sysex::SysExMessage;
+use nih_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
+use nih_plug_core::params::internals::ParamPtr;
+use nih_plug_core::params::{ParamFlags, Params};
+use nih_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
 use std::any::Any;
 use std::borrow::Borrow;
@@ -82,15 +91,11 @@ use super::descriptor::PluginDescriptor;
 use super::util::ClapPtr;
 use crate::event_loop::{BackgroundThread, EventLoop, MainThreadExecutor, TASK_QUEUE_CAPACITY};
 use crate::midi::MidiResult;
-use crate::prelude::{
-    AsyncExecutor, AudioIOLayout, AuxiliaryBuffers, BufferConfig, ClapPlugin, Editor, MidiConfig,
-    NoteEvent, ParamFlags, ParamPtr, Params, ParentWindowHandle, Plugin, PluginNoteEvent,
-    ProcessMode, ProcessStatus, SysExMessage, TaskExecutor, Transport,
-};
 use crate::util::permit_alloc;
+use crate::wrapper::clap::ClapPlugin;
 use crate::wrapper::clap::context::RemoteControlPages;
 use crate::wrapper::clap::util::{read_stream, write_stream};
-use crate::wrapper::state::{self, PluginState};
+use crate::wrapper::state::{self};
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 use crate::wrapper::util::{
     clamp_input_event_timing, clamp_output_event_timing, hash_param_id, process_wrapper, strlcpy,
@@ -396,7 +401,7 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
             }
             Task::LatencyChanged => match &*self.host_latency.borrow() {
                 Some(host_latency) => {
-                    nih_debug_assert!(is_gui_thread);
+                    crate::nih_debug_assert!(is_gui_thread);
 
                     // The plugin needs to be deactivated in order for the latency to change. If
                     // it's already deactivated we can notify the host immediately, otherwise we
@@ -412,21 +417,27 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                         unsafe_clap_call! { host_latency=>changed(&*self.host_callback) };
                     }
                 }
-                None => nih_debug_assert_failure!("Host does not support the latency extension"),
+                None => {
+                    crate::nih_debug_assert_failure!("Host does not support the latency extension")
+                }
             },
             Task::VoiceInfoChanged => match &*self.host_voice_info.borrow() {
                 Some(host_voice_info) => {
-                    nih_debug_assert!(is_gui_thread);
+                    crate::nih_debug_assert!(is_gui_thread);
                     unsafe_clap_call! { host_voice_info=>changed(&*self.host_callback) };
                 }
-                None => nih_debug_assert_failure!("Host does not support the voice-info extension"),
+                None => crate::nih_debug_assert_failure!(
+                    "Host does not support the voice-info extension"
+                ),
             },
             Task::RescanParamValues => match &*self.host_params.borrow() {
                 Some(host_params) => {
-                    nih_debug_assert!(is_gui_thread);
+                    crate::nih_debug_assert!(is_gui_thread);
                     unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_VALUES) };
                 }
-                None => nih_debug_assert_failure!("The host does not support parameters? What?"),
+                None => {
+                    crate::nih_debug_assert_failure!("The host does not support parameters? What?")
+                }
             },
         };
     }
@@ -503,7 +514,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 .iter()
                 .map(|(id, _, _, _)| id.clone())
                 .collect();
-            nih_debug_assert_eq!(
+            crate::nih_debug_assert_eq!(
                 param_map.len(),
                 param_ids.len(),
                 "The plugin has duplicate parameter IDs, weird things may happen. Consider using \
@@ -511,7 +522,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             );
 
             let poly_mod_ids: HashSet<u32> = poly_mod_ids_by_hash.values().copied().collect();
-            nih_debug_assert_eq!(
+            crate::nih_debug_assert_eq!(
                 poly_mod_ids_by_hash.len(),
                 poly_mod_ids.len(),
                 "The plugin has duplicate poly modulation IDs. Polyphonic modulation will not be \
@@ -524,7 +535,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 let is_bypass = flags.contains(ParamFlags::BYPASS);
 
                 if is_bypass && bypass_param_exists {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Duplicate bypass parameters found, the host will only use the first one"
                     );
                 }
@@ -683,7 +694,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             current_voice_capacity: AtomicU32::new(
                 P::CLAP_POLY_MODULATION_CONFIG
                     .map(|c| {
-                        nih_debug_assert!(
+                        crate::nih_debug_assert!(
                             c.max_voice_capacity >= 1,
                             "The maximum voice capacity cannot be zero"
                         );
@@ -715,8 +726,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         *wrapper.editor.borrow_mut() = wrapper
             .plugin
             .lock()
-            .editor(AsyncExecutor {
-                execute_background: Arc::new({
+            .editor(AsyncExecutor::new(
+                Arc::new({
                     let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
                         let wrapper = match wrapper.upgrade() {
@@ -725,10 +736,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                         };
 
                         let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-                execute_gui: Arc::new({
+                Arc::new({
                     let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
                         let wrapper = match wrapper.upgrade() {
@@ -737,10 +751,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                         };
 
                         let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-            })
+            ))
             .map(Mutex::new);
 
         wrapper
@@ -799,7 +816,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             Some(host_params) => {
                 unsafe_clap_call! { host_params=>request_flush(&*self.host_callback) }
             }
-            None => nih_debug_assert_failure!("The host does not support parameters? What?"),
+            None => crate::nih_debug_assert_failure!("The host does not support parameters? What?"),
         }
 
         result
@@ -854,16 +871,16 @@ impl<P: ClapPlugin> Wrapper<P> {
                         let normalized_value = clap_plain_value as f32
                             / unsafe { param_ptr.step_count() }.unwrap_or(1) as f32;
 
-                        if unsafe { param_ptr.set_normalized_value(normalized_value) } {
+                        if unsafe { param_ptr._internal_set_normalized_value(normalized_value) } {
                             if let Some(sample_rate) = sample_rate {
-                                unsafe { param_ptr.update_smoother(sample_rate, false) };
+                                unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                             }
 
                             // The GUI needs to be informed about the changed parameter value. This
                             // triggers an `Editor::param_value_changed()` call on the GUI thread.
                             let task_posted = self
                                 .schedule_gui(Task::ParameterValueChanged(hash, normalized_value));
-                            nih_debug_assert!(
+                            crate::nih_debug_assert!(
                                 task_posted,
                                 "The task queue is full, dropping task..."
                             );
@@ -875,16 +892,16 @@ impl<P: ClapPlugin> Wrapper<P> {
                         let normalized_delta = clap_plain_delta as f32
                             / unsafe { param_ptr.step_count() }.unwrap_or(1) as f32;
 
-                        if unsafe { param_ptr.modulate_value(normalized_delta) } {
+                        if unsafe { param_ptr._internal_modulate_value(normalized_delta) } {
                             if let Some(sample_rate) = sample_rate {
-                                unsafe { param_ptr.update_smoother(sample_rate, false) };
+                                unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                             }
 
                             let task_posted = self.schedule_gui(Task::ParameterModulationChanged(
                                 hash,
                                 normalized_delta,
                             ));
-                            nih_debug_assert!(
+                            crate::nih_debug_assert!(
                                 task_posted,
                                 "The task queue is full, dropping task..."
                             );
@@ -1086,7 +1103,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 }
             };
 
-            nih_debug_assert!(push_successful);
+            crate::nih_debug_assert!(push_successful);
         }
 
         // Also send all note events generated by the plugin
@@ -1406,7 +1423,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                     // SysEx is supported on the basic MIDI config so this is separate
                     let (padded_sysex_buffer, length) = message.to_buffer();
                     let padded_sysex_buffer = padded_sysex_buffer.borrow();
-                    nih_debug_assert!(padded_sysex_buffer.len() >= length);
+                    crate::nih_debug_assert!(padded_sysex_buffer.len() >= length);
                     let sysex_buffer = &padded_sysex_buffer[..length];
 
                     let event = clap_event_midi_sysex {
@@ -1428,14 +1445,14 @@ impl<P: ClapPlugin> Wrapper<P> {
                     }
                 }
                 _ => {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Invalid output event for the current MIDI_OUTPUT setting"
                     );
                     continue;
                 }
             };
 
-            nih_debug_assert!(push_successful, "Could not send note event");
+            crate::nih_debug_assert!(push_successful, "Could not send note event");
         }
     }
 
@@ -1520,7 +1537,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                             return;
                         }
-                        None => nih_debug_assert_failure!(
+                        None => crate::nih_debug_assert_failure!(
                             "Polyphonic modulation sent for a parameter without a poly modulation \
                              ID"
                         ),
@@ -1686,7 +1703,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 brightness: event.value as f32,
                             });
                         }
-                        n => nih_debug_assert_failure!("Unhandled note expression ID {}", n),
+                        n => crate::nih_debug_assert_failure!("Unhandled note expression ID {}", n),
                     }
                 }
             }
@@ -1708,7 +1725,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                         input_events.push_back(note_event);
                     }
                     Ok(_) => (),
-                    Err(n) => nih_debug_assert_failure!("Unhandled MIDI message type {}", n),
+                    Err(n) => crate::nih_debug_assert_failure!("Unhandled MIDI message type {}", n),
                 };
             }
             (CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI_SYSEX)
@@ -1726,7 +1743,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 };
             }
             _ => {
-                nih_trace!(
+                crate::nih_trace!(
                     "Unhandled CLAP event type {} for namespace {}",
                     raw_event.type_,
                     raw_event.space_id
@@ -1776,7 +1793,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                         continue;
                     }
                     Err(SendTimeoutError::Disconnected(_)) => {
-                        nih_debug_assert_failure!("State update channel got disconnected");
+                        crate::nih_debug_assert_failure!("State update channel got disconnected");
                         return;
                     }
                 }
@@ -1790,7 +1807,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // After the state has been updated, notify the host about the new parameter values
         let task_posted = self.schedule_gui(Task::RescanParamValues);
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     pub fn set_latency_samples(&self, samples: u32) {
@@ -1800,7 +1817,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         let old_latency = self.current_latency.swap(samples, Ordering::SeqCst);
         if old_latency != samples {
             let task_posted = self.schedule_gui(Task::LatencyChanged);
-            nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+            crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
     }
 
@@ -1808,7 +1825,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         match P::CLAP_POLY_MODULATION_CONFIG {
             Some(config) => {
                 let clamped_capacity = capacity.clamp(1, config.max_voice_capacity);
-                nih_debug_assert_eq!(
+                crate::nih_debug_assert_eq!(
                     capacity,
                     clamped_capacity,
                     "The current voice capacity must be between 1 and the maximum capacity"
@@ -1818,10 +1835,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                     self.current_voice_capacity
                         .store(clamped_capacity, Ordering::Relaxed);
                     let task_posted = self.schedule_gui(Task::VoiceInfoChanged);
-                    nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                    crate::nih_debug_assert!(
+                        task_posted,
+                        "The task queue is full, dropping task..."
+                    );
                 }
             }
-            None => nih_debug_assert_failure!(
+            None => crate::nih_debug_assert_failure!(
                 "Configuring the current voice capacity is only possible when \
                  'ClapPlugin::CLAP_POLY_MODULATION_CONFIG' is set"
             ),
@@ -1857,7 +1877,9 @@ impl<P: ClapPlugin> Wrapper<P> {
             )
         });
         if !success {
-            nih_debug_assert_failure!("Deserializing plugin state from a state object failed");
+            crate::nih_debug_assert_failure!(
+                "Deserializing plugin state from a state object failed"
+            );
             return false;
         }
 
@@ -1876,14 +1898,14 @@ impl<P: ClapPlugin> Wrapper<P> {
             }
         }
 
-        nih_debug_assert!(
+        crate::nih_debug_assert!(
             success,
             "Plugin returned false when reinitializing after loading state"
         );
 
         // Reinitialize the plugin after loading state so it can respond to the new parameter values
         let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
 
         // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
         //       could keep track of the last known size and compare the GUI's current size against
@@ -1923,7 +1945,7 @@ impl<P: ClapPlugin> Wrapper<P> {
     unsafe extern "C" fn destroy(plugin: *const clap_plugin) {
         assert!(!plugin.is_null() && unsafe { !(*plugin).plugin_data.is_null() });
         let this = unsafe { Arc::from_raw((*plugin).plugin_data as *mut Self) };
-        nih_debug_assert_eq!(Arc::strong_count(&this), 1);
+        crate::nih_debug_assert_eq!(Arc::strong_count(&this), 1);
 
         drop(this);
     }
@@ -1947,7 +1969,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // Before initializing the plugin, make sure all smoothers are set the the default values
         for param in wrapper.param_by_hash.values() {
-            unsafe { param.update_smoother(buffer_config.sample_rate, true) };
+            unsafe { param._internal_update_smoother(buffer_config.sample_rate, true) };
         }
 
         // If this reactivation happened due to the latency changing, notify the host of that
@@ -2222,7 +2244,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                     }
                 }
 
-                nih_debug_assert!(buffer_is_valid);
+                crate::nih_debug_assert!(buffer_is_valid);
 
                 // Some of the fields are left empty because CLAP does not provide this information,
                 // but the methods on [`Transport`] can reconstruct these values from the other
@@ -2335,7 +2357,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 let clap_result = match result {
                     ProcessStatus::Error(err) => {
-                        nih_debug_assert_failure!("Process error: {}", err);
+                        crate::nih_debug_assert_failure!("Process error: {}", err);
 
                         return CLAP_PROCESS_ERROR;
                     }
@@ -2379,7 +2401,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 // We'll pass the state object back to the GUI thread so deallocation can happen
                 // there without potentially blocking the audio thread
                 if let Err(err) = wrapper.updated_state_sender.send(state) {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Failed to send state object back to GUI thread: {}",
                         err
                     );
@@ -2430,7 +2452,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         } else if id == CLAP_EXT_VOICE_INFO && P::CLAP_POLY_MODULATION_CONFIG.is_some() {
             &wrapper.clap_plugin_voice_info as *const _ as *const c_void
         } else {
-            nih_trace!("Host tried to query unknown extension {:?}", id);
+            crate::nih_trace!("Host tried to query unknown extension {:?}", id);
             std::ptr::null()
         }
     }
@@ -2500,7 +2522,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 true
             }
             None => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "Host tried to query out of bounds audio port config {}",
                     index
                 );
@@ -2525,7 +2547,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 true
             }
             None => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "Host tried to select out of bounds audio port config {}",
                     config_id
                 );
@@ -2573,7 +2595,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         let num_input_ports = unsafe { Self::ext_audio_ports_count(plugin, true) };
         let num_output_ports = unsafe { Self::ext_audio_ports_count(plugin, false) };
         if (is_input && index >= num_input_ports) || (!is_input && index >= num_output_ports) {
-            nih_debug_assert_failure!(
+            crate::nih_debug_assert_failure!(
                 "Host tried to query information for out of bounds audio port {} (input: {})",
                 index,
                 is_input
@@ -2743,7 +2765,9 @@ impl<P: ClapPlugin> Wrapper<P> {
         if editor_handle.is_none() {
             true
         } else {
-            nih_debug_assert_failure!("Tried creating editor while the editor was already active");
+            crate::nih_debug_assert_failure!(
+                "Tried creating editor while the editor was already active"
+            );
             false
         }
     }
@@ -2756,7 +2780,9 @@ impl<P: ClapPlugin> Wrapper<P> {
         if editor_handle.is_some() {
             *editor_handle = None;
         } else {
-            nih_debug_assert_failure!("Tried destroying editor while the editor was not active");
+            crate::nih_debug_assert_failure!(
+                "Tried destroying editor while the editor was not active"
+            );
         }
     }
 
@@ -2766,7 +2792,9 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // On macOS scaling is done by the OS, and all window sizes are in logical pixels
         if cfg!(target_os = "macos") {
-            nih_debug_assert_failure!("Ignoring host request to set explicit DPI scaling factor");
+            crate::nih_debug_assert_failure!(
+                "Ignoring host request to set explicit DPI scaling factor"
+            );
             return false;
         }
 
@@ -2880,7 +2908,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                     } else if api == CLAP_WINDOW_API_WIN32 {
                         ParentWindowHandle::Win32Hwnd(window.specific.win32)
                     } else {
-                        nih_debug_assert_failure!("Host passed an invalid API");
+                        crate::nih_debug_assert_failure!("Host passed an invalid API");
                         return false;
                     }
                 };
@@ -2898,7 +2926,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 true
             } else {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "Host tried to attach editor while the editor is already attached"
                 );
 
@@ -3185,7 +3213,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, page);
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        nih_debug_assert!(page_index as usize <= wrapper.remote_control_pages.len());
+        crate::nih_debug_assert!(page_index as usize <= wrapper.remote_control_pages.len());
         match wrapper.remote_control_pages.get(page_index as usize) {
             Some(p) => {
                 unsafe {
@@ -3215,7 +3243,10 @@ impl<P: ClapPlugin> Wrapper<P> {
             // Even if the plugin has a hard realtime requirement, we'll still honor this
             CLAP_RENDER_OFFLINE => ProcessMode::Offline,
             n => {
-                nih_debug_assert_failure!("Unknown rendering mode '{}', defaulting to realtime", n);
+                crate::nih_debug_assert_failure!(
+                    "Unknown rendering mode '{}', defaulting to realtime",
+                    n
+                );
                 ProcessMode::Realtime
             }
         };
@@ -3243,24 +3274,24 @@ impl<P: ClapPlugin> Wrapper<P> {
                 // we need to prepend it to our actual state data.
                 let length_bytes = (serialized.len() as u64).to_le_bytes();
                 if !write_stream(unsafe { &*stream }, &length_bytes) {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Error or end of stream while writing the state length to the stream."
                     );
                     return false;
                 }
                 if !write_stream(unsafe { &*stream }, &serialized) {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Error or end of stream while writing the state buffer to the stream."
                     );
                     return false;
                 }
 
-                nih_trace!("Saved state ({} bytes)", serialized.len());
+                crate::nih_trace!("Saved state ({} bytes)", serialized.len());
 
                 true
             }
             Err(err) => {
-                nih_debug_assert_failure!("Could not save state: {:#}", err);
+                crate::nih_debug_assert_failure!("Could not save state: {:#}", err);
                 false
             }
         }
@@ -3277,7 +3308,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         // prepended the size in front of our JSON state
         let mut length_bytes = [0u8; 8];
         if !read_stream(unsafe { &*stream }, length_bytes.as_mut_slice()) {
-            nih_debug_assert_failure!(
+            crate::nih_debug_assert_failure!(
                 "Error or end of stream while reading the state length from the stream."
             );
             return false;
@@ -3286,7 +3317,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         let mut read_buffer: Vec<u8> = Vec::with_capacity(length as usize);
         if !read_stream(unsafe { &*stream }, read_buffer.spare_capacity_mut()) {
-            nih_debug_assert_failure!(
+            crate::nih_debug_assert_failure!(
                 "Error or end of stream while reading the state buffer from the stream."
             );
             return false;
@@ -3299,7 +3330,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             Some(mut state) => {
                 let success = wrapper.set_state_inner(&mut state);
                 if success {
-                    nih_trace!("Loaded state ({} bytes)", read_buffer.len());
+                    crate::nih_trace!("Loaded state ({} bytes)", read_buffer.len());
                 }
 
                 success

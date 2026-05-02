@@ -15,7 +15,7 @@ use iced_widget::core::Size;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::error;
+use nih_plug_core::log::error;
 
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::error;

@@ -3,10 +3,10 @@ use iced_baseview::baseview::{Size, WindowOpenOptions, WindowScalePolicy};
 use iced_baseview::{
     IcedBaseviewSettings, PollSubNotifier, Program, message, shell::window::WindowHandle,
 };
-use nih_plug::{
+use nih_plug_core::context::gui::{GuiContext, ParamSetter};
+use nih_plug_core::{
     editor::{Editor, ParentWindowHandle},
     params::persist::PersistentField,
-    prelude::{GuiContext, ParamSetter},
 };
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
@@ -137,7 +137,7 @@ impl<Message: 'static + Send> Drop for IcedEditorHandle<Message> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowState {
     /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nih_plug::params::persist::serialize_atomic_cell")]
+    #[serde(with = "nih_plug_core::params::persist::serialize_atomic_cell")]
     pub(crate) logical_size: AtomicCell<(u32, u32)>,
 
     /// The new size of the window, if it was requested to resize by the GUI.

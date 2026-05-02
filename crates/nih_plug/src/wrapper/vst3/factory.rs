@@ -10,8 +10,8 @@ use vst3_sys::base::{
 };
 
 use super::subcategories::Vst3SubCategory;
-use crate::prelude::Vst3Plugin;
 use crate::wrapper::util::strlcpy;
+use crate::wrapper::vst3::Vst3Plugin;
 use crate::wrapper::vst3::util::u16strlcpy;
 
 /// The VST3 SDK version this is roughly based on. The bindings include some VST 3.7 things but not
@@ -109,7 +109,7 @@ impl PluginInfo {
 fn make_subcategories_string<P: Vst3Plugin>() -> String {
     // No idea if any hosts do something with OnlyRT, but it's part of VST3's example categories
     // list. Plugins should not be adding this feature manually
-    nih_debug_assert!(!P::VST3_SUBCATEGORIES.contains(&Vst3SubCategory::Custom("OnlyRT")));
+    crate::nih_debug_assert!(!P::VST3_SUBCATEGORIES.contains(&Vst3SubCategory::Custom("OnlyRT")));
     let subcategory_string = P::VST3_SUBCATEGORIES
         .iter()
         .map(Vst3SubCategory::as_str)
@@ -121,7 +121,7 @@ fn make_subcategories_string<P: Vst3Plugin>() -> String {
     } else {
         subcategory_string
     };
-    nih_debug_assert!(subcategory_string.len() <= 127);
+    crate::nih_debug_assert!(subcategory_string.len() <= 127);
 
     subcategory_string
 }

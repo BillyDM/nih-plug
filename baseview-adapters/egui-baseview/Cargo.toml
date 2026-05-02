@@ -19,7 +19,7 @@ wgpu = ["dep:egui-wgpu", "dep:raw-window-handle-06", "dep:pollster", "dep:wgpu"]
 ## See https://github.com/BillyDM/egui-baseview/issues/20
 keyboard_focus_workaround = []
 ## Enables logging using NIH-plug's logging feature
-nih_log = ["dep:nih_plug"]
+nih_log = ["dep:nih_plug_core"]
 ## Enable this if `nih_log` is disabled
 tracing = ["dep:tracing"]
 
@@ -33,7 +33,7 @@ wgpu = { version = "29", optional = true }
 keyboard-types = { version = "0.6", default-features = false }
 raw-window-handle-06 = { package = "raw-window-handle", version = "0.6", optional = true }
 copypasta = { version = "0.10", default-features = false, features = ["x11"] }
-nih_plug = { path = "../../crates/nih_plug", optional = true }
+nih_plug_core = { path = "../../crates/nih_plug_core", version = "0.1", optional = true }
 tracing = { workspace = true, optional = true }
 open.workspace = true
 pollster = { workspace = true, optional = true }

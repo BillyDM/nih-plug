@@ -11,8 +11,8 @@ use objc::{class, msg_send, sel, sel_impl};
 use std::os::raw::c_void;
 use std::sync::Weak;
 
-use super::{BackgroundThread, EventLoop, MainThreadExecutor};
 use crate::nih_debug_assert_failure;
+use super::{BackgroundThread, EventLoop, MainThreadExecutor};
 
 /// Wrapping the `CFRunLoopSourceRef` type is required to be able to annotate it as thread-safe.
 struct LoopSourceWrapper(CFRunLoopSourceRef);

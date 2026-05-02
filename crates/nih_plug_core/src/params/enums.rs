@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::internals::ParamPtr;
 use super::range::IntRange;
-use super::{IntParam, Param, ParamFlags, ParamMut};
+use super::{IntParam, InternalParamMut, Param, ParamFlags};
 
 // Re-export the derive macro
 pub use nih_plug_derive::Enum;
@@ -297,39 +297,42 @@ impl Param for EnumParamInner {
     }
 }
 
-impl<T: Enum + PartialEq> ParamMut for EnumParam<T> {
-    fn set_plain_value(&self, plain: Self::Plain) -> bool {
-        self.inner.set_plain_value(T::to_index(plain) as i32)
+impl<T: Enum + PartialEq> InternalParamMut for EnumParam<T> {
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool {
+        unsafe {
+            self.inner
+                ._internal_set_plain_value(T::to_index(plain) as i32)
+        }
     }
 
-    fn set_normalized_value(&self, normalized: f32) -> bool {
-        self.inner.set_normalized_value(normalized)
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool {
+        unsafe { self.inner._internal_set_normalized_value(normalized) }
     }
 
-    fn modulate_value(&self, modulation_offset: f32) -> bool {
-        self.inner.modulate_value(modulation_offset)
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool {
+        unsafe { self.inner._internal_modulate_value(modulation_offset) }
     }
 
-    fn update_smoother(&self, sample_rate: f32, reset: bool) {
-        self.inner.update_smoother(sample_rate, reset)
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool) {
+        unsafe { self.inner._internal_update_smoother(sample_rate, reset) }
     }
 }
 
-impl ParamMut for EnumParamInner {
-    fn set_plain_value(&self, plain: Self::Plain) -> bool {
-        self.inner.set_plain_value(plain)
+impl InternalParamMut for EnumParamInner {
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool {
+        unsafe { self.inner._internal_set_plain_value(plain) }
     }
 
-    fn set_normalized_value(&self, normalized: f32) -> bool {
-        self.inner.set_normalized_value(normalized)
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool {
+        unsafe { self.inner._internal_set_normalized_value(normalized) }
     }
 
-    fn modulate_value(&self, modulation_offset: f32) -> bool {
-        self.inner.modulate_value(modulation_offset)
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool {
+        unsafe { self.inner._internal_modulate_value(modulation_offset) }
     }
 
-    fn update_smoother(&self, sample_rate: f32, reset: bool) {
-        self.inner.update_smoother(sample_rate, reset)
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool) {
+        unsafe { self.inner._internal_update_smoother(sample_rate, reset) }
     }
 }
 
@@ -440,7 +443,9 @@ impl EnumParamInner {
             .and_then(|ids| ids.iter().position(|candidate| *candidate == id))
         {
             Some(index) => {
-                self.set_plain_value(index as i32);
+                unsafe {
+                    self._internal_set_plain_value(index as i32);
+                }
                 true
             }
             None => false,

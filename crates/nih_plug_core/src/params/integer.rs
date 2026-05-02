@@ -1,22 +1,27 @@
-//! Simple boolean parameters.
+//! Stepped integer parameters.
 
 use atomic_float::AtomicF32;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicI32, Ordering};
+
+use crate::nih_debug_assert;
 
 use super::internals::ParamPtr;
-use super::{Param, ParamFlags, ParamMut};
+use super::range::IntRange;
+use super::smoothing::{Smoother, SmoothingStyle};
+use super::{InternalParamMut, Param, ParamFlags};
 
-/// A simple boolean parameter.
-pub struct BoolParam {
-    /// The field's current value, after monophonic modulation has been applied.
-    value: AtomicBool,
+/// A discrete integer parameter that's stored unnormalized. The range is used for the normalization
+/// process.
+pub struct IntParam {
+    /// The field's current plain value, after monophonic modulation has been applied.
+    value: AtomicI32,
     /// The field's current value normalized to the `[0, 1]` range.
     normalized_value: AtomicF32,
-    /// The field's value before any monophonic automation coming from the host has been applied.
-    /// This will always be the same as `value` for VST3 plugins.
-    unmodulated_value: AtomicBool,
+    /// The field's plain, unnormalized value before any monophonic automation coming from the host
+    /// has been applied. This will always be the same as `value` for VST3 plugins.
+    unmodulated_value: AtomicI32,
     /// The field's value normalized to the `[0, 1]` range before any monophonic automation coming
     /// from the host has been applied. This will always be the same as `value` for VST3 plugins.
     unmodulated_normalized_value: AtomicF32,
@@ -24,47 +29,61 @@ pub struct BoolParam {
     /// `unmodulated_normalized_`. This needs to be stored separately since the normalized values are
     /// clamped, and this value persists after new automation events.
     modulation_offset: AtomicF32,
-    /// The field's default value.
-    default: bool,
+    /// The field's default plain, unnormalized value.
+    default: i32,
+    /// An optional smoother that will automatically interpolate between the new automation values
+    /// set by the host.
+    pub smoothed: Smoother<i32>,
 
     /// Flags to control the parameter's behavior. See [`ParamFlags`].
     flags: ParamFlags,
     /// Optional callback for listening to value changes. The argument passed to this function is
-    /// the parameter's new value. This should not do anything expensive as it may be called
-    /// multiple times in rapid succession, and it can be run from both the GUI and the audio
-    /// thread.
-    value_changed: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    /// the parameter's new **plain** value. This should not do anything expensive as it may be
+    /// called multiple times in rapid succession.
+    ///
+    /// To use this, you'll probably want to store an `Arc<Atomic*>` alongside the parameter in the
+    /// parameters struct, move a clone of that `Arc` into this closure, and then modify that.
+    ///
+    /// TODO: We probably also want to pass the old value to this function.
+    value_changed: Option<Arc<dyn Fn(i32) + Send + Sync>>,
 
+    /// The distribution of the parameter's values.
+    range: IntRange,
     /// The parameter's human readable display name.
     name: String,
+    /// The parameter value's unit, added after `value_to_string` if that is set. NIH-plug will not
+    /// automatically add a space before the unit.
+    unit: &'static str,
     /// If this parameter has been marked as polyphonically modulatable, then this will be a unique
     /// integer identifying the parameter. Because this value is determined by the plugin itself,
     /// the plugin can easily map
     /// [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation] events to the
     /// correct parameter by pattern matching on a constant.
     poly_modulation_id: Option<u32>,
-    /// Optional custom conversion function from a boolean value to a string.
-    value_to_string: Option<Arc<dyn Fn(bool) -> String + Send + Sync>>,
-    /// Optional custom conversion function from a string to a boolean value. If the string cannot
-    /// be parsed, then this should return a `None`. If this happens while the parameter is being
-    /// updated then the update will be canceled.
-    string_to_value: Option<Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>>,
+    /// Optional custom conversion function from a plain **unnormalized** value to a string.
+    value_to_string: Option<Arc<dyn Fn(i32) -> String + Send + Sync>>,
+    /// Optional custom conversion function from a string to a plain **unnormalized** value. If the
+    /// string cannot be parsed, then this should return a `None`. If this happens while the
+    /// parameter is being updated then the update will be canceled.
+    ///
+    /// The input string may or may not contain the unit, so you will need to be able to handle
+    /// that.
+    string_to_value: Option<Arc<dyn Fn(&str) -> Option<i32> + Send + Sync>>,
 }
 
-impl Display for BoolParam {
+impl Display for IntParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.value(), &self.value_to_string) {
-            (v, Some(func)) => write!(f, "{}", func(v)),
-            (true, None) => write!(f, "On"),
-            (false, None) => write!(f, "Off"),
+        match &self.value_to_string {
+            Some(func) => write!(f, "{}{}", func(self.value()), self.unit),
+            _ => write!(f, "{}{}", self.value(), self.unit),
         }
     }
 }
 
-impl Debug for BoolParam {
+impl Debug for IntParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This uses the above `Display` instance to show the value
-        if self.value.load(Ordering::Relaxed) != self.unmodulated_value.load(Ordering::Relaxed) {
+        if self.modulated_plain_value() != self.unmodulated_plain_value() {
             write!(f, "{}: {} (modulated)", &self.name, &self)
         } else {
             write!(f, "{}: {}", &self.name, &self)
@@ -73,17 +92,17 @@ impl Debug for BoolParam {
 }
 
 // `Params` can not be implemented outside of NIH-plug itself because `ParamPtr` is also closed
-impl super::Sealed for BoolParam {}
+impl super::Sealed for IntParam {}
 
-impl Param for BoolParam {
-    type Plain = bool;
+impl Param for IntParam {
+    type Plain = i32;
 
     fn name(&self) -> &str {
         &self.name
     }
 
     fn unit(&self) -> &'static str {
-        ""
+        self.unit
     }
 
     fn poly_modulation_id(&self) -> Option<u32> {
@@ -116,31 +135,32 @@ impl Param for BoolParam {
     }
 
     fn step_count(&self) -> Option<usize> {
-        Some(1)
+        Some(self.range.step_count())
     }
 
-    fn previous_step(&self, _from: Self::Plain, _finer: bool) -> Self::Plain {
-        false
+    fn previous_step(&self, from: Self::Plain, _finer: bool) -> Self::Plain {
+        self.range.previous_step(from)
     }
 
-    fn next_step(&self, _from: Self::Plain, _finer: bool) -> Self::Plain {
-        true
+    fn next_step(&self, from: Self::Plain, _finer: bool) -> Self::Plain {
+        self.range.next_step(from)
     }
 
-    fn normalized_value_to_string(&self, normalized: f32, _include_unit: bool) -> String {
+    fn normalized_value_to_string(&self, normalized: f32, include_unit: bool) -> String {
         let value = self.preview_plain(normalized);
-        match (value, &self.value_to_string) {
-            (v, Some(f)) => f(v),
-            (true, None) => String::from("On"),
-            (false, None) => String::from("Off"),
+        match (&self.value_to_string, include_unit) {
+            (Some(f), true) => format!("{}{}", f(value), self.unit),
+            (Some(f), false) => f(value),
+            (None, true) => format!("{}{}", value, self.unit),
+            (None, false) => format!("{value}"),
         }
     }
 
     fn string_to_normalized_value(&self, string: &str) -> Option<f32> {
-        let string = string.trim();
         let value = match &self.string_to_value {
-            Some(f) => f(string),
-            None => Some(string.eq_ignore_ascii_case("true") || string.eq_ignore_ascii_case("on")),
+            Some(f) => f(string.trim()),
+            // In the CLAP wrapper the unit will be included, so make sure to handle that
+            None => string.trim().trim_end_matches(self.unit).parse().ok(),
         }?;
 
         Some(self.preview_normalized(value))
@@ -148,12 +168,12 @@ impl Param for BoolParam {
 
     #[inline]
     fn preview_normalized(&self, plain: Self::Plain) -> f32 {
-        if plain { 1.0 } else { 0.0 }
+        self.range.normalize(plain)
     }
 
     #[inline]
     fn preview_plain(&self, normalized: f32) -> Self::Plain {
-        normalized > 0.5
+        self.range.unnormalize(normalized)
     }
 
     fn flags(&self) -> ParamFlags {
@@ -161,12 +181,12 @@ impl Param for BoolParam {
     }
 
     fn as_ptr(&self) -> ParamPtr {
-        ParamPtr::BoolParam(self as *const BoolParam as *mut BoolParam)
+        ParamPtr::IntParam(self as *const _ as *mut _)
     }
 }
 
-impl ParamMut for BoolParam {
-    fn set_plain_value(&self, plain: Self::Plain) -> bool {
+impl InternalParamMut for IntParam {
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool {
         let unmodulated_value = plain;
         let unmodulated_normalized_value = self.preview_normalized(plain);
 
@@ -201,43 +221,53 @@ impl ParamMut for BoolParam {
         }
     }
 
-    fn set_normalized_value(&self, normalized: f32) -> bool {
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool {
         // NOTE: The double conversion here is to make sure the state is reproducible. State is
         //       saved and restored using plain values, and the new normalized value will be
         //       different from `normalized`. This is not necessary for the modulation as these
         //       values are never shown to the host.
-        self.set_plain_value(self.preview_plain(normalized))
+        unsafe { self._internal_set_plain_value(self.preview_plain(normalized)) }
     }
 
-    fn modulate_value(&self, modulation_offset: f32) -> bool {
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool {
         self.modulation_offset
             .store(modulation_offset, Ordering::Relaxed);
 
         // TODO: This renormalizes this value, which is not necessary
-        self.set_plain_value(self.unmodulated_plain_value())
+        unsafe { self._internal_set_plain_value(self.unmodulated_plain_value()) }
     }
 
-    fn update_smoother(&self, _sample_rate: f32, _init: bool) {
-        // Can't really smooth a binary parameter now can you
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool) {
+        if reset {
+            self.smoothed.reset(self.modulated_plain_value());
+        } else {
+            self.smoothed
+                .set_target(sample_rate, self.modulated_plain_value());
+        }
     }
 }
 
-impl BoolParam {
-    /// Build a new [`BoolParam`]. Use the other associated functions to modify the behavior of the
+impl IntParam {
+    /// Build a new [`IntParam`]. Use the other associated functions to modify the behavior of the
     /// parameter.
-    pub fn new(name: impl Into<String>, default: bool) -> Self {
+    pub fn new(name: impl Into<String>, default: i32, range: IntRange) -> Self {
+        range.assert_validity();
+
         Self {
-            value: AtomicBool::new(default),
-            normalized_value: AtomicF32::new(if default { 1.0 } else { 0.0 }),
-            unmodulated_value: AtomicBool::new(default),
-            unmodulated_normalized_value: AtomicF32::new(if default { 1.0 } else { 0.0 }),
+            value: AtomicI32::new(default),
+            normalized_value: AtomicF32::new(range.normalize(default)),
+            unmodulated_value: AtomicI32::new(default),
+            unmodulated_normalized_value: AtomicF32::new(range.normalize(default)),
             modulation_offset: AtomicF32::new(0.0),
             default,
+            smoothed: Smoother::none(),
 
             flags: ParamFlags::default(),
             value_changed: None,
 
+            range,
             name: name.into(),
+            unit: "",
             poly_modulation_id: None,
             value_to_string: None,
             string_to_value: None,
@@ -247,8 +277,14 @@ impl BoolParam {
     /// The field's current plain value, after monophonic modulation has been applied. Equivalent to
     /// calling `param.plain_value()`.
     #[inline]
-    pub fn value(&self) -> bool {
+    pub fn value(&self) -> i32 {
         self.modulated_plain_value()
+    }
+
+    /// The range of valid plain values for this parameter.
+    #[inline]
+    pub fn range(&self) -> IntRange {
+        self.range
     }
 
     /// Enable polyphonic modulation for this parameter. The ID is used to uniquely identify this
@@ -268,41 +304,66 @@ impl BoolParam {
         self
     }
 
+    /// Set up a smoother that can gradually interpolate changes made to this parameter, preventing
+    /// clicks and zipper noises.
+    pub fn with_smoother(mut self, style: SmoothingStyle) -> Self {
+        // Logarithmic smoothing will cause problems if the range goes through zero since then you
+        // end up multiplying by zero
+        let goes_through_zero = match (&style, &self.range) {
+            (SmoothingStyle::Logarithmic(_), IntRange::Linear { min, max }) => {
+                *min == 0 || *max == 0 || min.signum() != max.signum()
+            }
+            _ => false,
+        };
+        nih_debug_assert!(
+            !goes_through_zero,
+            "Logarithmic smoothing does not work with ranges that go through zero"
+        );
+
+        self.smoothed = Smoother::new(style);
+        self
+    }
+
     /// Run a callback whenever this parameter's value changes. The argument passed to this function
     /// is the parameter's new value. This should not do anything expensive as it may be called
     /// multiple times in rapid succession, and it can be run from both the GUI and the audio
     /// thread.
-    pub fn with_callback(mut self, callback: Arc<dyn Fn(bool) + Send + Sync>) -> Self {
+    pub fn with_callback(mut self, callback: Arc<dyn Fn(i32) + Send + Sync>) -> Self {
         self.value_changed = Some(callback);
         self
     }
 
-    /// Use a custom conversion function to convert the boolean value to a string.
+    /// Display a unit when rendering this parameter to a string. Appended after the
+    /// [`value_to_string`][Self::with_value_to_string()] function if that is also set. NIH-plug
+    /// will not automatically add a space before the unit.
+    pub fn with_unit(mut self, unit: &'static str) -> Self {
+        self.unit = unit;
+        self
+    }
+
+    /// Use a custom conversion function to convert the plain, unnormalized value to a
+    /// string.
     pub fn with_value_to_string(
         mut self,
-        callback: Arc<dyn Fn(bool) -> String + Send + Sync>,
+        callback: Arc<dyn Fn(i32) -> String + Send + Sync>,
     ) -> Self {
         self.value_to_string = Some(callback);
         self
     }
 
-    /// Use a custom conversion function to convert from a string to a boolean value. If the string
-    /// cannot be parsed, then this should return a `None`. If this happens while the parameter is
-    /// being updated then the update will be canceled.
+    // `with_step_size` is only implemented for the f32 version
+
+    /// Use a custom conversion function to convert from a string to a plain, unnormalized
+    /// value. If the string cannot be parsed, then this should return a `None`. If this
+    /// happens while the parameter is being updated then the update will be canceled.
+    ///
+    /// The input string may or may not contain the unit, so you will need to be able to handle
+    /// that.
     pub fn with_string_to_value(
         mut self,
-        callback: Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>,
+        callback: Arc<dyn Fn(&str) -> Option<i32> + Send + Sync>,
     ) -> Self {
         self.string_to_value = Some(callback);
-        self
-    }
-
-    /// Mark this parameter as a bypass parameter. Plugin hosts can integrate this parameter into
-    /// their UI. Only a single [`BoolParam`] can be a bypass parameter, and NIH-plug will add one
-    /// if you don't create one yourself. You will need to implement this yourself if your plugin
-    /// introduces latency.
-    pub fn make_bypass(mut self) -> Self {
-        self.flags.insert(ParamFlags::BYPASS);
         self
     }
 

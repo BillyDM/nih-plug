@@ -36,7 +36,7 @@ compile_error!(
 
 #[cfg(all(debug_assertions, feature = "assert_process_allocs"))]
 #[global_allocator]
-static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+static A: nih_assert_no_alloc::AllocDisabler = nih_assert_no_alloc::AllocDisabler;
 
 /// A Rabin fingerprint based string hash for parameter ID strings.
 pub fn hash_param_id(id: &str) -> u32 {
@@ -78,7 +78,7 @@ pub fn clamp_input_event_timing(timing: u32, total_buffer_len: u32) -> u32 {
     // If `total_buffer_len == 0`, then 0 is a valid timing
     let last_valid_index = total_buffer_len.saturating_sub(1);
 
-    nih_debug_assert!(
+    crate::nih_debug_assert!(
         timing <= last_valid_index,
         "Input event is out of bounds, will be clamped to the buffer's size"
     );
@@ -92,7 +92,7 @@ pub fn clamp_input_event_timing(timing: u32, total_buffer_len: u32) -> u32 {
 pub fn clamp_output_event_timing(timing: u32, total_buffer_len: u32) -> u32 {
     let last_valid_index = total_buffer_len.saturating_sub(1);
 
-    nih_debug_assert!(
+    crate::nih_debug_assert!(
         timing <= last_valid_index,
         "Output event is out of bounds, will be clamped to the buffer's size"
     );
@@ -162,7 +162,7 @@ fn log_panics() {
 
             match info.location() {
                 Some(location) => {
-                    nih_error!(
+                    crate::nih_error!(
                         target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:?}",
                         thread,
                         msg,
@@ -172,7 +172,7 @@ fn log_panics() {
                     );
                 }
                 None => {
-                    nih_error!(
+                    crate::nih_error!(
                         target: "panic",
                         "thread '{}' panicked at '{}'\n{:?}",
                         thread,
@@ -192,13 +192,11 @@ pub fn process_wrapper<T, F: FnOnce() -> T>(f: F) -> T {
     // Make sure FTZ is always enabled, even if the host doesn't do it for us
     let _ftz_guard = ScopedFtz::enable();
 
-    cfg_if::cfg_if! {
-        if #[cfg(all(debug_assertions, feature = "assert_process_allocs"))] {
-            assert_no_alloc::assert_no_alloc(f)
-        } else {
-            f()
-        }
-    }
+    #[cfg(all(debug_assertions, feature = "assert_process_allocs"))]
+    return nih_assert_no_alloc::assert_no_alloc(f);
+
+    #[cfg(not(all(debug_assertions, feature = "assert_process_allocs")))]
+    return f();
 }
 
 /// Enable the CPU's Flush To Zero flag while this object is in scope. If the flag was not already

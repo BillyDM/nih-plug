@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_utils::atomic::AtomicCell;
 use iced_baseview::{PollSubNotifier, Program};
-use nih_plug::editor::Editor;
+use nih_plug_core::editor::Editor;
 use serde::{Deserialize, Serialize};
 
 pub use iced_baseview as iced;
