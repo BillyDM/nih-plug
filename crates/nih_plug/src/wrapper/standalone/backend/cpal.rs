@@ -402,14 +402,18 @@ impl CpalMidir {
                     .context("No audio input devices available")?
                     // `.name()` returns a `Result` with a non-Eq error type so you can't compare this
                     // directly
-                    .find(|d| d.name().as_deref().map(|n| n == name).unwrap_or(false))
+                    .find(|d| d.description().map(|n| n.name() == name).unwrap_or(false))
                     .with_context(|| {
                         // This is a bit awkward, but instead of adding a dedicated option we'll just
                         // list all of the available devices in the error message when the chosen device
                         // does not exist
                         let mut message =
                             format!("Unknown input device '{name}'. Available devices are:");
-                        for device_name in host.input_devices().unwrap().flat_map(|d| d.name()) {
+                        for device_name in host
+                            .input_devices()
+                            .unwrap()
+                            .filter_map(|d| d.description().map(|d| d.name().to_string()).ok())
+                        {
                             message.push_str(&format!("\n{device_name}"))
                         }
 
@@ -424,11 +428,15 @@ impl CpalMidir {
             Some(name) => host
                 .output_devices()
                 .context("No audio output devices available")?
-                .find(|d| d.name().as_deref().map(|n| n == name).unwrap_or(false))
+                .find(|d| d.description().map(|n| n.name() == name).unwrap_or(false))
                 .with_context(|| {
                     let mut message =
                         format!("Unknown output device '{name}'. Available devices are:");
-                    for device_name in host.output_devices().unwrap().flat_map(|d| d.name()) {
+                    for device_name in host
+                        .output_devices()
+                        .unwrap()
+                        .filter_map(|d| d.description().map(|d| d.name().to_string()).ok())
+                    {
                         message.push_str(&format!("\n{device_name}"))
                     }
 
@@ -439,7 +447,7 @@ impl CpalMidir {
                 .context("No default audio output device available")?,
         };
 
-        let requested_sample_rate = cpal::SampleRate(config.sample_rate as u32);
+        let requested_sample_rate = config.sample_rate as u32;
         let requested_buffer_size = cpal::BufferSize::Fixed(config.period_size);
         let num_input_channels = audio_io_layout
             .main_input_channels

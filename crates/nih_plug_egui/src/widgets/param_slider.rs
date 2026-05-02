@@ -6,7 +6,7 @@ use egui::{
     vec2,
 };
 use nih_plug_core::context::gui::ParamSetter;
-use nih_plug_core::params::{Param};
+use nih_plug_core::params::Param;
 use parking_lot::Mutex;
 
 use super::util;
