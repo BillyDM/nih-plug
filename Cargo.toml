@@ -29,7 +29,7 @@ default-members = ["crates/nih_plug"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 authors = [
   "Robbert van der Helm <mail@robbertvanderhelm.nl>",
   "Billy Messenger <billydm@noreply.codeberg.org>",
