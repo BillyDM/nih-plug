@@ -12,7 +12,6 @@ categories = ["gui"]
 license = "MIT OR Apache-2.0"
 edition.workspace = true
 repository.workspace = true
-readme.workspace = true
 
 [features]
 default = [
