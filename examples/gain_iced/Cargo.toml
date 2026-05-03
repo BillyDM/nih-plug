@@ -9,7 +9,6 @@ description = "A simple gain plugin with an egui GUI"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-readme.workspace = true
 publish = false
 
 [lib]
