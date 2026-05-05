@@ -12,7 +12,7 @@ categories = ["gui"]
 license = "MIT OR Apache-2.0"
 edition.workspace = true
 repository.workspace = true
-readme.workspace = "README.md"
+readme = "README.md"
 
 [features]
 default = [
