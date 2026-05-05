@@ -160,8 +160,11 @@ impl EguiState {
         self.open.load(Ordering::Acquire)
     }
 
-    /// Set the new size that will be used to resize the window if the host allows.
-    fn set_requested_size(&self, new_size: (u32, u32)) {
+    /// Request a new editor window size in logical pixels.
+    ///
+    /// The actual resize is applied by the editor on the next GUI frame if the
+    /// host accepts the request.
+    pub fn request_resize(&self, new_size: (u32, u32)) {
         self.requested_size.store(Some(new_size));
     }
 }
