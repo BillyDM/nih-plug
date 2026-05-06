@@ -367,16 +367,15 @@ impl<T: Enum + PartialEq + 'static> EnumParam<T> {
     }
 
     /// Enable polyphonic modulation for this parameter. The ID is used to uniquely identify this
-    /// parameter in [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation]
+    /// parameter in [`NoteEvent::PolyModulation`][crate::midi::NoteEvent::PolyModulation]
     /// events, and must thus be unique between _all_ polyphonically modulatable parameters. See the
     /// event's documentation on how to use polyphonic modulation. Also consider configuring the
-    /// [`ClapPlugin::CLAP_POLY_MODULATION_CONFIG`][crate::prelude::ClapPlugin::CLAP_POLY_MODULATION_CONFIG]
-    /// constant when enabling this.
+    /// `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` constant when enabling this.
     ///
     /// # Important
     ///
     /// After enabling polyphonic modulation, the plugin **must** start sending
-    /// [`NoteEvent::VoiceTerminated`][crate::prelude::NoteEvent::VoiceTerminated] events to the
+    /// [`NoteEvent::VoiceTerminated`][crate::midi::NoteEvent::VoiceTerminated] events to the
     /// host when a voice has fully ended. This allows the host to reuse its modulation resources.
     pub fn with_poly_modulation_id(mut self, id: u32) -> Self {
         self.inner.inner = self.inner.inner.with_poly_modulation_id(id);

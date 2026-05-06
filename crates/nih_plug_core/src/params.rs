@@ -1,7 +1,7 @@
 //! NIH-plug can handle floating point, integer, boolean, and enum parameters. Parameters are
-//! managed by creating a struct deriving the [`Params`][Params] trait containing fields
+//! managed by creating a struct deriving the [`Params`] trait containing fields
 //! for those parameter types, and then returning a reference to that object from your
-//! [`Plugin::params()`][crate::prelude::Plugin::params()] method. See the `Params` trait for more
+//! [`Plugin::params()`][crate::plugin::Plugin::params()] method. See the `Params` trait for more
 //! information.
 
 use std::collections::BTreeMap;
@@ -86,14 +86,14 @@ pub trait Param: Display + Debug + sealed::Sealed {
     /// Get this parameter's polyphonic modulation ID. If this is set for a parameter in a CLAP
     /// plugin, then polyphonic modulation will be enabled for that parameter. Polyphonic modulation
     /// is communicated to the plugin through
-    /// [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation] and
-    /// [`NoteEvent::MonoAutomation`][crate::prelude::NoteEvent::MonoAutomation] events. See the
+    /// [`NoteEvent::PolyModulation`][crate::midi::NoteEvent::PolyModulation] and
+    /// [`NoteEvent::MonoAutomation`][crate::midi::NoteEvent::MonoAutomation] events. See the
     /// documentation on those events for more information.
     ///
     /// # Important
     ///
     /// After enabling polyphonic modulation, the plugin **must** start sending
-    /// [`NoteEvent::VoiceTerminated`][crate::prelude::NoteEvent::VoiceTerminated] events to the
+    /// [`NoteEvent::VoiceTerminated`][crate::midi::NoteEvent::VoiceTerminated] events to the
     /// host when a voice has fully ended. This allows the host to reuse its modulation resources.
     fn poly_modulation_id(&self) -> Option<u32>;
 
@@ -186,7 +186,7 @@ pub trait Param: Display + Debug + sealed::Sealed {
     /// Flags to control the parameter's behavior. See [`ParamFlags`].
     fn flags(&self) -> ParamFlags;
 
-    /// Internal implementation detail for implementing [`Params`][Params]. This should
+    /// Internal implementation detail for implementing [`Params`]. This should
     /// not be used directly.
     fn as_ptr(&self) -> internals::ParamPtr;
 }
@@ -196,8 +196,8 @@ pub trait Param: Display + Debug + sealed::Sealed {
 pub trait InternalParamMut: Param {
     /// Set this parameter based on a plain, unnormalized value. This does not snap to step sizes
     /// for continuous parameters (i.e. [`FloatParam`]). If
-    /// [`modulate_value()`][Self::modulate_value()] has previously been called with a non zero
-    /// value then this offset is taken into account to form the effective value.
+    /// [`modulate_value()`][Self::_internal_modulate_value()] has previously been called with a non
+    /// zero value then this offset is taken into account to form the effective value.
     ///
     /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
     /// has actually changed.
@@ -210,8 +210,8 @@ pub trait InternalParamMut: Param {
 
     /// Set this parameter based on a normalized value. The normalized value will be snapped to the
     /// step size for continuous parameters (i.e. [`FloatParam`]). If
-    /// [`modulate_value()`][Self::modulate_value()] has previously been called with a non zero
-    /// value then this offset is taken into account to form the effective value.
+    /// [`modulate_value()`][Self::_internal_modulate_value()] has previously been called with a non
+    /// zero value then this offset is taken into account to form the effective value.
     ///
     /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
     /// has actually changed.
@@ -227,8 +227,8 @@ pub trait InternalParamMut: Param {
     /// parameter's range. The normalized value will be snapped to the step size for continuous
     /// parameters (i.e. [`FloatParam`]).
     ///
-    /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
-    /// has actually changed.
+    /// Returns whether or not the value has changed. Any parameter callbacks are only run the
+    /// value has actually changed.
     ///
     /// This does **not** update the smoother.
     ///

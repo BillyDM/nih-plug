@@ -6,6 +6,14 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Core types and traits used in the NIH-plug plugin framework"
+keywords = ["plugin", "clap", "vst3"]
+categories = ["multimedia::audio"]
+readme = "README.md"
+
+# Show documentation with all features enabled on docs.rs
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 # Enabling this feature will cause the plugin to terminate when allocations

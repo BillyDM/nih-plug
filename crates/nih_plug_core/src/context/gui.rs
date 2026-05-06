@@ -10,8 +10,8 @@ use crate::{
 use super::PluginApi;
 
 /// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
-/// values. This is passed to the plugin during [`Editor::spawn()`][crate::prelude::Editor::spawn()]. All of
-/// these functions assume they're being called from the main GUI thread.
+/// values. This is passed to the plugin during [`Editor::spawn()`][crate::editor::Editor::spawn()].
+/// All of these functions assume they're being called from the main GUI thread.
 //
 // # Safety
 //
@@ -23,7 +23,7 @@ pub trait GuiContext: Send + Sync + 'static {
     fn plugin_api(&self) -> PluginApi;
 
     /// Ask the host to resize the editor window to the size specified by
-    /// [`Editor::size()`][crate::prelude::Editor::size()]. This will return false if the host
+    /// [`Editor::size()`][crate::editor::Editor::size()]. This will return false if the host
     /// somehow didn't like this and rejected the resize, in which case the window should revert to
     /// its old size. You should only actually resize your embedded window once this returns `true`.
     ///
@@ -70,17 +70,17 @@ pub trait GuiContext: Send + Sync + 'static {
 }
 
 /// An way to run background tasks from the plugin's GUI, equivalent to the
-/// [`ProcessContext::execute_background()`][crate::prelude::ProcessContext::execute_background()]
-/// and [`ProcessContext::execute_gui()`][crate::prelude::ProcessContext::execute_gui()] functions.
-/// This is passed directly to [`Plugin::editor()`] so the plugin can move it into its editor and
-/// use it later.
+/// [`ProcessContext::execute_background()`][crate::context::process::ProcessContext::execute_background()]
+/// and [`ProcessContext::execute_gui()`][crate::context::process::ProcessContext::execute_gui()]
+/// functions. This is passed directly to [`Plugin::editor()`] so the plugin can move it into its
+/// editor and use it later.
 ///
 /// # Note
 ///
 /// This is only intended to be used from the GUI. Use the methods on
-/// [`InitContext`][crate::prelude::InitContext] and
-/// [`ProcessContext`][crate::prelude::ProcessContext] to run tasks during the `initialize()` and
-/// `process()` functions.
+/// [`InitContext`][crate::context::init::InitContext] and
+/// [`ProcessContext`][crate::context::process::ProcessContext] to run tasks during the `initialize()`
+/// and `process()` functions.
 //
 // NOTE: This is separate from `GuiContext` because adding a type parameter there would clutter up a
 //       lot of structs, and may even be incompatible with the way certain GUI libraries work.

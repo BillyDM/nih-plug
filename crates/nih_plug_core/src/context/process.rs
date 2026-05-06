@@ -42,9 +42,8 @@ pub trait ProcessContext<P: Plugin> {
     fn transport(&self) -> &Transport;
 
     /// Returns the next note event, if there is one. Use
-    /// [`NoteEvent::timing()`][crate::prelude::NoteEvent::timing()] to get the event's timing
-    /// within the buffer. Only available when
-    /// [`Plugin::MIDI_INPUT`][crate::prelude::Plugin::MIDI_INPUT] is set.
+    /// [`NoteEvent::timing()`][crate::midi::NoteEvent::timing()] to get the event's timing
+    /// within the buffer. Only available when [`Plugin::MIDI_INPUT`] is set.
     ///
     /// # Usage
     ///
@@ -77,7 +76,7 @@ pub trait ProcessContext<P: Plugin> {
     fn next_event(&mut self) -> Option<PluginNoteEvent<P>>;
 
     /// Send an event to the host. Only available when
-    /// [`Plugin::MIDI_OUTPUT`][crate::prelude::Plugin::MIDI_INPUT] is set. Will not do anything
+    /// [`Plugin::MIDI_OUTPUT`][crate::plugin::Plugin::MIDI_INPUT] is set. Will not do anything
     /// otherwise.
     fn send_event(&mut self, event: PluginNoteEvent<P>);
 
@@ -86,11 +85,10 @@ pub trait ProcessContext<P: Plugin> {
     fn set_latency_samples(&self, samples: u32);
 
     /// Set the current voice **capacity** for this plugin (so not the number of currently active
-    /// voices). This may only be called if
-    /// [`ClapPlugin::CLAP_POLY_MODULATION_CONFIG`][crate::prelude::ClapPlugin::CLAP_POLY_MODULATION_CONFIG]
-    /// is set. `capacity` must be between 1 and the configured maximum capacity. Changing this at
-    /// runtime allows the host to better optimize polyphonic modulation, or to switch to strictly
-    /// monophonic modulation when dropping the capacity down to 1.
+    /// voices). This may only be called if `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` is set.
+    /// `capacity` must be between 1 and the configured maximum capacity. Changing this at runtime
+    /// allows the host to better optimize polyphonic modulation, or to switch to strictly monophonic
+    /// modulation when dropping the capacity down to 1.
     fn set_current_voice_capacity(&self, capacity: u32);
 
     // TODO: Add this, this works similar to [GuiContext::set_parameter] but it adds the parameter
@@ -111,7 +109,7 @@ pub struct Transport {
     pub preroll_active: Option<bool>,
 
     /// The sample rate in Hertz. Also passed in
-    /// [`Plugin::initialize()`][crate::prelude::Plugin::initialize()], so if you need this then you
+    /// [`Plugin::initialize()`][crate::plugin::Plugin::initialize()], so if you need this then you
     /// can also store that value.
     pub sample_rate: f32,
     /// The project's tempo in beats per minute.

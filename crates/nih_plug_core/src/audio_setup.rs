@@ -4,11 +4,11 @@ use std::num::NonZeroU32;
 
 use crate::buffer::Buffer;
 
-/// A description of a plugin's audio IO configuration. The [`Plugin`][crate::prelude::Plugin]
+/// A description of a plugin's audio IO configuration. The [`Plugin`][crate::plugin::Plugin]
 /// defines a list of supported audio IO configs, with the first one acting as the default layout.
 /// Depending on the plugin API, the host may pick a different configuration from the list and use
 /// that instead. The final chosen configuration is passed as an argument to the
-/// [`Plugin::initialize()`][crate::prelude::Plugin::initialize] function so the plugin can allocate
+/// [`Plugin::initialize()`][crate::plugin::Plugin::initialize] function so the plugin can allocate
 /// its data structures based on the number of audio channels it needs to process.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AudioIOLayout {
