@@ -9,6 +9,10 @@ repository.workspace = true
 keywords = ["audio", "plugin", "vst", "vst3"]
 description = "A simple but modern API-agnostic audio plugin framework"
 
+# Show documentation with all features enabled on docs.rs
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["vst3"]
 # Enabling this feature will cause the plugin to terminate when allocations

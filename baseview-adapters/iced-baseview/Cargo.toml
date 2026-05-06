@@ -14,6 +14,10 @@ edition.workspace = true
 repository.workspace = true
 readme = "README.md"
 
+# Show documentation with all features enabled on docs.rs
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = [
   "tracing",
