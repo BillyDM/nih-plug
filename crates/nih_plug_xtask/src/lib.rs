@@ -34,6 +34,9 @@ type BundlerConfig = HashMap<String, PackageConfig>;
 #[derive(Debug, Clone, Deserialize)]
 struct PackageConfig {
     name: Option<String>,
+    /// Overrides the macOS bundle's `CFBundleIdentifier`. Falls back to
+    /// `com.nih-plug.{package}` when unset, preserving prior behaviour.
+    bundle_id: Option<String>,
 }
 
 /// The target we're generating a plugin for. This can be either the native target or a cross
@@ -341,10 +344,12 @@ fn bundle_binary(
     compilation_target: CompilationTarget,
 ) -> Result<()> {
     let bundle_home_dir = bundle_home(target_dir);
-    let bundle_name = match load_bundler_config()?.and_then(|c| c.get(package).cloned()) {
-        Some(PackageConfig { name: Some(name) }) => name,
-        _ => package.to_string(),
-    };
+    let package_config = load_bundler_config()?.and_then(|c| c.get(package).cloned());
+    let bundle_name = package_config
+        .as_ref()
+        .and_then(|c| c.name.clone())
+        .unwrap_or_else(|| package.to_string());
+    let bundle_id = package_config.as_ref().and_then(|c| c.bundle_id.clone());
 
     // On MacOS the standalone target needs to be in a bundle
     let standalone_bundle_binary_name =
@@ -381,6 +386,7 @@ fn bundle_binary(
     maybe_create_macos_bundle_metadata(
         package,
         &bundle_name,
+        bundle_id.as_deref(),
         &standalone_bundle_home,
         compilation_target,
         BundleType::Binary,
@@ -405,10 +411,12 @@ fn bundle_plugin(
     compilation_target: CompilationTarget,
 ) -> Result<()> {
     let bundle_home_dir = bundle_home(target_dir);
-    let bundle_name = match load_bundler_config()?.and_then(|c| c.get(package).cloned()) {
-        Some(PackageConfig { name: Some(name) }) => name,
-        _ => package.to_string(),
-    };
+    let package_config = load_bundler_config()?.and_then(|c| c.get(package).cloned());
+    let bundle_name = package_config
+        .as_ref()
+        .and_then(|c| c.name.clone())
+        .unwrap_or_else(|| package.to_string());
+    let bundle_id = package_config.as_ref().and_then(|c| c.bundle_id.clone());
 
     // We'll detect the plugin formats supported by the plugin binary and create bundled accordingly.
     // If `lib_path` contains paths to multiple plugins that need to be combined into a macOS
@@ -448,6 +456,7 @@ fn bundle_plugin(
         maybe_create_macos_bundle_metadata(
             package,
             &bundle_name,
+            bundle_id.as_deref(),
             &clap_bundle_home,
             compilation_target,
             BundleType::Plugin,
@@ -476,6 +485,7 @@ fn bundle_plugin(
         maybe_create_macos_bundle_metadata(
             package,
             &bundle_name,
+            bundle_id.as_deref(),
             &vst2_bundle_home,
             compilation_target,
             BundleType::Plugin,
@@ -503,6 +513,7 @@ fn bundle_plugin(
         maybe_create_macos_bundle_metadata(
             package,
             &bundle_name,
+            bundle_id.as_deref(),
             vst3_bundle_home,
             compilation_target,
             BundleType::Plugin,
@@ -734,6 +745,7 @@ fn vst3_bundle_library_name(package: &str, target: CompilationTarget) -> String 
 pub fn maybe_create_macos_bundle_metadata(
     package: &str,
     display_name: &str,
+    bundle_id: Option<&str>,
     bundle_home: &Path,
     target: CompilationTarget,
     bundle_type: BundleType,
@@ -750,13 +762,15 @@ pub fn maybe_create_macos_bundle_metadata(
         BundleType::Binary => "APPL",
     };
 
-    // TODO: May want to add bundler.toml fields for the identifier, version and signature at some
-    //       point.
+    // TODO: May want to add bundler.toml fields for the version and signature at some point.
     fs::write(
         bundle_home.join("Contents").join("PkgInfo"),
         format!("{package_type}????"),
     )
     .context("Could not create PkgInfo file")?;
+    let resolved_bundle_id = bundle_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("com.nih-plug.{package}"));
     fs::write(
         bundle_home.join("Contents").join("Info.plist"),
         format!(r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -769,7 +783,7 @@ pub fn maybe_create_macos_bundle_metadata(
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.nih-plug.{package}</string>
+    <string>{resolved_bundle_id}</string>
     <key>CFBundleName</key>
     <string>{display_name}</string>
     <key>CFBundleDisplayName</key>

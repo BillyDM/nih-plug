@@ -331,10 +331,12 @@ where
         };
 
         self.egui_input.time = Some(self.start_time.elapsed().as_secs_f64());
-        self.egui_input.screen_rect = Some(calculate_screen_rect(
-            self.physical_size,
-            self.points_per_pixel,
-        ));
+        let effective_points_per_pixel = self.egui_ctx.pixels_per_point().recip();
+        let screen_rect = calculate_screen_rect(self.physical_size, effective_points_per_pixel);
+        self.egui_input.screen_rect = Some(screen_rect);
+        if let Some(viewport_info) = self.egui_input.viewports.get_mut(&self.viewport_id) {
+            viewport_info.inner_rect = Some(screen_rect);
+        }
 
         //let mut repaint_requested = false;
         let mut queue = Queue::new(
@@ -386,7 +388,7 @@ where
                 window,
                 self.bg_color,
                 self.physical_size,
-                self.pixels_per_point,
+                full_output.pixels_per_point,
                 &mut self.egui_ctx,
                 &mut full_output,
             );
@@ -465,7 +467,11 @@ where
                 } => {
                     self.update_modifiers(modifiers);
 
-                    let pos = pos2(position.x as f32, position.y as f32);
+                    let point_scale = self.pixels_per_point / self.egui_ctx.pixels_per_point();
+                    let pos = pos2(
+                        position.x as f32 * point_scale,
+                        position.y as f32 * point_scale,
+                    );
                     self.pointer_pos_in_points = Some(pos);
                     self.egui_input.events.push(egui::Event::PointerMoved(pos));
                 }
@@ -511,7 +517,7 @@ where
 
                         baseview::ScrollDelta::Pixels { x, y } => (
                             egui::MouseWheelUnit::Point,
-                            egui::vec2(*x, *y) * self.points_per_pixel,
+                            egui::vec2(*x, *y) * self.egui_ctx.pixels_per_point().recip(),
                         ),
                     };
 
