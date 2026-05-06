@@ -1,0 +1,3 @@
+[submodule "vendor/baseview"]
+	path = vendor/baseview
+	url = git@github.com:Wild-Surmise/baseview.git

@@ -104,6 +104,10 @@ where
             gl_config: Some(gl_config),
         };
 
+        // Newer baseview revs (≥5187acf) dropped `impl Default for
+        // WindowOpenOptions` and gate `gl_config` behind the `opengl` feature,
+        // so on the wgpu path the struct has no remaining fields beyond the
+        // three listed below — no `..Default::default()` needed.
         #[cfg(feature = "wgpu")]
         let window_settings = WindowOpenOptions {
             title: String::from("egui window"),
@@ -114,7 +118,6 @@ where
             scale: scaling_factor
                 .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
                 .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-            ..Default::default()
         };
 
         let window = EguiWindow::open_parented(

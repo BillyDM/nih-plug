@@ -24,6 +24,9 @@ members = [
   "examples/stft",
   "examples/sysex",
 ]
+# baseview is a vendored submodule with its own [workspace] root; keep it out
+# of ours so each side stays self-contained for upstream-diff sanity.
+exclude = ["vendor/baseview"]
 default-members = ["crates/nih_plug"]
 
 [workspace.package]
@@ -42,7 +45,13 @@ serde = { version = "1.0", features = ["derive"] }
 atomic_float = "1.1"
 atomic_refcell = "0.1"
 bitflags = "2.11"
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "1ec490c99fa2bef0c3c81c4f42d0b7552412c50d", default-features = false }
+# Vendored at vendor/baseview (submodule of Wild-Surmise/baseview, branch
+# gealach-occlusion-patch). Carries a macOS occlusion-state patch so the
+# 15ms CFRunLoop draw timer skips frames when the window is occluded —
+# without it, App Nap-throttled draws backlog and freeze the host UI on
+# resume. Upstream rev the patch sits on top of:
+# 5187acfc578f4fd10c247de6a39c19604e72fab6.
+baseview = { path = "vendor/baseview", default-features = false }
 raw-window-handle = "0.5"
 realfft = "3.0"
 approx = "0.5.1"
