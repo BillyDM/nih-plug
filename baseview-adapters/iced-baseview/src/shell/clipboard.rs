@@ -24,7 +24,8 @@ enum State {
 impl Clipboard {
     /// Creates a new [`Clipboard`] for the given window.
     ///
-    /// # SAFETY: The window handle must outlive this struct.
+    /// # Safety
+    /// The window handle must outlive this struct.
     pub unsafe fn connect<W: HasDisplayHandle>(window: &W) -> Clipboard {
         let clipboard = unsafe { window_clipboard::Clipboard::connect(window) };
 

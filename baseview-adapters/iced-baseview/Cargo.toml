@@ -7,12 +7,12 @@ authors = [
   "Joakim Frostegård <joakim.frostegard@gmail.com>",
 ]
 description = "A baseview backend for Iced"
-keywords = ["gui", "ui", "graphics", "interface", "widgets"]
+keywords = ["gui", "nih-plug", "plugin", "clap", "vst3"]
 categories = ["gui"]
 license = "MIT OR Apache-2.0"
 edition.workspace = true
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 
 [features]
 default = [
@@ -54,9 +54,9 @@ markdown = ["iced_widget/markdown"]
 # Enables lazy widgets
 lazy = ["iced_widget/lazy"]
 # Enables debug metrics (press F12)
-debug = ["dep:iced_devtools", "iced_debug/enable"]
+debug = ["dep:iced_devtools", "iced_program/debug", "iced_debug/enable"]
 # Enables time-travel debugging (very experimental!)
-time-travel = ["debug", "iced_devtools/time-travel"]
+time-travel = ["debug", "iced_program/time-travel", "iced_devtools/time-travel"]
 # Enables hot reloading (very experimental!)
 hot = ["debug", "iced_debug/hot"]
 # Enables the `thread-pool` futures executor as the `executor::Default`

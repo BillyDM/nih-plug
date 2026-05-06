@@ -190,8 +190,8 @@ pub fn gain_focus<T>() -> Task<T> {
     iced_runtime::window::gain_focus(Id::unique())
 }
 
-/// Returns true if the provided event should cause an [`Application`] to
-/// exit.
+/// Returns true if the provided event should cause an
+/// [`Application`](crate::application::Application) to exit.
 pub fn requests_exit(event: &baseview::Event) -> bool {
     match event {
         baseview::Event::Window(baseview::WindowEvent::WillClose) => true,

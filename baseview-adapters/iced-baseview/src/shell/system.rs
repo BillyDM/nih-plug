@@ -26,7 +26,7 @@ pub fn system_information(graphics: compositor::Information) -> system::Informat
         system_version: System::long_os_version(),
         system_short_version: System::os_version(),
         cpu_brand,
-        cpu_cores: system.physical_core_count(),
+        cpu_cores: sysinfo::System::physical_core_count(),
         memory_total: system.total_memory(),
         memory_used,
         graphics_adapter: graphics.adapter,

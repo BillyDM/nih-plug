@@ -8,7 +8,7 @@ pub struct IcedBaseviewSettings {
     // /// If provided, this identifier may be used to identify the application or
     // /// communicate with it through the windowing system.
     // pub id: Option<String>,
-    /// The [`Window`] settings.
+    /// The window settings.
     pub window: WindowOpenOptions,
 
     /// Ignore key inputs, except for modifier keys such as SHIFT and ALT

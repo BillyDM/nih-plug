@@ -20,10 +20,10 @@ pub use editor::{NihGuiContext, WindowState};
 /// * `window_state` - The initial window state.
 /// * `editor_state` - Custom state which persists between editor opens.
 /// * `notifier` - An atomic flag used to notify the program when it should
-/// poll for new updates and redraw (i.e. as a result of the host updating
-/// parameters or the audio thread updating the state of meters). This flag
-/// is polled every frame right before drawing. If the flag is set then the
-/// [`poll_events`] subscription will be called.
+///   poll for new updates and redraw (i.e. as a result of the host updating
+///   parameters or the audio thread updating the state of meters). This flag
+///   is polled every frame right before drawing. If the flag is set then the
+///   `poll_events` subscription will be called.
 /// * `settings` - Additional settings for the editor.
 /// * `build` - The function which builds the Iced program.
 pub fn create_iced_editor<P, B, EState>(
@@ -55,7 +55,7 @@ where
     }))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EditorSettings {
     /// Ignore key inputs, except for modifier keys such as SHIFT and ALT
     pub ignore_non_modifier_keys: bool,
@@ -66,13 +66,4 @@ pub struct EditorSettings {
     /// reopening the editor) and an iced limitation where it's not possible to have animations
     /// without using an asynchronous timer stream to send redraw messages to the application.
     pub always_redraw: bool,
-}
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            ignore_non_modifier_keys: false,
-            always_redraw: false,
-        }
-    }
 }

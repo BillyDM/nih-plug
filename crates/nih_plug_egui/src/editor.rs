@@ -76,11 +76,7 @@ where
 
         #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
         let gl_config = {
-            let is_x11 = if let ParentWindowHandle::X11Window(_) = &parent {
-                true
-            } else {
-                false
-            };
+            let is_x11 = matches!(&parent, ParentWindowHandle::X11Window(_));
 
             let mut gl_config = self.settings.gl_config.clone();
 
