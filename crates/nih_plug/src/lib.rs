@@ -82,8 +82,6 @@
 //! There's a whole lot more to discuss, but once you understand the above you should be able to
 //! figure out the rest by reading through the examples and the API documentation. Good luck!
 
-#![cfg_attr(feature = "docs", feature(doc_auto_cfg))]
-
 pub use nih_plug_core::*;
 
 /// Everything you'll need to use NIH-plug. Import this with `use nih_plug::prelude::*;`.

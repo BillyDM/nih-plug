@@ -1,6 +1,6 @@
 [package]
 name = "nih_plug_core"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -24,8 +24,6 @@ assert_process_allocs = ["dep:nih_assert_no_alloc"]
 # Add adapters to the Buffer object for reading the channel data to and from
 # `std::simd` vectors. Requires a nightly compiler.
 simd = []
-# Only relevant when generating docs, adds the `doc_auto_cfg` nightly feature
-docs = []
 
 [dependencies]
 nih_plug_derive = { path = "../nih_plug_derive", version = "0.1" }

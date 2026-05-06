@@ -59,12 +59,10 @@ zstd = ["dep:zstd"]
 # For an explanation on why denormal numbers are a problem, see:
 # https://mu.krj.st/denormal/
 unsafe_flush_denormals = []
-# Only relevant when generating docs, adds the `doc_auto_cfg` nightly feature
-docs = []
 
 [dependencies]
 nih_plug_derive = { path = "../nih_plug_derive", version = "0.1" }
-nih_plug_core = { path = "../nih_plug_core", version = "0.1" }
+nih_plug_core = { path = "../nih_plug_core", version = "0.1.1" }
 nih_assert_no_alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 nih_log = "0.3.1"
 # This supports CLAP 1.2.2

@@ -1,6 +1,6 @@
 [package]
 name = "nih_plug_iced"
-version = "0.1.0"
+version = "0.1.1"
 description = "An adapter to use iced GUIs with NIH-plug"
 edition.workspace = true
 license.workspace = true
@@ -81,11 +81,11 @@ x11 = ["iced_baseview/x11"]
 
 [dependencies]
 raw-window-handle.workspace = true
-nih_plug_core = { path = "../../crates/nih_plug_core", version = "0.1" }
+nih_plug_core = { path = "../../crates/nih_plug_core", version = "0.1.1" }
 iced_futures = "0.14"
 iced_debug = "0.14"
 iced_program = "0.14"
-iced_baseview = { path = "../../baseview-adapters/iced-baseview", version = "0.1", default-features = false, features = [
+iced_baseview = { path = "../../baseview-adapters/iced-baseview", version = "0.1.1", default-features = false, features = [
     "nih_log",
 ] }
 crossbeam-utils = "0.8"

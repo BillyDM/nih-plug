@@ -12,7 +12,20 @@ state is to list breaking changes.
 
 ## [2026-05-06]
 
-## Crate versions
+### Crate versions
+The following crates have been updated:
+- `nih_plug_core` (0.1.1)
+- `egui-baseview` (0.1.1)
+- `iced_baseview` (0.1.1)
+- `nih_plug_egui` (0.1.1)
+- `nih_plug_iced` (0.1.1)
+
+### Fixed
+- Removed unecessary `doc` features so that docs can compile on `crates.io`.
+
+## [2026-05-06]
+
+### Crate versions
 The following crates have been published to crates.io!
 - `nih_plug_core` (0.1.0)
 - `egui-baseview` (0.1.0)

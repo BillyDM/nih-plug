@@ -1,4 +1,3 @@
-#![cfg_attr(feature = "docs", feature(doc_auto_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(clippy::type_complexity)]
 
