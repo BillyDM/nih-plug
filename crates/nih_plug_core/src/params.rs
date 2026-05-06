@@ -1,7 +1,7 @@
 //! NIH-plug can handle floating point, integer, boolean, and enum parameters. Parameters are
-//! managed by creating a struct deriving the [`Params`][Params] trait containing fields
+//! managed by creating a struct deriving the [`Params`] trait containing fields
 //! for those parameter types, and then returning a reference to that object from your
-//! [`Plugin::params()`][crate::prelude::Plugin::params()] method. See the `Params` trait for more
+//! [`Plugin::params()`][crate::plugin::Plugin::params()] method. See the `Params` trait for more
 //! information.
 
 use std::collections::BTreeMap;
@@ -86,14 +86,14 @@ pub trait Param: Display + Debug + sealed::Sealed {
     /// Get this parameter's polyphonic modulation ID. If this is set for a parameter in a CLAP
     /// plugin, then polyphonic modulation will be enabled for that parameter. Polyphonic modulation
     /// is communicated to the plugin through
-    /// [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation] and
-    /// [`NoteEvent::MonoAutomation`][crate::prelude::NoteEvent::MonoAutomation] events. See the
+    /// [`NoteEvent::PolyModulation`][crate::midi::NoteEvent::PolyModulation] and
+    /// [`NoteEvent::MonoAutomation`][crate::midi::NoteEvent::MonoAutomation] events. See the
     /// documentation on those events for more information.
     ///
     /// # Important
     ///
     /// After enabling polyphonic modulation, the plugin **must** start sending
-    /// [`NoteEvent::VoiceTerminated`][crate::prelude::NoteEvent::VoiceTerminated] events to the
+    /// [`NoteEvent::VoiceTerminated`][crate::midi::NoteEvent::VoiceTerminated] events to the
     /// host when a voice has fully ended. This allows the host to reuse its modulation resources.
     fn poly_modulation_id(&self) -> Option<u32>;
 
@@ -186,50 +186,63 @@ pub trait Param: Display + Debug + sealed::Sealed {
     /// Flags to control the parameter's behavior. See [`ParamFlags`].
     fn flags(&self) -> ParamFlags;
 
-    /// Internal implementation detail for implementing [`Params`][Params]. This should
+    /// Internal implementation detail for implementing [`Params`]. This should
     /// not be used directly.
     fn as_ptr(&self) -> internals::ParamPtr;
 }
 
-/// Contains the setters for parameters. These should not be exposed to plugins to avoid confusion.
-pub(crate) trait ParamMut: Param {
+/// Contains the setters for parameters. Only to be used by nih-plug's internal libraries.
+/// These are exposed as unsafe methods to avoid confusion.
+pub trait InternalParamMut: Param {
     /// Set this parameter based on a plain, unnormalized value. This does not snap to step sizes
     /// for continuous parameters (i.e. [`FloatParam`]). If
-    /// [`modulate_value()`][Self::modulate_value()] has previously been called with a non zero
-    /// value then this offset is taken into account to form the effective value.
+    /// [`modulate_value()`][Self::_internal_modulate_value()] has previously been called with a non
+    /// zero value then this offset is taken into account to form the effective value.
     ///
     /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
     /// has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn set_plain_value(&self, plain: Self::Plain) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool;
 
     /// Set this parameter based on a normalized value. The normalized value will be snapped to the
     /// step size for continuous parameters (i.e. [`FloatParam`]). If
-    /// [`modulate_value()`][Self::modulate_value()] has previously been called with a non zero
-    /// value then this offset is taken into account to form the effective value.
+    /// [`modulate_value()`][Self::_internal_modulate_value()] has previously been called with a non
+    /// zero value then this offset is taken into account to form the effective value.
     ///
     /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
     /// has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn set_normalized_value(&self, normalized: f32) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool;
 
     /// Add a modulation offset to the value's unmodulated value. This value sticks until this
     /// function is called again with a 0.0 value. Out of bound values will be clamped to the
     /// parameter's range. The normalized value will be snapped to the step size for continuous
     /// parameters (i.e. [`FloatParam`]).
     ///
-    /// Returns whether or not the value has changed. Any parameter callbacks are only run the value
-    /// has actually changed.
+    /// Returns whether or not the value has changed. Any parameter callbacks are only run the
+    /// value has actually changed.
     ///
     /// This does **not** update the smoother.
-    fn modulate_value(&self, modulation_offset: f32) -> bool;
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool;
 
     /// Update the smoother state to point to the current value. Also used when initializing and
     /// restoring a plugin so everything is in sync. In that case the smoother should completely
     /// reset to the current value.
-    fn update_smoother(&self, sample_rate: f32, reset: bool);
+    ///
+    /// # Safety
+    /// This is only allowed to be used by nih-plug's internal libraries.
+    unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool);
 }
 
 /// Describes a struct containing parameters and other persistent fields.

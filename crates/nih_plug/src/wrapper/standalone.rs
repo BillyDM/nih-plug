@@ -2,12 +2,12 @@
 //! of relying on a plugin host. This is mostly useful for quickly testing GUI changes.
 
 use clap::{CommandFactory, FromArgMatches};
+use nih_plug_core::plugin::Plugin;
 
 use self::backend::Backend;
 use self::config::WrapperConfig;
 use self::wrapper::{Wrapper, WrapperError};
 use super::util::setup_logger;
-use crate::prelude::Plugin;
 
 mod backend;
 mod config;
@@ -74,7 +74,7 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
     match config.backend {
         config::BackendType::Auto => {
             let result = backend::Jack::new::<P>(config.clone()).map(|backend| {
-                nih_log!("Using the JACK backend");
+                crate::nih_log!("Using the JACK backend");
                 run_wrapper::<P, _>(backend, config.clone())
             });
 
@@ -82,10 +82,12 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             let result = result.or_else(|_| {
                 match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Alsa) {
                     Ok(backend) => {
-                        nih_log!("Using the ALSA backend");
+                        crate::nih_log!("Using the ALSA backend");
                         Ok(run_wrapper::<P, _>(backend, config.clone()))
                     }
                     Err(err) => {
+                        use nih_plug_core::nih_error;
+
                         nih_error!(
                             "Could not initialize either the JACK or the ALSA backends, falling \
                              back to the dummy audio backend: {err:#}"
@@ -98,11 +100,11 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             let result = result.or_else(|_| {
                 match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::CoreAudio) {
                     Ok(backend) => {
-                        nih_log!("Using the CoreAudio backend");
+                        crate::nih_log!("Using the CoreAudio backend");
                         Ok(run_wrapper::<P, _>(backend, config.clone()))
                     }
                     Err(err) => {
-                        nih_error!(
+                        crate::nih_error!(
                             "Could not initialize either the JACK or the CoreAudio backends, \
                              falling back to the dummy audio backend: {err:#}"
                         );
@@ -114,11 +116,11 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             let result = result.or_else(|_| {
                 match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Wasapi) {
                     Ok(backend) => {
-                        nih_log!("Using the WASAPI backend");
+                        crate::nih_log!("Using the WASAPI backend");
                         Ok(run_wrapper::<P, _>(backend, config.clone()))
                     }
                     Err(err) => {
-                        nih_error!(
+                        crate::nih_error!(
                             "Could not initialize either the JACK or the WASAPI backends, falling \
                              back to the dummy audio backend: {err:#}"
                         );
@@ -128,14 +130,16 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             });
 
             result.unwrap_or_else(|_| {
-                nih_error!("Falling back to the dummy audio backend, audio and MIDI will not work");
+                crate::nih_error!(
+                    "Falling back to the dummy audio backend, audio and MIDI will not work"
+                );
                 run_wrapper::<P, _>(backend::Dummy::new::<P>(config.clone()), config)
             })
         }
         config::BackendType::Jack => match backend::Jack::new::<P>(config.clone()) {
             Ok(backend) => run_wrapper::<P, _>(backend, config),
             Err(err) => {
-                nih_error!("Could not initialize the JACK backend: {:#}", err);
+                crate::nih_error!("Could not initialize the JACK backend: {:#}", err);
                 false
             }
         },
@@ -144,7 +148,7 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Alsa) {
                 Ok(backend) => run_wrapper::<P, _>(backend, config),
                 Err(err) => {
-                    nih_error!("Could not initialize the ALSA backend: {:#}", err);
+                    crate::nih_error!("Could not initialize the ALSA backend: {:#}", err);
                     false
                 }
             }
@@ -154,7 +158,7 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::CoreAudio) {
                 Ok(backend) => run_wrapper::<P, _>(backend, config),
                 Err(err) => {
-                    nih_error!("Could not initialize the CoreAudio backend: {:#}", err);
+                    crate::nih_error!("Could not initialize the CoreAudio backend: {:#}", err);
                     false
                 }
             }
@@ -164,7 +168,7 @@ pub fn nih_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Stri
             match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Wasapi) {
                 Ok(backend) => run_wrapper::<P, _>(backend, config),
                 Err(err) => {
-                    nih_error!("Could not initialize the WASAPI backend: {:#}", err);
+                    crate::nih_error!("Could not initialize the WASAPI backend: {:#}", err);
                     false
                 }
             }
@@ -197,7 +201,7 @@ fn run_wrapper<P: Plugin, B: Backend<P>>(backend: B, config: WrapperConfig) -> b
 fn print_error(error: WrapperError) {
     match error {
         WrapperError::InitializationFailed => {
-            nih_error!("The plugin failed to initialize");
+            crate::nih_error!("The plugin failed to initialize");
         }
     }
 }

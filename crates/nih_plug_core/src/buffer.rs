@@ -83,7 +83,7 @@ impl<'a> Buffer<'a> {
     /// SIMD.
     ///
     /// The parameter smoothers can also produce smoothed values for an entire block using
-    /// [`Smoother::next_block()`][crate::prelude::Smoother::next_block()].
+    /// [`Smoother::next_block()`][crate::params::smoothing::Smoother::next_block()].
     ///
     /// You can use this to obtain block-slices from a buffer so you can pass them to a library:
     ///
@@ -128,6 +128,8 @@ impl<'a> Buffer<'a> {
 
         #[cfg(debug_assertions)]
         for slice in &self.output_slices {
+            use crate::nih_debug_assert_eq;
+
             nih_debug_assert_eq!(slice.len(), num_samples);
         }
     }

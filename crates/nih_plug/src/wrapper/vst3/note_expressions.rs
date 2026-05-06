@@ -1,9 +1,8 @@
 //! Special handling for note expressions, because VST3 makes this a lot more complicated than it
 //! needs to be. We only support the predefined expressions.
 
+use nih_plug_core::midi::{NoteEvent, sysex::SysExMessage};
 use vst3_sys::vst::{NoteExpressionValueEvent, NoteOnEvent};
-
-use crate::prelude::{NoteEvent, SysExMessage};
 
 type MidiNote = u8;
 type MidiChannel = u8;

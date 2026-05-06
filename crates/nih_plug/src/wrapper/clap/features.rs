@@ -98,7 +98,7 @@ impl ClapFeature {
                 // Custom features must be prefixed with a namespace. We'll use `.split(':').all()`
                 // here instead of `.split_once()` in case the user for whatever reason uses more
                 // than one colon (which the docs don't say anything about, but uh yeah).
-                nih_debug_assert!(
+                crate::nih_debug_assert!(
                     s.contains(':') && s.split(':').all(|x| !x.is_empty()),
                     "'{s}' is not a valid feature, custom features must be namespaced (e.g. \
                      'nih:{s}')",

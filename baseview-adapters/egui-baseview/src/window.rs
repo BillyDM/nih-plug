@@ -12,7 +12,7 @@ use raw_window_handle::HasRawWindowHandle;
 use crate::{GraphicsConfig, renderer::Renderer};
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::{error, warn};
+use nih_plug_core::log::{error, warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::{error, warn};
@@ -246,9 +246,9 @@ where
     /// * `settings` - The settings of the window.
     /// * `state` - The initial state of your application.
     /// * `build` - Called once before the first frame. Allows you to do setup code and to
-    /// call `ctx.set_fonts()`. Optional.
+    ///   call `ctx.set_fonts()`. Optional.
     /// * `update` - Called before each frame. Here you should update the state of your
-    /// application and build the UI.
+    ///   application and build the UI.
     pub fn open_parented<P, B>(
         parent: &P,
         #[allow(unused_mut)] mut settings: WindowOpenOptions,
@@ -283,9 +283,9 @@ where
     /// * `settings` - The settings of the window.
     /// * `state` - The initial state of your application.
     /// * `build` - Called once before the first frame. Allows you to do setup code and to
-    /// call `ctx.set_fonts()`. Optional.
+    ///   call `ctx.set_fonts()`. Optional.
     /// * `update` - Called before each frame. Here you should update the state of your
-    /// application and build the UI.
+    ///   application and build the UI.
     pub fn open_blocking<B>(
         #[allow(unused_mut)] mut settings: WindowOpenOptions,
         graphics_config: GraphicsConfig,

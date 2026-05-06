@@ -2,6 +2,14 @@ use atomic_refcell::AtomicRefCell;
 use baseview::{EventStatus, Window, WindowHandler, WindowOpenOptions};
 use crossbeam::channel::{self, Sender};
 use crossbeam::queue::ArrayQueue;
+use nih_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
+use nih_plug_core::context::gui::AsyncExecutor;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::editor::{Editor, ParentWindowHandle};
+use nih_plug_core::midi::PluginNoteEvent;
+use nih_plug_core::params::internals::ParamPtr;
+use nih_plug_core::params::{ParamFlags, Params};
+use nih_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
 use raw_window_handle::HasRawWindowHandle;
 use std::any::Any;
@@ -14,13 +22,8 @@ use super::backend::Backend;
 use super::config::WrapperConfig;
 use super::context::{WrapperGuiContext, WrapperInitContext, WrapperProcessContext};
 use crate::event_loop::{EventLoop, MainThreadExecutor, OsEventLoop};
-use crate::prelude::{
-    AsyncExecutor, AudioIOLayout, BufferConfig, Editor, ParamFlags, ParamPtr, Params,
-    ParentWindowHandle, Plugin, PluginNoteEvent, ProcessMode, ProcessStatus, TaskExecutor,
-    Transport,
-};
 use crate::util::permit_alloc;
-use crate::wrapper::state::{self, PluginState};
+use crate::wrapper::state;
 use crate::wrapper::util::process_wrapper;
 
 /// How many parameter changes we can store in our unprocessed parameter change queue. Storing more
@@ -194,7 +197,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         let param_map = params.param_map();
         if cfg!(debug_assertions) {
             let param_ids: HashSet<_> = param_map.iter().map(|(id, _, _)| id.clone()).collect();
-            nih_debug_assert_eq!(
+            crate::nih_debug_assert_eq!(
                 param_map.len(),
                 param_ids.len(),
                 "The plugin has duplicate parameter IDs, weird things may happen. Consider using \
@@ -207,7 +210,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                 let is_bypass = flags.contains(ParamFlags::BYPASS);
 
                 if is_bypass && bypass_param_exists {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Duplicate bypass parameters found, the host will only use the first one"
                     );
                 }
@@ -262,29 +265,35 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         *wrapper.editor.borrow_mut() = wrapper
             .plugin
             .lock()
-            .editor(AsyncExecutor {
-                execute_background: Arc::new({
+            .editor(AsyncExecutor::new(
+                Arc::new({
                     let wrapper = wrapper.clone();
 
                     move |task| {
                         let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-                execute_gui: Arc::new({
+                Arc::new({
                     let wrapper = wrapper.clone();
 
                     move |task| {
                         let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-            })
+            ))
             .map(|editor| Arc::new(Mutex::new(editor)));
 
         // Before initializing the plugin, make sure all smoothers are set the the default values
         for param in wrapper.param_id_to_ptr.values() {
-            unsafe { param.update_smoother(wrapper.buffer_config.sample_rate, true) };
+            unsafe { param._internal_update_smoother(wrapper.buffer_config.sample_rate, true) };
         }
 
         {
@@ -377,7 +386,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             None => {
                 // TODO: Properly block until SIGINT is received if the plugin does not have an editor
                 // TODO: Make sure to handle `GuiTask::Close` here as well
-                nih_log!("{} does not have a GUI, blocking indefinitely...", P::NAME);
+                crate::nih_log!("{} does not have a GUI, blocking indefinitely...", P::NAME);
                 std::thread::park();
             }
         }
@@ -414,7 +423,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             .unprocessed_param_changes
             .push((param, normalized))
             .is_ok();
-        nih_debug_assert!(push_successful, "The parameter change queue was full");
+        crate::nih_debug_assert!(push_successful, "The parameter change queue was full");
 
         push_successful
     }
@@ -445,7 +454,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                 drop(state);
             }
             Err(err) => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "Could not send new state to the audio thread: {:?}",
                     err
                 );
@@ -485,7 +494,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             let push_successful = gui_tasks_sender
                 .send(GuiTask::Resize(unscaled_width, unscaled_height))
                 .is_ok();
-            nih_debug_assert!(push_successful, "Could not queue window resize");
+            crate::nih_debug_assert!(push_successful, "Could not queue window resize");
         }
     }
 
@@ -494,7 +503,9 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         let old_latency = self.current_latency.swap(samples, Ordering::SeqCst);
         if old_latency != samples {
             // None of the backends actually support this at the moment
-            nih_debug_assert_failure!("Standalones currently don't support latency reporting");
+            crate::nih_debug_assert_failure!(
+                "Standalones currently don't support latency reporting"
+            );
         }
     }
 
@@ -523,11 +534,11 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                             aux,
                             &mut self.make_process_context(transport, input_events, output_events),
                         ) {
-                            nih_error!("The plugin returned an error while processing:");
-                            nih_error!("{}", err);
+                            crate::nih_error!("The plugin returned an error while processing:");
+                            crate::nih_error!("{}", err);
 
                             let push_successful = gui_task_sender.send(GuiTask::Close).is_ok();
-                            nih_debug_assert!(
+                            crate::nih_debug_assert!(
                                 push_successful,
                                 "Could not queue window close, the editor will remain open"
                             );
@@ -544,13 +555,13 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                     while let Some((param_ptr, normalized_value)) =
                         self.unprocessed_param_changes.pop()
                     {
-                        if unsafe { param_ptr.set_normalized_value(normalized_value) } {
-                            unsafe { param_ptr.update_smoother(sample_rate, false) };
+                        if unsafe { param_ptr._internal_set_normalized_value(normalized_value) } {
+                            unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                             let task_posted = self.schedule_gui(Task::ParameterValueChanged(
                                 param_ptr,
                                 normalized_value,
                             ));
-                            nih_debug_assert!(
+                            crate::nih_debug_assert!(
                                 task_posted,
                                 "The task queue is full, dropping task..."
                             );
@@ -570,7 +581,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                         // We'll pass the state object back to the GUI thread so deallocation can
                         // happen there without potentially blocking the audio thread
                         if let Err(err) = self.updated_state_sender.send(state) {
-                            nih_debug_assert_failure!(
+                            crate::nih_debug_assert_failure!(
                                 "Failed to send state object back to GUI thread: {}",
                                 err
                             );
@@ -637,7 +648,9 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             )
         });
         if !success {
-            nih_debug_assert_failure!("Deserializing plugin state from a state object failed");
+            crate::nih_debug_assert_failure!(
+                "Deserializing plugin state from a state object failed"
+            );
             return false;
         }
 
@@ -660,14 +673,14 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             }
         }
 
-        nih_debug_assert!(
+        crate::nih_debug_assert!(
             success,
             "Plugin returned false when reinitializing after loading state"
         );
 
         // Reinitialize the plugin after loading state so it can respond to the new parameter values
         let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
 
         // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
         //       could keep track of the last known size and compare the GUI's current size against

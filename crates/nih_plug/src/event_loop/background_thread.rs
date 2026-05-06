@@ -4,7 +4,7 @@
 //! This is essentially a slimmed down version of the `LinuxEventLoop`.
 
 use anymap3::Entry;
-use crossbeam::channel;
+use nih_plug_core::nih_trace;
 use parking_lot::Mutex;
 use std::sync::{Arc, LazyLock, Weak};
 use std::thread::{self, JoinHandle};
@@ -29,7 +29,7 @@ pub(crate) struct BackgroundThread<T, E> {
 /// A handle for the singleton worker thread. This lets multiple instances of the same plugin share
 /// a worker thread, and when the last instance gets dropped the worker thread gets terminated.
 struct WorkerThread<T, E> {
-    tasks_sender: channel::Sender<Message<T, E>>,
+    tasks_sender: crossbeam::channel::Sender<Message<T, E>>,
     /// The thread's join handle. Joined when the WorkerThread is dropped.
     join_handle: Option<JoinHandle<()>>,
 }
@@ -78,7 +78,8 @@ static HANDLE_MAP: LazyLock<Mutex<anymap3::Map<dyn std::any::Any + Send>>> =
 
 impl<T: Send + 'static, E: MainThreadExecutor<T> + 'static> WorkerThread<T, E> {
     fn spawn() -> Self {
-        let (tasks_sender, tasks_receiver) = channel::bounded(super::TASK_QUEUE_CAPACITY);
+        let (tasks_sender, tasks_receiver) =
+            crossbeam::channel::bounded(super::TASK_QUEUE_CAPACITY);
         let join_handle = thread::Builder::new()
             .name(String::from("bg-worker"))
             .spawn(move || worker_thread(tasks_receiver))
@@ -137,7 +138,7 @@ where
 
 /// The worker thread used in [`EventLoop`] that executes incoming tasks on the event loop's
 /// executor.
-fn worker_thread<T, E>(tasks_receiver: channel::Receiver<Message<T, E>>)
+fn worker_thread<T, E>(tasks_receiver: crossbeam::channel::Receiver<Message<T, E>>)
 where
     T: Send,
     E: MainThreadExecutor<T> + 'static,

@@ -1,6 +1,14 @@
 use atomic_refcell::AtomicRefCell;
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::{self, SendTimeoutError};
+use nih_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
+use nih_plug_core::context::gui::AsyncExecutor;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::editor::Editor;
+use nih_plug_core::midi::{MidiConfig, PluginNoteEvent};
+use nih_plug_core::params::internals::ParamPtr;
+use nih_plug_core::params::{ParamFlags, Params};
+use nih_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -15,14 +23,11 @@ use super::param_units::ParamUnits;
 use super::util::{ObjectPtr, VST3_MIDI_PARAMS_END, VST3_MIDI_PARAMS_START, VstPtr};
 use super::view::WrapperView;
 use crate::event_loop::{EventLoop, MainThreadExecutor, OsEventLoop};
-use crate::prelude::{
-    AsyncExecutor, AudioIOLayout, BufferConfig, Editor, MidiConfig, ParamFlags, ParamPtr, Params,
-    Plugin, PluginNoteEvent, ProcessMode, ProcessStatus, TaskExecutor, Transport, Vst3Plugin,
-};
 use crate::util::permit_alloc;
-use crate::wrapper::state::{self, PluginState};
+use crate::wrapper::state;
 use crate::wrapper::util::buffer_management::BufferManager;
 use crate::wrapper::util::{hash_param_id, process_wrapper};
+use crate::wrapper::vst3::Vst3Plugin;
 
 /// The actual wrapper bits. We need this as an `Arc<T>` so we can safely use our event loop API.
 /// Since we can't combine that with VST3's interior reference counting this just has to be moved to
@@ -215,7 +220,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 .iter()
                 .map(|(id, _, _, _)| id.clone())
                 .collect();
-            nih_debug_assert_eq!(
+            crate::nih_debug_assert_eq!(
                 param_map.len(),
                 param_ids.len(),
                 "The plugin has duplicate parameter IDs, weird things may happen. Consider using \
@@ -228,7 +233,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 let is_bypass = flags.contains(ParamFlags::BYPASS);
 
                 if is_bypass && bypass_param_exists {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Duplicate bypass parameters found, the host will only use the first one"
                     );
                 }
@@ -238,7 +243,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 if P::MIDI_INPUT >= MidiConfig::MidiCCs
                     && (VST3_MIDI_PARAMS_START..VST3_MIDI_PARAMS_END).contains(hash)
                 {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Parameter '{}' collides with an automatically generated MIDI CC \
                          parameter, consider giving it a different ID",
                         id
@@ -330,8 +335,8 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         *wrapper.editor.borrow_mut() = wrapper
             .plugin
             .lock()
-            .editor(AsyncExecutor {
-                execute_background: Arc::new({
+            .editor(AsyncExecutor::new(
+                Arc::new({
                     let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
                         let wrapper = match wrapper.upgrade() {
@@ -340,10 +345,13 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                         };
 
                         let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-                execute_gui: Arc::new({
+                Arc::new({
                     let wrapper = Arc::downgrade(&wrapper);
                     move |task| {
                         let wrapper = match wrapper.upgrade() {
@@ -352,10 +360,13 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                         };
 
                         let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                        crate::nih_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
                     }
                 }),
-            })
+            ))
             .map(|editor| Arc::new(Mutex::new(editor)));
 
         wrapper
@@ -453,14 +464,17 @@ impl<P: Vst3Plugin> WrapperInner<P> {
     ) -> tresult {
         match self.param_by_hash.get(&hash) {
             Some(param_ptr) => {
-                if unsafe { param_ptr.set_normalized_value(normalized_value) } {
+                if unsafe { param_ptr._internal_set_normalized_value(normalized_value) } {
                     if let Some(sample_rate) = sample_rate {
-                        unsafe { param_ptr.update_smoother(sample_rate, false) };
+                        unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                     }
 
                     let task_posted =
                         self.schedule_gui(Task::ParameterValueChanged(hash, normalized_value));
-                    nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+                    crate::nih_debug_assert!(
+                        task_posted,
+                        "The task queue is full, dropping task..."
+                    );
                 }
 
                 kResultOk
@@ -510,7 +524,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                         continue;
                     }
                     Err(SendTimeoutError::Disconnected(_)) => {
-                        nih_debug_assert_failure!("State update channel got disconnected");
+                        crate::nih_debug_assert_failure!("State update channel got disconnected");
                         return;
                     }
                 }
@@ -531,7 +545,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 .schedule_gui(Task::TriggerRestart(
                     RestartFlags::kParamValuesChanged as i32,
                 ));
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     pub fn set_latency_samples(&self, samples: u32) {
@@ -540,7 +554,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         if old_latency != samples {
             let task_posted =
                 self.schedule_gui(Task::TriggerRestart(RestartFlags::kLatencyChanged as i32));
-            nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+            crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
     }
 
@@ -573,7 +587,9 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             )
         });
         if !success {
-            nih_debug_assert_failure!("Deserializing plugin state from a state object failed");
+            crate::nih_debug_assert_failure!(
+                "Deserializing plugin state from a state object failed"
+            );
             return false;
         }
 
@@ -592,21 +608,21 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             }
         }
 
-        nih_debug_assert!(
+        crate::nih_debug_assert!(
             success,
             "Plugin returned false when reinitializing after loading state"
         );
 
         // Reinitialize the plugin after loading state so it can respond to the new parameter values
         let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
 
         // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
         //       could keep track of the last known size and compare the GUI's current size against
         //       that but that also seems brittle.
         if self.plug_view.read().is_some() {
             let task_posted = self.schedule_gui(Task::RequestResize);
-            nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
+            crate::nih_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
 
         success
@@ -637,24 +653,24 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
             }
             Task::TriggerRestart(flags) => match &*self.component_handler.borrow() {
                 Some(handler) => unsafe {
-                    nih_debug_assert!(is_gui_thread);
+                    crate::nih_debug_assert!(is_gui_thread);
                     let result = handler.restart_component(flags);
-                    nih_debug_assert_eq!(
+                    crate::nih_debug_assert_eq!(
                         result,
                         kResultOk,
                         "Failed the restart request call with flags '{:?}'",
                         flags
                     );
                 },
-                None => nih_debug_assert_failure!("Component handler not yet set"),
+                None => crate::nih_debug_assert_failure!("Component handler not yet set"),
             },
             Task::RequestResize => match &*self.plug_view.read() {
                 Some(plug_view) => unsafe {
-                    nih_debug_assert!(is_gui_thread);
+                    crate::nih_debug_assert!(is_gui_thread);
                     let success = plug_view.request_resize();
-                    nih_debug_assert!(success, "Failed requesting a window resize");
+                    crate::nih_debug_assert!(success, "Failed requesting a window resize");
                 },
-                None => nih_debug_assert_failure!("Can't resize a closed editor"),
+                None => crate::nih_debug_assert_failure!("Can't resize a closed editor"),
             },
         }
     }

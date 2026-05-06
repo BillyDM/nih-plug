@@ -1,4 +1,5 @@
 use atomic_float::AtomicF32;
+use nih_plug_core::editor::{Editor, ParentWindowHandle};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::ffi::{CStr, c_void};
@@ -13,8 +14,8 @@ use vst3_sys::utils::SharedVstPtr;
 use super::inner::{Task, WrapperInner};
 use super::util::{ObjectPtr, VstPtr};
 use crate::editor::{Modifiers, VirtualKeyCode};
-use crate::plugin::vst3::Vst3Plugin;
-use crate::prelude::{Editor, ParentWindowHandle};
+#[cfg(target_os = "linux")]
+use crate::wrapper::vst3::Vst3Plugin;
 
 /// Lowest VST3 virtual key code (`KEY_BACK` in the VST3 SDK
 /// `VirtualKeyCodes` enum, `pluginterfaces/base/keycodes.h`). Values
@@ -392,7 +393,7 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
         match type_.to_str() {
             Ok(type_) if type_ == VST3_PLATFORM_X11_WINDOW => kResultOk,
             _ => {
-                nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
+                crate::nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
                 kResultFalse
             }
         }
@@ -404,7 +405,7 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
         match type_.to_str() {
             Ok(type_) if type_ == VST3_PLATFORM_NSVIEW => kResultOk,
             _ => {
-                nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
+                crate::nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
                 kResultFalse
             }
         }
@@ -416,7 +417,7 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
         match type_.to_str() {
             Ok(type_) if type_ == VST3_PLATFORM_HWND => kResultOk,
             _ => {
-                nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
+                crate::nih_debug_assert_failure!("Invalid window handle type: {:?}", type_);
                 kResultFalse
             }
         }
@@ -435,7 +436,7 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
                 }
                 Ok(type_) if type_ == VST3_PLATFORM_HWND => ParentWindowHandle::Win32Hwnd(parent),
                 _ => {
-                    nih_debug_assert_failure!("Unknown window handle type: {:?}", type_);
+                    crate::nih_debug_assert_failure!("Unknown window handle type: {:?}", type_);
                     return kInvalidArgument;
                 }
             };
@@ -449,7 +450,7 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
 
             kResultOk
         } else {
-            nih_debug_assert_failure!(
+            crate::nih_debug_assert_failure!(
                 "Host tried to attach editor while the editor is already attached"
             );
 
@@ -465,7 +466,9 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
 
             kResultOk
         } else {
-            nih_debug_assert_failure!("Host tried to remove the editor without an active editor");
+            crate::nih_debug_assert_failure!(
+                "Host tried to remove the editor without an active editor"
+            );
 
             kResultFalse
         }
@@ -595,7 +598,9 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupport for WrapperView<P> {
 
         // On macOS scaling is done by the OS, and all window sizes are in logical pixels
         if cfg!(target_os = "macos") {
-            nih_debug_assert_failure!("Ignoring host request to set explicit DPI scaling factor");
+            crate::nih_debug_assert_failure!(
+                "Ignoring host request to set explicit DPI scaling factor"
+            );
             return kResultFalse;
         }
 
@@ -662,7 +667,7 @@ impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
         }
 
         if posting_failed {
-            nih_debug_assert_failure!(
+            crate::nih_debug_assert_failure!(
                 "Outstanding tasks have been dropped when closing the editor as the task queue \
                  was full"
             );

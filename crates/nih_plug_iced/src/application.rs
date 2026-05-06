@@ -158,7 +158,7 @@ where
         program
     }
 
-    /// Sets the [`Settings`] that will be used to run the [`Application`].
+    /// Sets the [`Settings`](iced::Settings) that will be used to run the [`Application`].
     pub fn settings(self, settings: iced::Settings) -> Self {
         Self {
             iced_settings: settings,
@@ -166,7 +166,8 @@ where
         }
     }
 
-    /// Sets the [`Settings::antialiasing`] of the [`Application`].
+    /// Sets the [`Settings::antialiasing`](iced::Settings) field of the
+    /// [`Application`].
     pub fn antialiasing(self, antialiasing: bool) -> Self {
         Self {
             iced_settings: iced::Settings {

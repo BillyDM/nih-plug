@@ -1,3 +1,9 @@
+use nih_plug_core::audio_setup::{AuxiliaryBuffers, BufferConfig, ProcessMode};
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::midi::sysex::SysExMessage;
+use nih_plug_core::midi::{MidiConfig, NoteEvent};
+use nih_plug_core::params::ParamFlags;
+use nih_plug_core::plugin::ProcessStatus;
 use std::borrow::Borrow;
 use std::ffi::c_void;
 use std::mem::{self, MaybeUninit};
@@ -26,14 +32,11 @@ use super::util::{
 };
 use super::util::{VST3_MIDI_CHANNELS, VST3_MIDI_PARAMS_END};
 use super::view::WrapperView;
-use crate::prelude::{
-    AuxiliaryBuffers, BufferConfig, MidiConfig, NoteEvent, ParamFlags, ProcessMode, ProcessStatus,
-    SysExMessage, Transport, Vst3Plugin,
-};
 use crate::util::permit_alloc;
 use crate::wrapper::state;
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 use crate::wrapper::util::{clamp_input_event_timing, clamp_output_event_timing, process_wrapper};
+use crate::wrapper::vst3::Vst3Plugin;
 
 // Alias needed for the VST3 attribute macro
 use vst3_sys as vst3_com;
@@ -59,7 +62,7 @@ impl<P: Vst3Plugin> Wrapper<P> {
 
 impl<P: Vst3Plugin> Drop for Wrapper<P> {
     fn drop(&mut self) {
-        nih_debug_assert_eq!(Arc::strong_count(&self.inner), 1);
+        crate::nih_debug_assert_eq!(Arc::strong_count(&self.inner), 1);
     }
 }
 
@@ -375,7 +378,7 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
             (true, Some(buffer_config)) => {
                 // Before initializing the plugin, make sure all smoothers are set the the default values
                 for param in self.inner.param_by_hash.values() {
-                    unsafe { param.update_smoother(buffer_config.sample_rate, true) };
+                    unsafe { param._internal_update_smoother(buffer_config.sample_rate, true) };
                 }
 
                 // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
@@ -428,7 +431,7 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
                     std::ptr::null_mut(),
                 ) != kResultOk
         } {
-            nih_debug_assert_failure!("Could not get the stream length");
+            crate::nih_debug_assert_failure!("Could not get the stream length");
             return kResultFalse;
         }
 
@@ -448,14 +451,14 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
         // 'successful', so we can't check the return value but we can check the number of bytes
         // read.
         if read_buffer.len() != stream_byte_size as usize {
-            nih_debug_assert_failure!("Unexpected stream length");
+            crate::nih_debug_assert_failure!("Unexpected stream length");
             return kResultFalse;
         }
 
         match unsafe { state::deserialize_json(&read_buffer) } {
             Some(mut state) => {
                 if self.inner.set_state_inner(&mut state) {
-                    nih_trace!("Loaded state ({} bytes)", read_buffer.len());
+                    crate::nih_trace!("Loaded state ({} bytes)", read_buffer.len());
                     kResultOk
                 } else {
                     kResultFalse
@@ -487,15 +490,15 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
                     )
                 };
 
-                nih_debug_assert_eq!(result, kResultOk);
-                nih_debug_assert_eq!(num_bytes_written as usize, serialized.len());
+                crate::nih_debug_assert_eq!(result, kResultOk);
+                crate::nih_debug_assert_eq!(num_bytes_written as usize, serialized.len());
 
-                nih_trace!("Saved state ({} bytes)", serialized.len());
+                crate::nih_trace!("Saved state ({} bytes)", serialized.len());
 
                 kResultOk
             }
             Err(err) => {
-                nih_debug_assert_failure!("Could not save state: {:#}", err);
+                crate::nih_debug_assert_failure!("Could not save state: {:#}", err);
                 kResultFalse
             }
         }
@@ -820,7 +823,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
             7 => vst3_sys::vst::k70Cine,
             8 => vst3_sys::vst::k71Cine,
             n => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "No defined layout for {} channels, making something up on the spot...",
                     n
                 );
@@ -856,7 +859,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
         };
         let channel_map = channel_count_to_map(num_channels);
 
-        nih_debug_assert_eq!(num_channels, channel_map.count_ones());
+        crate::nih_debug_assert_eq!(num_channels, channel_map.count_ones());
         unsafe {
             *arr = channel_map;
         }
@@ -881,7 +884,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
 
         // There's no special handling for offline processing at the moment
         let setup = unsafe { &*setup };
-        nih_debug_assert_eq!(
+        crate::nih_debug_assert_eq!(
             setup.symbolic_sample_size,
             vst3_sys::vst::SymbolicSampleSizes::kSample32 as i32
         );
@@ -899,7 +902,10 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
             n if n == ProcessModes::kPrefetch as i32 => ProcessMode::Buffered,
             n if n == ProcessModes::kOffline as i32 => ProcessMode::Offline,
             n => {
-                nih_debug_assert_failure!("Unknown rendering mode '{}', defaulting to realtime", n);
+                crate::nih_debug_assert_failure!(
+                    "Unknown rendering mode '{}', defaulting to realtime",
+                    n
+                );
                 ProcessMode::Realtime
             }
         };
@@ -926,7 +932,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
             let mut plugin = match self.inner.plugin.try_lock() {
                 Some(plugin) => plugin,
                 None => {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "The host tried to call IAudioProcessor::setProcessing(true) during a \
                          reentrent call to IComponent::setActive(true), returning kResultOk. If \
                          this is Ardour then it will still call \
@@ -961,12 +967,12 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                 .expect("Process call without prior setup call")
                 .sample_rate;
 
-            nih_debug_assert!(data.num_inputs >= 0 && data.num_outputs >= 0);
-            nih_debug_assert_eq!(
+            crate::nih_debug_assert!(data.num_inputs >= 0 && data.num_outputs >= 0);
+            crate::nih_debug_assert_eq!(
                 data.symbolic_sample_size,
                 vst3_sys::vst::SymbolicSampleSizes::kSample32 as i32
             );
-            nih_debug_assert!(data.num_samples >= 0);
+            crate::nih_debug_assert!(data.num_samples >= 0);
 
             let total_buffer_len = data.num_samples as usize;
 
@@ -1091,7 +1097,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                     let mut event: MaybeUninit<_> = MaybeUninit::uninit();
                     for i in 0..num_events {
                         let result = unsafe { events.get_event(i, event.as_mut_ptr()) };
-                        nih_debug_assert_eq!(result, kResultOk);
+                        crate::nih_debug_assert_eq!(result, kResultOk);
 
                         let event = unsafe { event.assume_init() };
                         let timing = clamp_input_event_timing(
@@ -1149,7 +1155,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                                 Some(translated_event) => {
                                     process_events.push(ProcessEvent::NoteEvent(translated_event))
                                 }
-                                None => nih_debug_assert_failure!(
+                                None => crate::nih_debug_assert_failure!(
                                     "Unhandled note expression type: {}",
                                     event.type_id
                                 ),
@@ -1345,7 +1351,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                             break;
                         }
                     }
-                    nih_debug_assert!(buffer_is_valid);
+                    crate::nih_debug_assert!(buffer_is_valid);
 
                     // Some of the fields are left empty because VST3 does not provide this
                     // information, but the methods on [`Transport`] can reconstruct these values
@@ -1426,7 +1432,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
 
                     match result {
                         ProcessStatus::Error(err) => {
-                            nih_debug_assert_failure!("Process error: {}", err);
+                            crate::nih_debug_assert_failure!("Process error: {}", err);
 
                             return kResultFalse;
                         }
@@ -1560,7 +1566,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                                         vst3_event.event.note_expression_value = translated_event;
                                     }
                                     None => {
-                                        nih_debug_assert_failure!(
+                                        crate::nih_debug_assert_failure!(
                                             "Mishandled note expression value event"
                                         );
                                     }
@@ -1626,7 +1632,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                             {
                                 let (padded_sysex_buffer, length) = message.to_buffer();
                                 let padded_sysex_buffer = padded_sysex_buffer.borrow();
-                                nih_debug_assert!(padded_sysex_buffer.len() >= length);
+                                crate::nih_debug_assert!(padded_sysex_buffer.len() >= length);
                                 let sysex_buffer = &padded_sysex_buffer[..length];
 
                                 vst3_event.type_ = EventTypes::kDataEvent as u16;
@@ -1639,11 +1645,11 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                                 // NOTE: We need to have this call here while `sysex_buffer` is
                                 //       still in scope since the event contains pointers to it
                                 let result = unsafe { events.add_event(&mut vst3_event) };
-                                nih_debug_assert_eq!(result, kResultOk);
+                                crate::nih_debug_assert_eq!(result, kResultOk);
                                 continue;
                             }
                             _ => {
-                                nih_debug_assert_failure!(
+                                crate::nih_debug_assert_failure!(
                                     "Invalid output event for the current MIDI_OUTPUT setting"
                                 );
                                 continue;
@@ -1651,7 +1657,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                         };
 
                         let result = unsafe { events.add_event(&mut vst3_event) };
-                        nih_debug_assert_eq!(result, kResultOk);
+                        crate::nih_debug_assert_eq!(result, kResultOk);
                     }
                 }
 
@@ -1678,7 +1684,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                 // We'll pass the state object back to the GUI thread so deallocation can happen
                 // there without potentially blocking the audio thread
                 if let Err(err) = self.inner.updated_state_sender.send(state) {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Failed to send state object back to GUI thread: {}",
                         err
                     );

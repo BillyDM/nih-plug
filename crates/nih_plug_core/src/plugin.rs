@@ -3,14 +3,17 @@
 
 use std::sync::Arc;
 
-use crate::prelude::{
-    AsyncExecutor, AudioIOLayout, AuxiliaryBuffers, Buffer, BufferConfig, Editor, InitContext,
-    MidiConfig, Params, PluginState, ProcessContext, SysExMessage,
-};
+mod state;
+pub use state::*;
 
-pub mod clap;
-#[cfg(feature = "vst3")]
-pub mod vst3;
+use crate::{
+    audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig},
+    buffer::Buffer,
+    context::{gui::AsyncExecutor, init::InitContext, process::ProcessContext},
+    editor::Editor,
+    midi::{MidiConfig, sysex::SysExMessage},
+    params::Params,
+};
 
 /// A function that can execute a plugin's [`BackgroundTask`][Plugin::BackgroundTask]s. A plugin can
 /// dispatch these tasks from the `initialize()` function, the `process()` function, or the GUI, so
@@ -38,7 +41,7 @@ pub type TaskExecutor<P> = Box<dyn Fn(<P as Plugin>::BackgroundTask) + Send>;
 ///     benefits. In those cases the trait defines a method that is queried once and only once,
 ///     immediately after instantiating the `Plugin` through `Plugin::default()`. Examples of these
 ///     methods are [`Plugin::params()`], and
-///     [`ClapPlugin::remote_controls()`][clap::ClapPlugin::remote_controls()].
+///     `ClapPlugin::remote_controls()`.
 ///   - Some of the data is defined through associated types. Rust currently sadly does not support
 ///     default values for associated types, but all of these types can be set to `()` if you wish
 ///     to ignore them. Examples of these types are [`Plugin::SysExMessage`] and
@@ -77,11 +80,12 @@ pub trait Plugin: Default + Send + 'static {
     /// auxiliary input and output ports, if the plugin has any. If the slice is empty, then the
     /// plugin will not have any audio IO.
     ///
-    /// Both [`AudioIOLayout`] and [`PortNames`][crate::prelude::PortNames] have `.const_default()`
-    /// functions for compile-time equivalents to `Default::default()`:
+    /// Both [`AudioIOLayout`] and [`PortNames`][crate::audio_setup::PortNames] have
+    /// `.const_default()` functions for compile-time equivalents to `Default::default()`:
     ///
     /// ```
-    /// # use nih_plug::prelude::*;
+    /// # use nih_plug_core::audio_setup::{AudioIOLayout, new_nonzero_u32};
+    /// # use std::num::NonZeroU32;
     /// const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
     ///     main_input_channels: NonZeroU32::new(2),
     ///     main_output_channels: NonZeroU32::new(2),
@@ -155,10 +159,10 @@ pub trait Plugin: Default + Send + 'static {
     /// the host may call [`Editor::spawn()`] to create an editor instance. To read the current
     /// parameter values, you will need to clone and move the `Arc` containing your `Params` object
     /// into the editor. You can later modify the parameters through the
-    /// [`GuiContext`][crate::prelude::GuiContext] and [`ParamSetter`][crate::prelude::ParamSetter]
-    /// after the editor GUI has been created. NIH-plug comes with wrappers for several common GUI
-    /// frameworks that may have their own ways of interacting with parameters. See the repo's
-    /// readme for more information.
+    /// [`GuiContext`][crate::context::gui::GuiContext] and
+    /// [`ParamSetter`][crate::context::gui::ParamSetter] after the editor GUI has been created.
+    /// NIH-plug comes with wrappers for several common GUI frameworks that may have their own ways
+    /// of interacting with parameters. See the repo's readme for more information.
     ///
     /// Queried only once immediately after the plugin instance is created. This function takes
     /// `&mut self` to make it easier to move data into the `Editor` implementation.
@@ -226,9 +230,9 @@ pub trait Plugin: Default + Send + 'static {
     /// either per-sample per-channel, or per-block per-channel per-sample. The first approach is
     /// preferred for plugins that don't require block-based processing because of their use of
     /// per-sample SIMD or excessive branching. The parameter smoothers can also work in both modes:
-    /// use [`Smoother::next()`][crate::prelude::Smoother::next()] for per-sample processing, and
-    /// [`Smoother::next_block()`][crate::prelude::Smoother::next_block()] for block-based
-    /// processing.
+    /// use [`Smoother::next()`][crate::params::smoothing::Smoother::next()] for per-sample processing,
+    /// and [`Smoother::next_block()`][crate::params::smoothing::Smoother::next_block()] for
+    /// block-based processing.
     ///
     /// The `context` object contains context information as well as callbacks for working with note
     /// events. The [`AuxiliaryBuffers`] contain the plugin's sidechain input buffers and

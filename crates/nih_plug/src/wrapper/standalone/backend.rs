@@ -1,8 +1,10 @@
-use crate::prelude::{AuxiliaryBuffers, PluginNoteEvent, Transport};
-
 mod cpal;
 mod dummy;
 mod jack;
+
+use nih_plug_core::audio_setup::AuxiliaryBuffers;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::midi::PluginNoteEvent;
 
 pub use self::cpal::CpalMidir;
 pub use self::dummy::Dummy;

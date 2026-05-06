@@ -3,7 +3,7 @@
 use midi_consts::channel_event as midi;
 
 use self::sysex::SysExMessage;
-use crate::prelude::Plugin;
+use crate::{nih_trace, plugin::Plugin};
 
 pub mod sysex;
 
@@ -26,9 +26,9 @@ pub enum MidiConfig {
     None,
     /// The plugin receives note on/off/choke events, pressure, and potentially a couple
     /// standardized expression types depending on the plugin standard and host. If the plugin sets
-    /// up configuration for polyphonic modulation (see [`ClapPlugin`][crate::prelude::ClapPlugin])
-    /// and assigns polyphonic modulation IDs to some of its parameters, then it will also receive
-    /// polyphonic modulation events. This level is also needed to be able to send SysEx events.
+    /// up configuration for polyphonic modulation and assigns polyphonic modulation IDs to some of
+    /// its parameters, then it will also receive polyphonic modulation events. This level is also
+    /// needed to be able to send SysEx events.
     Basic,
     /// The plugin receives full MIDI CCs as well as pitch bend information. For VST3 plugins this
     /// involves adding 130*16 parameters to bind to the the 128 MIDI CCs, pitch bend, and channel
@@ -41,8 +41,8 @@ pub enum MidiConfig {
 //        values should be treated as wildcards.
 
 /// Event for (incoming) notes. The set of supported note events depends on the value of
-/// [`Plugin::MIDI_INPUT`][crate::prelude::Plugin::MIDI_INPUT]. Also check out the
-/// [`util`][crate::util] module for convenient conversion functions.
+/// [`Plugin::MIDI_INPUT`. Also check out the [`util`][crate::util] module for convenient conversion
+/// functions.
 ///
 /// `S` is a MIDI SysEx message type that needs to implement [`SysExMessage`] to allow converting
 /// this `NoteEvent` to and from raw MIDI data. `()` is provided as a default implementing for
@@ -127,13 +127,13 @@ pub enum NoteEvent<S> {
     ///   - This value can be obtained by calling `param.preview_plain(param.normalized_value() +
     ///     event.normalized_offset)`. These functions automatically clamp the values as necessary.
     ///   - If the parameter uses smoothing, then the parameter's smoother can be copied to the
-    ///     voice. [`Smoother::set_target()`][crate::prelude::Smoother::set_target()] can then be
-    ///     used to have the smoother use the modulated value.
-    ///   - One caveat with smoothing is that copying the smoother like this only works correctly if it last
-    ///     produced a value during the sample before the `PolyModulation` event. Otherwise there
-    ///     may still be an audible jump in parameter values. A solution for this would be to first
-    ///     call the [`Smoother::reset()`][crate::prelude::Smoother::reset()] with the current
-    ///     sample's global value before calling `set_target()`.
+    ///     voice. [`Smoother::set_target()`][crate::params::smoothing::Smoother::set_target()] can
+    ///     then be used to have the smoother use the modulated value.
+    ///   - One caveat with smoothing is that copying the smoother like this only works correctly if
+    ///     it last produced a value during the sample before the `PolyModulation` event. Otherwise
+    ///     there may still be an audible jump in parameter values. A solution for this would be to
+    ///     first call the [`Smoother::reset()`][crate::params::smoothing::Smoother::reset()] with
+    ///     the current sample's global value before calling `set_target()`.
     ///   - Finally, if the polyphonic modulation happens on the same sample as the `NoteOn` event,
     ///     then the smoothing should not start at the current global value. In this case, `reset()`
     ///     should be called with the voice's modulated value.
@@ -628,8 +628,7 @@ impl<S: SysExMessage> NoteEvent<S> {
 
     /// Subtract a sample offset from this event's timing, needed to compensate for the block
     /// splitting in the VST3 wrapper implementation because all events have to be read upfront.
-    #[cfg_attr(not(feature = "vst3"), allow(dead_code))]
-    pub(crate) fn subtract_timing(&mut self, samples: u32) {
+    pub fn subtract_timing(&mut self, samples: u32) {
         match self {
             NoteEvent::NoteOn { timing, .. } => *timing -= samples,
             NoteEvent::NoteOff { timing, .. } => *timing -= samples,

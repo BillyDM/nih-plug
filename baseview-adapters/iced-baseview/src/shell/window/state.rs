@@ -65,7 +65,7 @@ impl<P: Program> State<P> {
             window_scale_factor,
             scale_policy,
             modifiers: Default::default(),
-            program: PhantomData::default(),
+            program: PhantomData,
         }
     }
 

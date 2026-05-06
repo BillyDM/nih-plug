@@ -1,7 +1,7 @@
 //! A context passed during plugin initialization.
 
 use super::PluginApi;
-use crate::prelude::Plugin;
+use crate::plugin::Plugin;
 
 /// Callbacks the plugin can make while it is being initialized. This is passed to the plugin during
 /// [`Plugin::initialize()`][crate::plugin::Plugin::initialize()].
@@ -28,10 +28,9 @@ pub trait InitContext<P: Plugin> {
     fn set_latency_samples(&self, samples: u32);
 
     /// Set the current voice **capacity** for this plugin (so not the number of currently active
-    /// voices). This may only be called if
-    /// [`ClapPlugin::CLAP_POLY_MODULATION_CONFIG`][crate::prelude::ClapPlugin::CLAP_POLY_MODULATION_CONFIG]
-    /// is set. `capacity` must be between 1 and the configured maximum capacity. Changing this at
-    /// runtime allows the host to better optimize polyphonic modulation, or to switch to strictly
-    /// monophonic modulation when dropping the capacity down to 1.
+    /// voices). This may only be called if `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` is set.
+    /// `capacity` must be between 1 and the configured maximum capacity. Changing this at runtime
+    /// allows the host to better optimize polyphonic modulation, or to switch to strictly monophonic
+    /// modulation when dropping the capacity down to 1.
     fn set_current_voice_capacity(&self, capacity: u32);
 }

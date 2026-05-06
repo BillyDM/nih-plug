@@ -19,6 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCSTR;
 
 use super::{BackgroundThread, EventLoop, MainThreadExecutor};
+use crate::nih_debug_assert_failure;
 use crate::util::permit_alloc;
 
 /// The custom message ID for our notify event. If the hidden event loop window receives this, then

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::internals::ParamPtr;
-use super::{Param, ParamFlags, ParamMut};
+use super::{InternalParamMut, Param, ParamFlags};
 
 /// A simple boolean parameter.
 pub struct BoolParam {
@@ -165,8 +165,8 @@ impl Param for BoolParam {
     }
 }
 
-impl ParamMut for BoolParam {
-    fn set_plain_value(&self, plain: Self::Plain) -> bool {
+impl InternalParamMut for BoolParam {
+    unsafe fn _internal_set_plain_value(&self, plain: Self::Plain) -> bool {
         let unmodulated_value = plain;
         let unmodulated_normalized_value = self.preview_normalized(plain);
 
@@ -201,23 +201,23 @@ impl ParamMut for BoolParam {
         }
     }
 
-    fn set_normalized_value(&self, normalized: f32) -> bool {
+    unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool {
         // NOTE: The double conversion here is to make sure the state is reproducible. State is
         //       saved and restored using plain values, and the new normalized value will be
         //       different from `normalized`. This is not necessary for the modulation as these
         //       values are never shown to the host.
-        self.set_plain_value(self.preview_plain(normalized))
+        unsafe { self._internal_set_plain_value(self.preview_plain(normalized)) }
     }
 
-    fn modulate_value(&self, modulation_offset: f32) -> bool {
+    unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool {
         self.modulation_offset
             .store(modulation_offset, Ordering::Relaxed);
 
         // TODO: This renormalizes this value, which is not necessary
-        self.set_plain_value(self.unmodulated_plain_value())
+        unsafe { self._internal_set_plain_value(self.unmodulated_plain_value()) }
     }
 
-    fn update_smoother(&self, _sample_rate: f32, _init: bool) {
+    unsafe fn _internal_update_smoother(&self, _sample_rate: f32, _init: bool) {
         // Can't really smooth a binary parameter now can you
     }
 }
@@ -252,16 +252,15 @@ impl BoolParam {
     }
 
     /// Enable polyphonic modulation for this parameter. The ID is used to uniquely identify this
-    /// parameter in [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation]
+    /// parameter in [`NoteEvent::PolyModulation`][crate::midi::NoteEvent::PolyModulation]
     /// events, and must thus be unique between _all_ polyphonically modulatable parameters. See the
     /// event's documentation on how to use polyphonic modulation. Also consider configuring the
-    /// [`ClapPlugin::CLAP_POLY_MODULATION_CONFIG`][crate::prelude::ClapPlugin::CLAP_POLY_MODULATION_CONFIG]
-    /// constant when enabling this.
+    /// `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` constant when enabling this.
     ///
     /// # Important
     ///
     /// After enabling polyphonic modulation, the plugin **must** start sending
-    /// [`NoteEvent::VoiceTerminated`][crate::prelude::NoteEvent::VoiceTerminated] events to the
+    /// [`NoteEvent::VoiceTerminated`][crate::midi::NoteEvent::VoiceTerminated] events to the
     /// host when a voice has fully ended. This allows the host to reuse its modulation resources.
     pub fn with_poly_modulation_id(mut self, id: u32) -> Self {
         self.poly_modulation_id = Some(id);

@@ -18,7 +18,7 @@ macro_rules! check_null_ptr_msg {
         // if we explicitly pattern match on that unit
         #[allow(clippy::unused_unit)]
         if $ptr.is_null() $(|| $ptrs.is_null())* {
-            nih_debug_assert_failure!($msg);
+            crate::nih_debug_assert_failure!($msg);
             return $ret;
         }
     };

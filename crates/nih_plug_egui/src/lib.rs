@@ -7,8 +7,9 @@
 
 use crossbeam::atomic::AtomicCell;
 use egui::{Context, Ui};
-use nih_plug::params::persist::PersistentField;
-use nih_plug::prelude::{Editor, ParamSetter};
+use nih_plug_core::context::gui::ParamSetter;
+use nih_plug_core::editor::Editor;
+use nih_plug_core::params::persist::PersistentField;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -27,7 +28,7 @@ mod editor;
 pub mod resizable_window;
 pub mod widgets;
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct EguiSettings {
     pub graphics_config: GraphicsConfig,
 
@@ -58,19 +59,7 @@ pub struct EguiSettings {
     pub gl_config: GlConfig,
 }
 
-impl Default for EguiSettings {
-    fn default() -> Self {
-        Self {
-            graphics_config: Default::default(),
-            #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-            enable_vsync_on_x11: false,
-            #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-            gl_config: GlConfig::default(),
-        }
-    }
-}
-
-/// Create an [`Editor`] instance using an [`egui`][::egui] GUI. Using the user state parameter is
+/// Create an [`Editor`] instance using an [`egui`] GUI. Using the user state parameter is
 /// optional, but it can be useful for keeping track of some temporary GUI-only settings. See the
 /// `nih_plug_gain_egui` example for more information on how to use this. The [`EguiState`] passed
 /// to this function contains the GUI's intitial size, and this is kept in sync whenever the GUI gets
@@ -113,7 +102,7 @@ where
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EguiState {
     /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nih_plug::params::persist::serialize_atomic_cell")]
+    #[serde(with = "nih_plug_core::params::persist::serialize_atomic_cell")]
     size: AtomicCell<(u32, u32)>,
 
     /// The new size of the window, if it was requested to resize by the GUI.

@@ -1,9 +1,13 @@
 [package]
 name = "nih_plug_iced"
 version = "0.1.0"
+description = "An adapter to use iced GUIs with NIH-plug"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords = ["gui", "nih-plug", "plugin", "clap", "vst3"]
+categories = ["gui"]
 
 [features]
 default = [
@@ -37,9 +41,9 @@ markdown = ["iced_baseview/markdown"]
 # Enables lazy widgets
 lazy = ["iced_baseview/lazy"]
 # Enables debug metrics (press F12)
-debug = ["iced_baseview/debug"]
+debug = ["iced_baseview/debug", "iced_program/debug"]
 # Enables time-travel debugging (very experimental!)
-time-travel = ["iced_baseview/time-travel"]
+time-travel = ["iced_baseview/time-travel", "iced_program/time-travel"]
 # Enables hot reloading (very experimental!)
 hot = ["iced_baseview/hot"]
 # Enables the `thread-pool` futures executor as the `executor::Default`
@@ -77,13 +81,13 @@ x11 = ["iced_baseview/x11"]
 
 [dependencies]
 raw-window-handle.workspace = true
-nih_plug = { path = "../../crates/nih_plug", default-features = false }
+nih_plug_core = { path = "../../crates/nih_plug_core", version = "0.1" }
 iced_futures = "0.14"
 iced_debug = "0.14"
-iced_baseview = { path = "../../baseview-adapters/iced-baseview", default-features = false, features = [
+iced_program = "0.14"
+iced_baseview = { path = "../../baseview-adapters/iced-baseview", version = "0.1", default-features = false, features = [
     "nih_log",
 ] }
 crossbeam-utils = "0.8"
 # To make the state persistable
 serde.workspace = true
-

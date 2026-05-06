@@ -6,16 +6,16 @@ use std::any::Any;
 use std::ffi::c_void;
 use std::sync::Arc;
 
-use crate::prelude::GuiContext;
+use crate::context::gui::GuiContext;
 
-/// An editor for a [`Plugin`][crate::prelude::Plugin].
+/// An editor for a [`Plugin`][crate::plugin::Plugin].
 pub trait Editor: Send {
     /// Create an instance of the plugin's editor and embed it in the parent window. As explained in
-    /// [`Plugin::editor()`][crate::prelude::Plugin::editor()], you can then read the parameter
-    /// values directly from your [`Params`][crate::prelude::Params] object, and modifying the
-    /// values can be done using the functions on the [`ParamSetter`][crate::prelude::ParamSetter].
+    /// [`Plugin::editor()`][crate::plugin::Plugin::editor()], you can then read the parameter
+    /// values directly from your [`Params`][crate::params::Params] object, and modifying the
+    /// values can be done using the functions on the [`ParamSetter`][crate::context::gui::ParamSetter].
     /// When you change a parameter value that way it will be broadcasted to the host and also
-    /// updated in your [`Params`][crate::prelude::Params] struct.
+    /// updated in your [`Params`][crate::params::Params] struct.
     ///
     /// This function should return a handle to the editor, which will be dropped when the editor
     /// gets closed. Implement the [`Drop`] trait on the returned handle if you need to explicitly

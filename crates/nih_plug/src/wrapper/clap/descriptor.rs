@@ -3,7 +3,7 @@ use clap_sys::version::CLAP_VERSION;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use crate::prelude::ClapPlugin;
+use crate::wrapper::clap::ClapPlugin;
 
 /// A static descriptor for a plugin. This is used in both the descriptor and on the plugin object
 /// itself.

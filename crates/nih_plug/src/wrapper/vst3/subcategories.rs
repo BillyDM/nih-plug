@@ -76,7 +76,7 @@ impl Vst3SubCategory {
             Vst3SubCategory::Surround => "Surround",
             Vst3SubCategory::Ambisonics => "Ambisonics",
             Vst3SubCategory::Custom(s) => {
-                nih_debug_assert!(
+                crate::nih_debug_assert!(
                     !s.contains('|'),
                     "'{}' contains a pipe character ('|'), which is not allowed",
                     s

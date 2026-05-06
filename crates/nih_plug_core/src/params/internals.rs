@@ -1,6 +1,6 @@
 //! Implementation details for the parameter management.
 
-use super::{Param, ParamFlags, ParamMut};
+use super::{InternalParamMut, Param, ParamFlags};
 
 /// Internal pointers to parameters. This is an implementation detail used by the wrappers for type
 /// erasure.
@@ -76,9 +76,9 @@ impl ParamPtr {
     param_ptr_forward!(pub unsafe fn string_to_normalized_value(&self, string: &str) -> Option<f32>);
     param_ptr_forward!(pub unsafe fn flags(&self) -> ParamFlags);
 
-    param_ptr_forward!(pub(crate) unsafe fn set_normalized_value(&self, normalized: f32) -> bool);
-    param_ptr_forward!(pub(crate) unsafe fn modulate_value(&self, modulation_offset: f32) -> bool);
-    param_ptr_forward!(pub(crate) unsafe fn update_smoother(&self, sample_rate: f32, reset: bool));
+    param_ptr_forward!(pub unsafe fn _internal_set_normalized_value(&self, normalized: f32) -> bool);
+    param_ptr_forward!(pub unsafe fn _internal_modulate_value(&self, modulation_offset: f32) -> bool);
+    param_ptr_forward!(pub unsafe fn _internal_update_smoother(&self, sample_rate: f32, reset: bool));
 
     // These functions involve casts since the plugin formats only do floating point types, so we
     // can't generate them with the macro:

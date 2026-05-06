@@ -12,6 +12,7 @@ use std::os::raw::c_void;
 use std::sync::Weak;
 
 use super::{BackgroundThread, EventLoop, MainThreadExecutor};
+use crate::nih_debug_assert_failure;
 
 /// Wrapping the `CFRunLoopSourceRef` type is required to be able to annotate it as thread-safe.
 struct LoopSourceWrapper(CFRunLoopSourceRef);

@@ -2,9 +2,14 @@ use std::num::NonZeroU32;
 use std::ptr::NonNull;
 use std::time::{Duration, Instant};
 
+use nih_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers};
+use nih_plug_core::buffer::Buffer;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::midi::PluginNoteEvent;
+use nih_plug_core::plugin::Plugin;
+
 use super::super::config::WrapperConfig;
 use super::Backend;
-use crate::prelude::{AudioIOLayout, AuxiliaryBuffers, Buffer, Plugin, PluginNoteEvent, Transport};
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 
 /// This backend doesn't input or output any audio or MIDI. It only exists so the standalone

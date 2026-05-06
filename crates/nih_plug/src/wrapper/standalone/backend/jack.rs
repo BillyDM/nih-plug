@@ -6,15 +6,16 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use crossbeam::sync::Parker;
 use jack::{AsyncClient, AudioIn, AudioOut, Client, ClientOptions, Control, MidiIn, MidiOut, Port};
+use nih_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers};
+use nih_plug_core::buffer::Buffer;
+use nih_plug_core::context::process::Transport;
+use nih_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
+use nih_plug_core::plugin::Plugin;
 use parking_lot::Mutex;
 
 use super::super::config::WrapperConfig;
 use super::Backend;
 use crate::midi::MidiResult;
-use crate::prelude::{
-    AudioIOLayout, AuxiliaryBuffers, Buffer, MidiConfig, NoteEvent, Plugin, PluginNoteEvent,
-    Transport,
-};
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 use crate::wrapper::util::{clamp_input_event_timing, clamp_output_event_timing};
 
@@ -117,7 +118,7 @@ impl<P: Plugin> Backend<P> for Jack {
             // buffers like that so we'll just make it easier for ourselves by not supporting that
             let num_frames = ps.n_frames();
             if num_frames != buffer_size {
-                nih_error!(
+                crate::nih_error!(
                     "Buffer size changed from {buffer_size} to {num_frames}. Buffer size changes \
                      are currently not supported, aborting..."
                 );
@@ -271,18 +272,24 @@ impl<P: Plugin> Backend<P> for Jack {
                                     bytes: &midi_data,
                                 });
 
-                                nih_debug_assert!(write_result.is_ok(), "The MIDI buffer is full");
+                                crate::nih_debug_assert!(
+                                    write_result.is_ok(),
+                                    "The MIDI buffer is full"
+                                );
                             }
                             Some(MidiResult::SysEx(padded_sysex_buffer, length)) => {
                                 // The SysEx buffer may contain padding
                                 let padded_sysex_buffer = padded_sysex_buffer.borrow();
-                                nih_debug_assert!(length <= padded_sysex_buffer.len());
+                                crate::nih_debug_assert!(length <= padded_sysex_buffer.len());
                                 let write_result = midi_writer.write(&jack::RawMidi {
                                     time: timing,
                                     bytes: &padded_sysex_buffer[..length],
                                 });
 
-                                nih_debug_assert!(write_result.is_ok(), "The MIDI buffer is full");
+                                crate::nih_debug_assert!(
+                                    write_result.is_ok(),
+                                    "The MIDI buffer is full"
+                                );
                             }
                             None => (),
                         }
@@ -301,7 +308,7 @@ impl<P: Plugin> Backend<P> for Jack {
         // disappear when the client is deactivated. Fun.
         let async_client = client.activate_async((), process_handler).unwrap();
         if let Err(err) = self.connect_ports(&async_client) {
-            nih_error!("Error connecting JACK ports: {err}")
+            crate::nih_error!("Error connecting JACK ports: {err}")
         }
 
         // The process callback happens on another thread, so we need to block this thread until we
@@ -328,7 +335,7 @@ impl Jack {
         }
 
         if config.connect_jack_inputs.is_none() && audio_io_layout.main_input_channels.is_some() {
-            nih_log!(
+            crate::nih_log!(
                 "Audio inputs are not connected automatically to prevent feedback. Use the \
                  '--connect-jack-inputs' option to connect the input ports."
             )
@@ -464,13 +471,13 @@ impl Jack {
             if port_name.contains(',') {
                 for (port_name, input) in port_name.split(',').zip(self.main_inputs.iter()) {
                     if let Err(err) = client.connect_ports_by_name(port_name, &input.name()?) {
-                        nih_error!("Could not connect to '{port_name}': {err}");
+                        crate::nih_error!("Could not connect to '{port_name}': {err}");
                     }
                 }
             } else {
                 for input in self.main_inputs.iter() {
                     if let Err(err) = client.connect_ports_by_name(port_name, &input.name()?) {
-                        nih_error!("Could not connect to '{port_name}': {err}");
+                        crate::nih_error!("Could not connect to '{port_name}': {err}");
                         break;
                     }
                 }
@@ -481,14 +488,14 @@ impl Jack {
             (&self.midi_input, &self.config.connect_jack_midi_input)
         {
             if let Err(err) = client.connect_ports_by_name(port_name, &port.name()?) {
-                nih_error!("Could not connect to '{port_name}': {err}");
+                crate::nih_error!("Could not connect to '{port_name}': {err}");
             }
         }
         if let (Some(port), Some(port_name)) =
             (&self.midi_output, &self.config.connect_jack_midi_output)
         {
             if let Err(err) = client.connect_ports_by_name(&port.lock().name()?, port_name) {
-                nih_error!("Could not connect to '{port_name}': {err}");
+                crate::nih_error!("Could not connect to '{port_name}': {err}");
             }
         }
 

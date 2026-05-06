@@ -30,7 +30,7 @@ macro_rules! check_null_ptr {
 macro_rules! check_null_ptr_msg {
     ($msg:expr, $ptr:expr $(, $ptrs:expr)* $(, )?) => {
         if $ptr.is_null() $(|| $ptrs.is_null())* {
-            nih_debug_assert_failure!($msg);
+            crate::nih_debug_assert_failure!($msg);
             return kInvalidArgument;
         }
     };
@@ -45,7 +45,7 @@ pub fn u16strlcpy(dest: &mut [TChar], src: &str) {
     let src_utf16 = match U16CString::from_str(src) {
         Ok(s) => s,
         Err(err) => {
-            nih_debug_assert_failure!("Invalid UTF-16 string: {}", err);
+            crate::nih_debug_assert_failure!("Invalid UTF-16 string: {}", err);
             return;
         }
     };

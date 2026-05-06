@@ -16,7 +16,7 @@ use std::time::Instant;
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "nih_log")]
-use nih_plug::log::{debug, error, warn};
+use nih_plug_core::log::{debug, error, warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nih_log")))]
 use tracing::{debug, error, warn};
@@ -95,10 +95,10 @@ pub fn poll_events() -> Subscription<()> {
 ///
 /// * `settings` - The settings of the window.
 /// * `notifier` - An atomic flag used to notify the program when it should
-/// poll for new updates and redraw (i.e. as a result of the host updating parameters
-/// or the audio thread updating the state of meters). This flag is polled every frame
-/// right before drawing. If the flag is set then the [`poll_events`] subscription
-/// will be called.
+///   poll for new updates and redraw (i.e. as a result of the host updating parameters
+///   or the audio thread updating the state of meters). This flag is polled every frame
+///   right before drawing. If the flag is set then the [`poll_events`] subscription
+///   will be called.
 /// * `build_program` - The function which builds the Iced program.
 pub fn open_blocking<P, B>(
     settings: IcedBaseviewSettings,
@@ -124,10 +124,10 @@ pub fn open_blocking<P, B>(
 /// * `parent` - The parent window.
 /// * `settings` - The settings of the window.
 /// * `notifier` - An atomic flag used to notify the program when it should
-/// poll for new updates and redraw (i.e. as a result of the host updating parameters
-/// or the audio thread updating the state of meters). This flag is polled every frame
-/// right before drawing. If the flag is set then the [`poll_events`] subscription
-/// will be called.
+///   poll for new updates and redraw (i.e. as a result of the host updating parameters
+///   or the audio thread updating the state of meters). This flag is polled every frame
+///   right before drawing. If the flag is set then the [`poll_events`] subscription
+///   will be called.
 /// * `build_program` - The functio which builds the Iced program.
 pub fn open_parented<W, P, B>(
     parent: &W,
@@ -273,7 +273,7 @@ where
     };
 
     let instance = Box::pin({
-        let run_instance = run_instance(
+        run_instance(
             program,
             runtime,
             proxy,
@@ -282,8 +282,7 @@ where
             clipboard,
             Rc::clone(&event_status),
             notifier,
-        );
-        run_instance
+        )
     });
 
     let runtime_context = task::Context::from_waker(task::noop_waker_ref());
@@ -301,6 +300,7 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_instance<P>(
     mut program: iced_program::Instance<P>,
     mut runtime: Runtime<P::Executor, Proxy<P::Message>, Action<P::Message>>,
@@ -438,7 +438,7 @@ async fn run_instance<P>(
                     }
                 }
 
-                for (event, status) in window_events.into_iter().zip(statuses.into_iter()) {
+                for (event, status) in window_events.into_iter().zip(statuses) {
                     runtime.broadcast(subscription::Event::Interaction {
                         window: window.id,
                         event,
@@ -486,11 +486,11 @@ async fn run_instance<P>(
 
                 // -- Draw --------------------------------------------------------------------
 
-                if let Some(redraw_at) = window.redraw_at {
-                    if redraw_at <= Instant::now() {
-                        window.redraw_requested = true;
-                        window.redraw_at = None;
-                    }
+                if let Some(redraw_at) = window.redraw_at
+                    && redraw_at <= Instant::now()
+                {
+                    window.redraw_requested = true;
+                    window.redraw_at = None;
                 }
 
                 if window.surface_version != window.state.surface_version() {
@@ -864,6 +864,7 @@ fn log_unsupported_window_action(command: &str) {
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_action<'a, P>(
     action: Action<P::Message>,
     program: &'a iced_program::Instance<P>,
@@ -1075,7 +1076,7 @@ fn run_action<'a, P>(
             };
 
             *user_interface = Some(build_user_interface(
-                &program,
+                program,
                 cached_interface,
                 &mut window.renderer,
                 window.state.logical_size(),

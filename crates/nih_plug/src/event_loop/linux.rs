@@ -6,6 +6,7 @@ use std::sync::Weak;
 use std::thread::{self, ThreadId};
 
 use super::{BackgroundThread, EventLoop, MainThreadExecutor};
+use crate::nih_debug_assert_failure;
 use crate::util::permit_alloc;
 
 /// See [`EventLoop`][super::EventLoop].

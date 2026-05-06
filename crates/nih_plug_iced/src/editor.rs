@@ -3,10 +3,10 @@ use iced_baseview::baseview::{Size, WindowOpenOptions, WindowScalePolicy};
 use iced_baseview::{
     IcedBaseviewSettings, PollSubNotifier, Program, message, shell::window::WindowHandle,
 };
-use nih_plug::{
+use nih_plug_core::context::gui::{GuiContext, ParamSetter};
+use nih_plug_core::{
     editor::{Editor, ParentWindowHandle},
     params::persist::PersistentField,
-    prelude::{GuiContext, ParamSetter},
 };
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
         let (unscaled_width, unscaled_height) = self.window_state.logical_size();
         let scaling_factor = self.scaling_factor.load();
 
+        #[allow(clippy::needless_update)]
         let window = iced_baseview::open_parented(
             &ParentWindowHandleAdapter(parent),
             IcedBaseviewSettings {
@@ -137,7 +138,7 @@ impl<Message: 'static + Send> Drop for IcedEditorHandle<Message> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowState {
     /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nih_plug::params::persist::serialize_atomic_cell")]
+    #[serde(with = "nih_plug_core::params::persist::serialize_atomic_cell")]
     pub(crate) logical_size: AtomicCell<(u32, u32)>,
 
     /// The new size of the window, if it was requested to resize by the GUI.
@@ -163,8 +164,9 @@ impl<'a> PersistentField<'a, WindowState> for Arc<WindowState> {
 }
 
 impl WindowState {
-    /// Initialize the GUI's state. This value can be passed to [`create_iced_editor()`]. The window
-    /// size is in logical pixels, so before it is multiplied by the DPI scaling factor.
+    /// Initialize the GUI's state. This value can be passed to
+    /// [`create_iced_editor()`](crate::create_iced_editor). The window size is in logical
+    /// pixels, so before it is multiplied by the DPI scaling factor.
     pub fn from_logical_size(width: u32, height: u32) -> Arc<WindowState> {
         Arc::new(WindowState {
             logical_size: AtomicCell::new((width, height)),

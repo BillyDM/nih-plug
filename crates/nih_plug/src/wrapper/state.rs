@@ -1,56 +1,14 @@
-//! Utilities for saving a [`crate::plugin::Plugin`]'s state. The actual state object is also exposed
-//! to plugins through the [`GuiContext`][crate::prelude::GuiContext].
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
-
-use crate::params::ParamMut;
-use crate::prelude::{BufferConfig, Param, ParamPtr, Params, Plugin};
-
-// These state objects are also exposed directly to the plugin so it can do its own internal preset
-// management
-
-/// A plain, unnormalized value for a parameter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParamValue {
-    F32(f32),
-    I32(i32),
-    Bool(bool),
-    /// Only used for enum parameters that have the `#[id = "..."]` attribute set.
-    String(String),
-}
-
-/// A plugin's state so it can be restored at a later point. This object can be serialized and
-/// deserialized using serde.
-///
-/// The fields are stored as `BTreeMap`s so the order in the serialized file is consistent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginState {
-    /// The plugin version this state was saved with. Right now this is not used, but later versions
-    /// of NIH-plug may allow you to modify the plugin state object directly before it is loaded to
-    /// allow migrating plugin states between breaking parameter changes.
-    ///
-    /// # Notes
-    ///
-    /// If the saved state is very old, then this field may be empty.
-    #[serde(default)]
-    pub version: String,
-
-    /// The plugin's parameter values. These are stored unnormalized. This means the old values will
-    /// be recalled when when the parameter's range gets increased. Doing so may still mess with
-    /// parameter automation though, depending on how the host implements that.
-    pub params: BTreeMap<String, ParamValue>,
-    /// Arbitrary fields that should be persisted together with the plugin's parameters. Any field
-    /// on the [`Params`][crate::params::Params] struct that's annotated with `#[persist =
-    /// "stable_name"]` will be persisted this way.
-    ///
-    /// The individual fields are also serialized as JSON so they can safely be restored
-    /// independently of the other fields.
-    pub fields: BTreeMap<String, String>,
-}
+use nih_plug_core::{
+    audio_setup::BufferConfig,
+    params::{InternalParamMut, Param, Params, internals::ParamPtr},
+    plugin::{ParamValue, Plugin, PluginState},
+};
 
 /// Create a parameters iterator from the hashtables stored in the plugin wrappers. This avoids
 /// having to call `.param_map()` again, which may include expensive user written code.
@@ -187,7 +145,7 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
         let param_ptr = match params_getter(param_id_str.as_str()) {
             Some(ptr) => ptr,
             None => {
-                nih_debug_assert_failure!("Unknown parameter: {}", param_id_str);
+                crate::nih_debug_assert_failure!("Unknown parameter: {}", param_id_str);
                 continue;
             }
         };
@@ -195,23 +153,23 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
         unsafe {
             match (param_ptr, param_value) {
                 (ParamPtr::FloatParam(p), ParamValue::F32(v)) => {
-                    (*p).set_plain_value(*v);
+                    (*p)._internal_set_plain_value(*v);
                 }
                 (ParamPtr::IntParam(p), ParamValue::I32(v)) => {
-                    (*p).set_plain_value(*v);
+                    (*p)._internal_set_plain_value(*v);
                 }
                 (ParamPtr::BoolParam(p), ParamValue::Bool(v)) => {
-                    (*p).set_plain_value(*v);
+                    (*p)._internal_set_plain_value(*v);
                 }
                 // Enums are either serialized based on the active variant's index (which may not be the
                 // same as the discriminator), or a custom set stable string ID. The latter allows the
                 // variants to be reordered.
                 (ParamPtr::EnumParam(p), ParamValue::I32(variant_idx)) => {
-                    (*p).set_plain_value(*variant_idx);
+                    (*p)._internal_set_plain_value(*variant_idx);
                 }
                 (ParamPtr::EnumParam(p), ParamValue::String(id)) => {
                     let deserialized_enum = (*p).set_from_id(id);
-                    nih_debug_assert!(
+                    crate::nih_debug_assert!(
                         deserialized_enum,
                         "Unknown ID {:?} for enum parameter \"{}\"",
                         id,
@@ -219,7 +177,7 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
                     );
                 }
                 (param_ptr, param_value) => {
-                    nih_debug_assert_failure!(
+                    crate::nih_debug_assert_failure!(
                         "Invalid serialized value {:?} for parameter \"{}\" ({:?})",
                         param_value,
                         param_id_str,
@@ -231,7 +189,7 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
 
         // Make sure everything starts out in sync
         if let Some(sample_rate) = sample_rate {
-            unsafe { param_ptr.update_smoother(sample_rate, true) };
+            unsafe { param_ptr._internal_update_smoother(sample_rate, true) };
         }
     }
 
@@ -254,7 +212,7 @@ pub(crate) unsafe fn deserialize_json(state: &[u8]) -> Option<PluginState> {
                 let state_bytes = decompressed.len();
                 let compressed_state_bytes = state.len();
                 let compression_ratio = compressed_state_bytes as f32 / state_bytes as f32 * 100.0;
-                nih_trace!(
+                crate::nih_trace!(
                     "Inflated {compressed_state_bytes} bytes of state to {state_bytes} bytes \
                      ({compression_ratio:.1}% compression ratio)"
                 );
@@ -262,7 +220,7 @@ pub(crate) unsafe fn deserialize_json(state: &[u8]) -> Option<PluginState> {
                 Some(s)
             }
             Err(err) => {
-                nih_debug_assert_failure!("Error while deserializing state: {}", err);
+                crate::nih_debug_assert_failure!("Error while deserializing state: {}", err);
                 None
             }
         },
@@ -270,11 +228,11 @@ pub(crate) unsafe fn deserialize_json(state: &[u8]) -> Option<PluginState> {
         // breaking existing plugin instances
         Err(zstd_err) => match serde_json::from_slice(state) {
             Ok(s) => {
-                nih_trace!("Older uncompressed state found");
+                crate::nih_trace!("Older uncompressed state found");
                 Some(s)
             }
             Err(json_err) => {
-                nih_debug_assert_failure!(
+                crate::nih_debug_assert_failure!(
                     "Error while deserializing state as either compressed or uncompressed state: \
                      {}, {}",
                     zstd_err,
@@ -289,7 +247,7 @@ pub(crate) unsafe fn deserialize_json(state: &[u8]) -> Option<PluginState> {
     let result: Option<PluginState> = match serde_json::from_slice(state) {
         Ok(s) => Some(s),
         Err(err) => {
-            nih_debug_assert_failure!("Error while deserializing state: {}", err);
+            crate::nih_debug_assert_failure!("Error while deserializing state: {}", err);
             None
         }
     };

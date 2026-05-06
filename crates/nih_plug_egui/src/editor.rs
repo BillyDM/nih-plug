@@ -7,7 +7,10 @@ use egui::Context;
 use egui::{Vec2, ViewportCommand};
 use egui_baseview::baseview::{PhySize, Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
 use egui_baseview::{EguiWindow, Queue};
-use nih_plug::prelude::{Editor, GuiContext, ParamSetter, ParentWindowHandle};
+use nih_plug_core::context::gui::GuiContext;
+use nih_plug_core::context::gui::ParamSetter;
+use nih_plug_core::editor::Editor;
+use nih_plug_core::editor::ParentWindowHandle;
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::sync::Arc;
@@ -33,7 +36,7 @@ pub(crate) struct EguiEditor<T> {
 
 /// This version of `baseview` uses a different version of `raw_window_handle than NIH-plug, so we
 /// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(nih_plug::editor::ParentWindowHandle);
+struct ParentWindowHandleAdapter(ParentWindowHandle);
 
 unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
     fn raw_window_handle(&self) -> RawWindowHandle {
@@ -73,11 +76,7 @@ where
 
         #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
         let gl_config = {
-            let is_x11 = if let ParentWindowHandle::X11Window(_) = &parent {
-                true
-            } else {
-                false
-            };
+            let is_x11 = matches!(&parent, ParentWindowHandle::X11Window(_));
 
             let mut gl_config = self.settings.gl_config.clone();
 

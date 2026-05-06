@@ -1,7 +1,6 @@
 use clap::{Parser, ValueEnum};
+use nih_plug_core::{audio_setup::AudioIOLayout, plugin::Plugin};
 use std::num::NonZeroU32;
-
-use crate::prelude::{AudioIOLayout, Plugin};
 
 /// Configuration for a standalone plugin that would normally be provided by the DAW.
 #[derive(Debug, Clone, Parser)]
@@ -170,7 +169,7 @@ impl WrapperConfig {
                             ))
                         }
 
-                        nih_log!("The available audio layouts are:{layouts_str}");
+                        crate::nih_log!("The available audio layouts are:{layouts_str}");
 
                         std::process::exit(1);
                     }

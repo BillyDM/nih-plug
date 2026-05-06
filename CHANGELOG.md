@@ -10,6 +10,26 @@ Since there is no stable release yet, the changes are organized per day in
 reverse chronological order. The main purpose of this document in its current
 state is to list breaking changes.
 
+## [2026-05-06]
+
+## Crate versions
+The following crates have been published to crates.io!
+- `nih_plug_core` (0.1.0)
+- `egui-baseview` (0.1.0)
+- `iced_baseview` (0.1.0)
+- `nih_plug_egui` (0.1.0)
+- `nih_plug_iced` (0.1.0)
+
+### Breaking changes
+- Core types and traits have been split out into a separate `nih_plug_core` crate.
+This allows the crate to be published to `crates.io`, making it easier for third party
+GUI libraries to integrate with NIH-plug.
+- The minimum Rust version was bumped to `1.87` for better compatibility with `wgpu`.
+
+### Changed
+- The `baseview` dependency now uses the new `crates.io` version.
+- Updated `cpal` and `midir` dependencies in standalone target.
+
 ## [2026-05-01]
 
 ### Breaking changes

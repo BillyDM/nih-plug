@@ -11,16 +11,6 @@ pub struct EditorState<State: 'static + Send> {
 }
 
 impl<State: 'static + Send> EditorState<State> {
-    pub fn as_ref(&self) -> &State {
-        // Safety: The `from_shared` constructor ensures that this is always `Some`.
-        unsafe { self.owned.as_ref().unwrap_unchecked() }
-    }
-
-    pub fn as_mut(&mut self) -> &mut State {
-        // Safety: The `from_shared` constructor ensures that this is always `Some`.
-        unsafe { self.owned.as_mut().unwrap_unchecked() }
-    }
-
     pub(crate) fn from_shared(shared: &Arc<Mutex<Option<State>>>) -> Self {
         let owned = shared.lock().unwrap().take().unwrap();
         Self {
@@ -40,13 +30,15 @@ impl<State: 'static + Send> EditorState<State> {
 
 impl<State: 'static + Send> AsRef<State> for EditorState<State> {
     fn as_ref(&self) -> &State {
-        EditorState::as_ref(self)
+        // Safety: The `from_shared` constructor ensures that this is always `Some`.
+        unsafe { self.owned.as_ref().unwrap_unchecked() }
     }
 }
 
 impl<State: 'static + Send> AsMut<State> for EditorState<State> {
     fn as_mut(&mut self) -> &mut State {
-        EditorState::as_mut(self)
+        // Safety: The `from_shared` constructor ensures that this is always `Some`.
+        unsafe { self.owned.as_mut().unwrap_unchecked() }
     }
 }
 
@@ -66,10 +58,10 @@ impl<State: 'static + Send> DerefMut for EditorState<State> {
 
 impl<State: 'static + Send> Drop for EditorState<State> {
     fn drop(&mut self) {
-        if let Some(owned) = self.owned.take() {
-            if let Ok(mut shared) = self.shared.lock() {
-                *shared = Some(owned);
-            }
+        if let Some(owned) = self.owned.take()
+            && let Ok(mut shared) = self.shared.lock()
+        {
+            *shared = Some(owned);
         }
     }
 }

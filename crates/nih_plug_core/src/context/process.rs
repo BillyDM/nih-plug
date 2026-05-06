@@ -1,7 +1,8 @@
 //! A context passed during the process function.
 
+use crate::{midi::PluginNoteEvent, plugin::Plugin};
+
 use super::PluginApi;
-use crate::prelude::{Plugin, PluginNoteEvent};
 
 /// Contains both context data and callbacks the plugin can use during processing. Most notably this
 /// is how a plugin sends and receives note events, gets transport information, and accesses
@@ -41,9 +42,8 @@ pub trait ProcessContext<P: Plugin> {
     fn transport(&self) -> &Transport;
 
     /// Returns the next note event, if there is one. Use
-    /// [`NoteEvent::timing()`][crate::prelude::NoteEvent::timing()] to get the event's timing
-    /// within the buffer. Only available when
-    /// [`Plugin::MIDI_INPUT`][crate::prelude::Plugin::MIDI_INPUT] is set.
+    /// [`NoteEvent::timing()`][crate::midi::NoteEvent::timing()] to get the event's timing
+    /// within the buffer. Only available when [`Plugin::MIDI_INPUT`] is set.
     ///
     /// # Usage
     ///
@@ -76,7 +76,7 @@ pub trait ProcessContext<P: Plugin> {
     fn next_event(&mut self) -> Option<PluginNoteEvent<P>>;
 
     /// Send an event to the host. Only available when
-    /// [`Plugin::MIDI_OUTPUT`][crate::prelude::Plugin::MIDI_INPUT] is set. Will not do anything
+    /// [`Plugin::MIDI_OUTPUT`][crate::plugin::Plugin::MIDI_INPUT] is set. Will not do anything
     /// otherwise.
     fn send_event(&mut self, event: PluginNoteEvent<P>);
 
@@ -85,11 +85,10 @@ pub trait ProcessContext<P: Plugin> {
     fn set_latency_samples(&self, samples: u32);
 
     /// Set the current voice **capacity** for this plugin (so not the number of currently active
-    /// voices). This may only be called if
-    /// [`ClapPlugin::CLAP_POLY_MODULATION_CONFIG`][crate::prelude::ClapPlugin::CLAP_POLY_MODULATION_CONFIG]
-    /// is set. `capacity` must be between 1 and the configured maximum capacity. Changing this at
-    /// runtime allows the host to better optimize polyphonic modulation, or to switch to strictly
-    /// monophonic modulation when dropping the capacity down to 1.
+    /// voices). This may only be called if `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` is set.
+    /// `capacity` must be between 1 and the configured maximum capacity. Changing this at runtime
+    /// allows the host to better optimize polyphonic modulation, or to switch to strictly monophonic
+    /// modulation when dropping the capacity down to 1.
     fn set_current_voice_capacity(&self, capacity: u32);
 
     // TODO: Add this, this works similar to [GuiContext::set_parameter] but it adds the parameter
@@ -110,7 +109,7 @@ pub struct Transport {
     pub preroll_active: Option<bool>,
 
     /// The sample rate in Hertz. Also passed in
-    /// [`Plugin::initialize()`][crate::prelude::Plugin::initialize()], so if you need this then you
+    /// [`Plugin::initialize()`][crate::plugin::Plugin::initialize()], so if you need this then you
     /// can also store that value.
     pub sample_rate: f32,
     /// The project's tempo in beats per minute.
@@ -123,38 +122,38 @@ pub struct Transport {
     // XXX: VST3 also has a continuous time in samples that ignores loops, but we can't reconstruct
     //      something similar in CLAP so it may be best to just ignore that so you can't rely on it
     /// The position in the song in samples. Can be used to calculate the time in seconds if needed.
-    pub(crate) pos_samples: Option<i64>,
+    pub pos_samples: Option<i64>,
     /// The position in the song in seconds. Can be used to calculate the time in samples if needed.
-    pub(crate) pos_seconds: Option<f64>,
+    pub pos_seconds: Option<f64>,
     /// The position in the song in quarter notes. Can be calculated from the time in seconds and
     /// the tempo if needed.
-    pub(crate) pos_beats: Option<f64>,
+    pub pos_beats: Option<f64>,
     /// The last bar's start position in beats. Can be calculated from the beat position and time
     /// signature if needed.
-    pub(crate) bar_start_pos_beats: Option<f64>,
+    pub bar_start_pos_beats: Option<f64>,
     /// The number of the bar at `bar_start_pos_beats`. This starts at 0 for the very first bar at
     /// the start of the song. Can be calculated from the beat position and time signature if
     /// needed.
-    pub(crate) bar_number: Option<i32>,
+    pub bar_number: Option<i32>,
 
     /// The loop range in samples, if the loop is active and this information is available. None of
     /// the plugin API docs mention whether this is exclusive or inclusive, but just assume that the
     /// end is exclusive. Can be calculated from the other loop range information if needed.
-    pub(crate) loop_range_samples: Option<(i64, i64)>,
+    pub loop_range_samples: Option<(i64, i64)>,
     /// The loop range in seconds, if the loop is active and this information is available. None of
     /// the plugin API docs mention whether this is exclusive or inclusive, but just assume that the
     /// end is exclusive. Can be calculated from the other loop range information if needed.
-    pub(crate) loop_range_seconds: Option<(f64, f64)>,
+    pub loop_range_seconds: Option<(f64, f64)>,
     /// The loop range in quarter notes, if the loop is active and this information is available.
     /// None of the plugin API docs mention whether this is exclusive or inclusive, but just assume
     /// that the end is exclusive. Can be calculated from the other loop range information if
     /// needed.
-    pub(crate) loop_range_beats: Option<(f64, f64)>,
+    pub loop_range_beats: Option<(f64, f64)>,
 }
 
 impl Transport {
     /// Initialize the transport struct without any information.
-    pub(crate) fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
             playing: false,
             recording: false,
