@@ -14,7 +14,6 @@ use vst3_sys::utils::SharedVstPtr;
 use super::inner::{Task, WrapperInner};
 use super::util::{ObjectPtr, VstPtr};
 use crate::editor::{Modifiers, VirtualKeyCode};
-#[cfg(target_os = "linux")]
 use crate::wrapper::vst3::Vst3Plugin;
 
 /// Lowest VST3 virtual key code (`KEY_BACK` in the VST3 SDK
