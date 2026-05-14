@@ -102,10 +102,12 @@ For a list of available crate flags, see
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
   widgets for them that integrate with NIH-plug's parameter system:
-    - [nih_plug_egui](crates/nih_plug_egui) - Adapter for [egui](https://github.com/emilk/egui).
-    See the [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
-    - [nih_plug_iced](crates/nih_plug_iced) - Adapter for [Iced](https://iced.rs/).
-    See the [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
+  - [nih_plug_egui](crates/nih_plug_egui) - Adapter for [egui](https://github.com/emilk/egui).
+  See the [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
+  - [nih_plug_iced](crates/nih_plug_iced) - Adapter for [Iced](https://iced.rs/).
+  See the [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
+- 3rd party adapters for other Rust GUI frameworks are also available:
+  - [vizia-plug](https://github.com/vizia/vizia-plug) - Adapter for [Vizia](https://github.com/vizia/vizia).
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
