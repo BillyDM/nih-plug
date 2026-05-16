@@ -2863,12 +2863,20 @@ impl<P: ClapPlugin> Wrapper<P> {
         window: *const clap_window,
     ) -> bool {
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, window);
-        // For this function we need the underlying Arc so we can pass it to the editor
-        let wrapper = unsafe { Arc::from_raw((*plugin).plugin_data as *const Self) };
+        let wrapper_ref = unsafe { &*((*plugin).plugin_data as *const Self) };
+        // For this function we need an `Arc<Self>` so we can pass it to the editor. The raw
+        // `plugin_data` pointer is owned by the CLAP instance and must only be consumed by
+        // `destroy()`. Reconstructing an `Arc` from it here would temporarily take ownership of
+        // the plugin wrapper, and any early return before re-leaking it would destroy the live
+        // plugin while the host may still process audio.
+        let Some(wrapper) = wrapper_ref.this.borrow().upgrade() else {
+            nih_debug_assert_failure!("Plugin wrapper was dropped before GUI attachment");
+            return false;
+        };
 
         let window = unsafe { &*window };
 
-        let result = {
+        {
             let mut editor_handle = wrapper.editor_handle.lock();
             if editor_handle.is_none() {
                 let api = unsafe { CStr::from_ptr(window.api) };
@@ -2904,12 +2912,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 false
             }
-        };
-
-        // Leak the Arc again since we only needed a clone to pass to the GuiContext
-        let _ = Arc::into_raw(wrapper);
-
-        result
+        }
     }
 
     unsafe extern "C" fn ext_gui_set_transient(
