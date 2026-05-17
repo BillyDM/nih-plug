@@ -189,7 +189,7 @@ pub struct TripleBufferState {
 }
 
 impl Plugin for Gain {
-    const NAME: &'static str = "Gain (nice-plug_egui)";
+    const NAME: &'static str = "Gain (nice-plug-egui)";
     const VENDOR: &'static str = "Moist Plugins GmbH";
     const URL: &'static str = "https://youtu.be/dQw4w9WgXcQ";
     const EMAIL: &'static str = "info@example.com";

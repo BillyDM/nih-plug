@@ -98,7 +98,7 @@ where
     }))
 }
 
-/// State for an `nice-plug_egui` editor.
+/// State for an `nice-plug-egui` editor.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EguiState {
     /// The window's size in logical pixels before applying `scale_factor`.

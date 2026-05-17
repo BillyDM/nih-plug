@@ -56,8 +56,8 @@ jobs:
           cargo doc --features docs,simd,standalone,zstd --no-deps
           -p nice-plug
           -p nice-plug-derive
-          -p nice-plug_egui
-          -p nice-plug_iced
+          -p nice-plug-egui
+          -p nice-plug-iced
           -p nice-plug_vizia
           -p nice-plug-xtask
 

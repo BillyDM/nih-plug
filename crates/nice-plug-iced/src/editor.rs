@@ -134,7 +134,7 @@ impl<Message: 'static + Send> Drop for IcedEditorHandle<Message> {
     }
 }
 
-/// State for an `nice-plug_iced` editor window.
+/// State for an `nice-plug-iced` editor window.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowState {
     /// The window's size in logical pixels before applying `scale_factor`.
