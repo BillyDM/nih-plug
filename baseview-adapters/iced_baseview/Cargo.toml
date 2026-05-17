@@ -1,6 +1,6 @@
 [package]
 name = "iced_baseview"
-version = "0.1.1"
+version = "0.2.0"
 authors = [
   "Billy Messenger <BillyDM@protonmail.com>",
   "Robbert van der Helm <mail@robbertvanderhelm.nl>",
@@ -30,8 +30,8 @@ default = [
   "x11",
 ]
 # Enables logging using nice-plug's logging feature
-nice_log = ["dep:nice-plug-core"]
-# Enable this if `nice_log` is disabled
+nice-log = ["dep:nice-plug-core"]
+# Enable this if `nice-log` is disabled
 tracing = ["dep:tracing"]
 # Enable the default application builder method. Disable this if you wish to create your own
 # custom wrapper for users.

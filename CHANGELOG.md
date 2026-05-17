@@ -23,6 +23,8 @@ The name of this fork is now `nice-plug` :)
   * `nih_plug_egui` --> `nice-plug-egui`
   * `nih_plug_iced` --> `nice-plug-iced`
   * `nih_plug_xtask` --> `nice-plug-xtask`
+* The `nih_log` feature in `egui-baseview` and `iced_basevew` was renamed to `nice-log`.
+* `egui-baseview` and `iced_baseview` were bumped to version `0.2.0`.
 
 ### Changed
 * Added a new `nice-log` crate to the repository to replace `nih_log`.

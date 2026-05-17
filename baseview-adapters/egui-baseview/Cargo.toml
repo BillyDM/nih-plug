@@ -1,6 +1,6 @@
 [package]
 name = "egui-baseview"
-version = "0.1.1"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -19,8 +19,8 @@ wgpu = ["dep:egui-wgpu", "dep:raw-window-handle-06", "dep:pollster", "dep:wgpu"]
 ## See https://github.com/BillyDM/egui-baseview/issues/20
 keyboard_focus_workaround = []
 ## Enables logging using nice-plug's logging feature
-nice_log = ["dep:nice-plug-core"]
-## Enable this if `nice_log` is disabled
+nice-log = ["dep:nice-plug-core"]
+## Enable this if `nice-log` is disabled
 tracing = ["dep:tracing"]
 
 [dependencies]

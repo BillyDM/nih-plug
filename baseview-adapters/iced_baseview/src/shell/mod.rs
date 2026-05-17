@@ -15,10 +15,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use std::{cell::RefCell, rc::Rc};
 
-#[cfg(feature = "nice_log")]
+#[cfg(feature = "nice-log")]
 use nice_plug_core::log::{debug, error, warn};
 
-#[cfg(all(feature = "tracing", not(feature = "nice_log")))]
+#[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::{debug, error, warn};
 
 use crate::Error;

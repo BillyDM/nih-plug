@@ -14,10 +14,10 @@ pub use iced_runtime::window::{close_events, close_requests, events, open_events
 use iced_widget::core::Size;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
-#[cfg(feature = "nice_log")]
+#[cfg(feature = "nice-log")]
 use nice_plug_core::log::error;
 
-#[cfg(all(feature = "tracing", not(feature = "nice_log")))]
+#[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::error;
 
 use crate::graphics::Compositor;

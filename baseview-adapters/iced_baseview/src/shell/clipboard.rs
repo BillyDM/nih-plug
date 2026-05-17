@@ -3,9 +3,9 @@
 use crate::core::clipboard::Kind;
 use raw_window_handle_06::HasDisplayHandle;
 
-#[cfg(feature = "nice_log")]
+#[cfg(feature = "nice-log")]
 use nice_plug_core::log::warn;
-#[cfg(all(feature = "tracing", not(feature = "nice_log")))]
+#[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::warn;
 
 /// A buffer for short-term storage and transfer within and between
