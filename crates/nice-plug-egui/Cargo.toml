@@ -11,7 +11,6 @@ license.workspace = true
 repository.workspace = true
 keywords = ["gui", "nice-plug", "plugin", "clap", "vst3"]
 categories = ["gui"]
-readme = "README.md"
 
 [features]
 default = ["opengl"]

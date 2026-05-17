@@ -1,7 +1,5 @@
 # nice-plug-core
 
-> This crate is no longer maintained. Please use [nice-plug-core](https://crates.io/crates/nice-plug-core) instead.
-
 [![Documentation](https://docs.rs/nice-plug-core/badge.svg)](https://docs.rs/nice-plug-core)
 [![Crates.io](https://img.shields.io/crates/v/nice-plug-core.svg)](https://crates.io/crates/nice-plug-core)
 [![License](https://img.shields.io/crates/l/nice-plug-core.svg)](https://codeberg.org/BillyDM/nice-plug/src/branch/main/LICENSE)

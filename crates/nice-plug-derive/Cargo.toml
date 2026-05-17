@@ -1,13 +1,12 @@
 [package]
 name = "nice-plug-derive"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Proc macros for the nice-plug framework"
 keywords = ["audio", "plugin", "vst", "vst3"]
-readme = "README.md"
 
 [lib]
 proc-macro = true
