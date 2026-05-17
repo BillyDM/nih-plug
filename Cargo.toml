@@ -1,17 +1,18 @@
 [workspace]
 resolver = "3"
 members = [
-  "crates/nih_plug",
-  "crates/nih_plug_core",
-  "crates/nih_plug_derive",
-  "crates/nih_plug_xtask",
-  "crates/cargo_nih_plug",
+  "crates/nice-plug",
+  "crates/nice-plug-core",
+  "crates/nice-plug-derive",
+  "crates/nice-plug-xtask",
+  "crates/nice-log",
+  "crates/cargo-nice-plug",
   "crates/xtask",
-  "crates/nih_plug_egui",
-  "crates/nih_plug_iced",
+  "crates/nice-plug-egui",
+  "crates/nice-plug-iced",
 
   "baseview-adapters/egui-baseview",
-  "baseview-adapters/iced-baseview",
+  "baseview-adapters/iced_baseview",
 
   "examples/byo_gui_gl",
   "examples/byo_gui_softbuffer",
@@ -25,7 +26,7 @@ members = [
   "examples/stft",
   "examples/sysex",
 ]
-default-members = ["crates/nih_plug"]
+default-members = ["crates/nice-plug"]
 
 [workspace.package]
 edition = "2024"
@@ -35,7 +36,7 @@ authors = [
   "Billy Messenger <billydm@noreply.codeberg.org>",
 ]
 license = "ISC"
-repository = "https://codeberg.org/BillyDM/nih-plug"
+repository = "https://codeberg.org/BillyDM/nice-plug"
 
 [workspace.dependencies]
 anyhow = "1.0"

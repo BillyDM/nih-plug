@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use realfft::num_complex::Complex32;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use std::f32;
@@ -184,5 +184,5 @@ impl Vst3Plugin for Stft {
     ];
 }
 
-nih_export_clap!(Stft);
-nih_export_vst3!(Stft);
+nice_export_clap!(Stft);
+nice_export_vst3!(Stft);

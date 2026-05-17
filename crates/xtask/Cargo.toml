@@ -7,4 +7,4 @@ description = "A helper for compiling and bundling plugins, can be invoked in th
 license.workspace = true
 
 [dependencies]
-nih_plug_xtask = { path = "../nih_plug_xtask" }
+nice-plug-xtask = { path = "../nice-plug-xtask" }

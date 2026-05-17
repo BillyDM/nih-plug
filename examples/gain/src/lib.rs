@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ impl Default for Gain {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
+            // This gain is stored as linear gain. nice-plug comes with useful conversion functions
             // to treat these kinds of parameters as if we were dealing with decibels. Storing this
             // as decibels is easier to work with, but requires a conversion for every sample.
             gain: FloatParam::new(
@@ -210,5 +210,5 @@ impl Vst3Plugin for Gain {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }
 
-nih_export_clap!(Gain);
-nih_export_vst3!(Gain);
+nice_export_clap!(Gain);
+nice_export_vst3!(Gain);

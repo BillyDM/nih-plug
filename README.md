@@ -1,17 +1,11 @@
-# NIH-plug
+# nice-plug
 
-> This is a hard fork of https://github.com/robbert-vdh/nih-plug, since the
-> original author is no longer maintaining it.
->
-> This fork does NOT contain the original collection of plugins. If you are looking
-> for those, go to the original repository linked above. Please do NOT post any
-> issues about the original plugins here, this is for the development framework only!
->
-> This repository has moved to Codeberg https://codeberg.org/BillyDM/nih-plug. Please
-> only post issues and pull requests there. A read-only mirror is available at
-> https://github.com/BillyDM/nih-plug for users who prefer that.
+> The main repository is at Codeberg https://codeberg.org/BillyDM/nice-plug. Please
+> post any issues and pull requests there. A read-only mirror is available at
+> https://github.com/BillyDM/nice-plug for users who prefer that.
 
-NIH-plug is an API-agnostic audio plugin framework written in Rust.
+An audio plugin development framework for the [Rust](https://rust-lang.org/) programming
+language that is nice to use :)
 
 The idea is to have a stateful yet simple plugin API that gets rid of as much
 unnecessary ceremony wherever possible, while also keeping the amount of magic to
@@ -20,9 +14,9 @@ the [current features](#current-features) section for more information on the
 project's current status.
 
 <!--- TODO
-Check out the [documentation](https://nih-plug.robbertvanderhelm.nl/), or use
-the [cookiecutter template](https://github.com/robbert-vdh/nih-plug-template) to
-quickly get started with NIH-plug.
+Check out the [documentation](https://nice-plug.robbertvanderhelm.nl/), or use
+the [cookiecutter template](https://github.com/robbert-vdh/nice-plug-template) to
+quickly get started with nice-plug.
 -->
 
 ### Table of contents
@@ -39,24 +33,24 @@ quickly get started with NIH-plug.
 
 This repository contains [baseview](https://github.com/RustAudio/baseview) adapters
 for popular Rust GUI frameworks. These can be used on their own without the rest of
-the NIH-plug framework.
+the nice-plug framework.
 
 - [egui-baseview](baseview-adapters/egui-baseview/) - adapter for
 [egui](https://github.com/emilk/egui)
-- [iced_baseview](baseview-adapters/iced-baseview/) - adapter for
+- [iced_baseview](baseview-adapters/iced_baseview/) - adapter for
 [Iced](https://iced.rs/)
 
 ## Framework
 
 For a list of available crate flags, see
-[crates/nih_plug/Cargo.toml](crates/nih_plug/Cargo.toml).
+[crates/nice-plug/Cargo.toml](crates/nice-plug/Cargo.toml).
 
 ### Current features
 
 - Supports both VST3 and [CLAP](https://github.com/free-audio/clap) by simply
-  adding the corresponding `nih_export_<api>!(Foo)` macro to your plugin's
+  adding the corresponding `nice_export_<api>!(Foo)` macro to your plugin's
   library.
-- Standalone binaries can be made by calling `nih_export_standalone(Foo)` from
+- Standalone binaries can be made by calling `nice_export_standalone(Foo)` from
   your `main()` function. Standalones come with a CLI for configuration and full
   JACK audio, MIDI, and transport support.
 - Rich declarative parameter system without any boilerplate.
@@ -101,11 +95,11 @@ For a list of available crate flags, see
 - Optional support for compressing the human readable JSON state files using
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
-  widgets for them that integrate with NIH-plug's parameter system:
-  - [nih_plug_egui](crates/nih_plug_egui) - Adapter for [egui](https://github.com/emilk/egui).
+  widgets for them that integrate with nice-plug's parameter system:
+  - [nice-plug-egui](crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
   See the [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
-  - [nih_plug_iced](crates/nih_plug_iced) - Adapter for [Iced](https://iced.rs/).
-  See the [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
+  - [nice-plug-iced](crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
+  See the [iced_baseview](baseview-adapters/iced_baseview/) crate for prerequisites.
 - 3rd party adapters for other Rust GUI frameworks are also available:
   - [vizia-plug](https://github.com/vizia/vizia-plug) - Adapter for [Vizia](https://github.com/vizia/vizia).
 - Full support for receiving and outputting both modern polyphonic note
@@ -125,8 +119,8 @@ For a list of available crate flags, see
   detects which plugin targets your plugin exposes and creates the correct
   plugin bundles for your target operating system and architecture, with
   cross-compilation support. The cargo subcommand can easily be added to [your
-  own project](https://github.com/robbert-vdh/nih-plug/tree/main/nih_plug_xtask)
-  as an alias or [globally](https://github.com/robbert-vdh/nih-plug/tree/main/cargo_nih_plug)
+  own project](https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/nice-plug-xtask)
+  as an alias or [globally](https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/cargo-nice-plug)
   as a regular cargo subcommand.
 - Tested on Linux and Windows, with limited testing on macOS. Windows support
   has mostly been tested through Wine with
@@ -136,7 +130,7 @@ For a list of available crate flags, see
 
 ### Building
 
-NIH-plug works with the latest stable Rust compiler.
+nice-plug works with the latest stable Rust compiler.
 
 After installing [Rust](https://rustup.rs/), you can compile any of the plugins
 in the `plugins` directory in the following way, replacing `gain` with the name
@@ -148,9 +142,9 @@ cargo xtask bundle gain --release
 
 ### Plugin formats
 
-NIH-plug can currently export VST3 and
+nice-plug can currently export VST3 and
 [CLAP](https://github.com/free-audio/clap) plugins. Exporting a specific plugin
-format for a plugin is as simple as calling the `nih_export_<format>!(Foo);`
+format for a plugin is as simple as calling the `nice_export_<format>!(Foo);`
 macro. The `cargo xtask bundle` command will detect which plugin formats your
 plugin supports and create the appropriate bundles accordingly, even when cross
 compiling.
@@ -168,7 +162,7 @@ examples.
     - [**gain_egui**](examples/gain_egui) - See the
     [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
     - [**gain_iced**](examples/gain_iced) - See the
-    [iced_baseview](baseview-adapters/iced-baseview/) crate for prerequisites.
+    [iced_baseview](baseview-adapters/iced_baseview/) crate for prerequisites.
 - Examples for adding your own custom GUI framework on top of raw rendering APIs:
   - [**byo_gui_gl**](examples/byo_gui_gl) - for rendering with OpenGL
   - [**byo_gui_wgpu**](examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)
@@ -179,11 +173,11 @@ examples.
   example demonstrates how to receive and output those events.
 - [**poly_mod_synth**](examples/poly_mod_synth) is a simple polyphonic
   synthesizer with support for polyphonic modulation in supported CLAP hosts.
-  This demonstrates how polyphonic modulation can be used in NIH-plug.
+  This demonstrates how polyphonic modulation can be used in nice-plug.
 - [**sine**](examples/sine) is a simple test tone generator plugin with
   frequency smoothing that can also make use of MIDI input instead of generating
   a static signal based on the plugin's parameters.
-- [**stft**](examples/stft) shows off some of NIH-plug's other optional
+- [**stft**](examples/stft) shows off some of nice-plug's other optional
   higher level helper features, such as an adapter to process audio with a
   short-term Fourier transform using the overlap-add method, all using the
   compositional `Buffer` interfaces.
@@ -192,14 +186,20 @@ examples.
 
 ## Contributing
 
+Contributions are very much welcomed! As long as they comply to the policy and
+licensing requirements below.
+
+> nice-plug uses optional nightly features. To make rust analyzer happy, you can
+> enable the nightly compiler for your local repository with `rustup override add
+nightly`.
+
+## AI policy
+
+The general AI policy of the RustAudio Community applies to this repository. Please
+ensure compliance to these rules before submitting your contribution to this project.
+
 Please refer to the Rust Audio community's policy an AI usage:
 https://rust.audio/community/ai/
-
-Nih-plug uses optional nightly features. To make rust analyzer happy, you can
-enable the nightly compiler for your local repository with:
-```
-rustup override add nightly
-```
 
 ## Licensing
 
@@ -211,7 +211,7 @@ The framework, all of the crates in `crates/`, and the example plugins in
 All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0". 
 
 However, the [VST3 bindings](https://github.com/RustAudio/vst3-sys) used by
-`nih_export_vst3!()` are licensed under the GPLv3 license. This means that
+`nice_export_vst3!()` are licensed under the GPLv3 license. This means that
 unless you replace these bindings with your own bindings made from scratch, any
-VST3 plugins built with NIH-plug need to be able to comply with the terms of the
+VST3 plugins built with nice-plug need to be able to comply with the terms of the
 GPLv3 license.

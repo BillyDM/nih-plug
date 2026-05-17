@@ -54,18 +54,18 @@ jobs:
         # here because that would also document our plugins and binary crates.
         run: >-
           cargo doc --features docs,simd,standalone,zstd --no-deps
-          -p nih_plug
-          -p nih_plug_derive
-          -p nih_plug_egui
-          -p nih_plug_iced
-          -p nih_plug_vizia
-          -p nih_plug_xtask
+          -p nice-plug
+          -p nice-plug-derive
+          -p nice-plug_egui
+          -p nice-plug_iced
+          -p nice-plug_vizia
+          -p nice-plug-xtask
 
       - name: Add a redirect index page
         run: |
           cat > target/doc/index.html <<EOF
           <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=nih_plug">
+          <meta http-equiv="refresh" content="0; url=nice-plug">
           EOF
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4.3.0
@@ -75,5 +75,5 @@ jobs:
 
           # Having the gh-pages branch on this repository adds a whole bunch of
           # noise to the GitHub feed if you follow this repo
-          repository-name: robbert-vdh/nih-plug-docs
+          repository-name: robbert-vdh/nice-plug-docs
           ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}

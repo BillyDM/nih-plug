@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nih_plug = { path = "../../crates/nih_plug", features = [
+nice-plug = { path = "../../crates/nice-plug", features = [
     "assert_process_allocs",
     "standalone",
 ] }

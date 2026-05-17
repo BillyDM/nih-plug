@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::sync::Arc;
@@ -182,7 +182,7 @@ impl Plugin for PolyModSynth {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // NIH-plug has a block-splitting adapter for `Buffer`. While this works great for effect
+        // nice-plug has a block-splitting adapter for `Buffer`. While this works great for effect
         // plugins, for polyphonic synths the block size should be `min(MAX_BLOCK_SIZE,
         // num_remaining_samples, next_event_idx - block_start_idx)`. Because blocks also need to be
         // split on note events, it's easier to work with raw audio here and to do the splitting by
@@ -296,7 +296,7 @@ impl Plugin for PolyModSynth {
                                                     .set_target(sample_rate, target_plain_value);
                                             }
                                         }
-                                        n => nih_debug_assert_failure!(
+                                        n => nice_debug_assert_failure!(
                                             "Polyphonic modulation sent for unknown poly \
                                              modulation ID {}",
                                             n
@@ -332,7 +332,7 @@ impl Plugin for PolyModSynth {
                                                 );
                                             smoother.set_target(sample_rate, target_plain_value);
                                         }
-                                        n => nih_debug_assert_failure!(
+                                        n => nice_debug_assert_failure!(
                                             "Automation event sent for unknown poly modulation ID \
                                              {}",
                                             n
@@ -622,5 +622,5 @@ impl Vst3Plugin for PolyModSynth {
     ];
 }
 
-nih_export_clap!(PolyModSynth);
-nih_export_vst3!(PolyModSynth);
+nice_export_clap!(PolyModSynth);
+nice_export_vst3!(PolyModSynth);

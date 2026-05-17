@@ -1,5 +1,5 @@
 use gain_egui::Gain;
 
 fn main() {
-    nih_plug::prelude::nih_export_standalone::<Gain>();
+    nice_plug::prelude::nice_export_standalone::<Gain>();
 }

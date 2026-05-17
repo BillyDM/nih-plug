@@ -1,6 +1,6 @@
 use egui::{Margin, Vec2};
-use nih_plug::prelude::*;
-use nih_plug_egui::{EguiState, create_egui_editor, resizable_window::ResizableWindow, widgets};
+use nice_plug::prelude::*;
+use nice_plug_egui::{EguiState, create_egui_editor, resizable_window::ResizableWindow, widgets};
 use std::sync::Arc;
 
 const MIN_WINDOW_WIDTH: u32 = 300;
@@ -189,7 +189,7 @@ pub struct TripleBufferState {
 }
 
 impl Plugin for Gain {
-    const NAME: &'static str = "Gain (nih_plug_egui)";
+    const NAME: &'static str = "Gain (nice-plug_egui)";
     const VENDOR: &'static str = "Moist Plugins GmbH";
     const URL: &'static str = "https://youtu.be/dQw4w9WgXcQ";
     const EMAIL: &'static str = "info@example.com";
@@ -251,7 +251,7 @@ impl Plugin for Gain {
 
                                 // This is a simple naive version of a parameter slider that's not aware of how
                                 // the parameters work
-                                let prev_value = nih_plug::util::gain_to_db(params.gain.value());
+                                let prev_value = nice_plug::util::gain_to_db(params.gain.value());
                                 let mut new_value = prev_value;
                                 let ptr_down = ui
                                     .add(
@@ -268,7 +268,7 @@ impl Plugin for Gain {
                                 if new_value != prev_value {
                                     setter.set_parameter(
                                         &params.gain,
-                                        nih_plug::util::db_to_gain(new_value),
+                                        nice_plug::util::db_to_gain(new_value),
                                     );
                                 }
                                 if gui_state.is_dragging_slider && !ptr_down {
@@ -300,12 +300,15 @@ impl Plugin for Gain {
                                         .to_audio_tx
                                         .push(GuiToAudioMsg::MessageA)
                                     {
-                                        nih_error!("Failed to send message to audio thread: {}", e);
+                                        nice_error!(
+                                            "Failed to send message to audio thread: {}",
+                                            e
+                                        );
                                     }
                                 }
                                 // Demonstrate receiving messages from the audio thread.
                                 while let Ok(msg) = gui_state.msg_channel.from_audio_rx.pop() {
-                                    nih_log!("Got message from audio thread: {:?}", &msg);
+                                    nice_log!("Got message from audio thread: {:?}", &msg);
                                 }
 
                                 // Demonstrate mutating synced triple buffer state.
@@ -350,10 +353,10 @@ impl Plugin for Gain {
         while let Ok(msg) = self.msg_channel.from_gui_rx.pop() {
             match msg {
                 GuiToAudioMsg::MessageA => {
-                    nih_dbg!("Got MessageA from GUI");
+                    nice_dbg!("Got MessageA from GUI");
                 }
                 GuiToAudioMsg::MessageWithHeapData(mut heap_data) => {
-                    nih_dbg!("Got MessageWithHeapData from GUI");
+                    nice_dbg!("Got MessageWithHeapData from GUI");
 
                     // Replace the old heap data with the new data.
                     std::mem::swap(&mut self.heap_data_example, &mut heap_data);
@@ -365,7 +368,7 @@ impl Plugin for Gain {
                         .to_gui_tx
                         .push(AudioToGuiMsg::DropOldHeapData(heap_data))
                     {
-                        nih_error!("Failed to send message to GUI thread: {}", e);
+                        nice_error!("Failed to send message to GUI thread: {}", e);
                     }
                 }
             }
@@ -374,7 +377,7 @@ impl Plugin for Gain {
         // Demonstrate sending messages to the GUI thread.
         if self.params.editor_state.is_open() && !self.msg_channel.msg_sent {
             if let Err(e) = self.msg_channel.to_gui_tx.push(AudioToGuiMsg::MessageA) {
-                nih_error!("Failed to send message to GUI thread: {}", e);
+                nice_error!("Failed to send message to GUI thread: {}", e);
             }
 
             // Only send the example message once to avoid spamming the GUI.
@@ -420,7 +423,7 @@ impl Plugin for Gain {
 }
 
 impl ClapPlugin for Gain {
-    const CLAP_ID: &'static str = "com.moist-plugins-gmbh-egui.nih-plug-gain-egui";
+    const CLAP_ID: &'static str = "com.moist-plugins-gmbh-egui.nice-plug-gain-egui";
     const CLAP_DESCRIPTION: Option<&'static str> = Some("A smoothed gain parameter example plugin");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
@@ -438,5 +441,5 @@ impl Vst3Plugin for Gain {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }
 
-nih_export_clap!(Gain);
-nih_export_vst3!(Gain);
+nice_export_clap!(Gain);
+nice_export_vst3!(Gain);

@@ -10,6 +10,23 @@ Since there is no stable release yet, the changes are organized per day in
 reverse chronological order. The main purpose of this document in its current
 state is to list breaking changes.
 
+## [2026-05-17]
+
+The name of this fork is now `nice-plug` :)
+
+### Breaking Changes
+* The following crates have been renamed:
+  * `cargo_nih_plug` --> `cargo-nice-plug`
+  * `nih_plug` --> `nice-plug`
+  * `nih_plug_core` --> `nice-plug-core`
+  * `nih_plug_derive` --> `nice-plug-derive`
+  * `nih_plug_egui` --> `nice-plug-egui`
+  * `nih_plug_iced` --> `nice-plug-iced`
+  * `nih_plug_xtask` --> `nice-plug-xtask`
+
+### Changed
+* Added a new `nice-log` crate to the repository to replace `nih_log`.
+
 ## [2026-05-06]
 
 ### Crate versions
@@ -36,7 +53,7 @@ The following crates have been published to crates.io!
 ### Breaking changes
 - Core types and traits have been split out into a separate `nih_plug_core` crate.
 This allows the crate to be published to `crates.io`, making it easier for third party
-GUI libraries to integrate with NIH-plug.
+GUI libraries to integrate with nih_plug.
 - The minimum Rust version was bumped to `1.87` for better compatibility with `wgpu`.
 
 ### Changed
@@ -68,7 +85,7 @@ using the new "unsafe_flush_denormals" feature.
 minimum rust compiler version to 1.85.
 
 ### Added
-- Moved `egui-baseview` and `iced-baseview` crates into this repository for easier
+- Moved `egui-baseview` and `iced_baseview` crates into this repository for easier
 maintanance.
 
 ### Changed
@@ -147,7 +164,7 @@ maintanance.
 
 ### Added
 
-- `nih_plug_xtask` now detects and uses non-standard `target` directory
+- `nih_plug-xtask` now detects and uses non-standard `target` directory
   locations if overridden through Cargo's settings.
 
 ## [2024-03-18]
@@ -187,20 +204,20 @@ maintanance.
   - `ResizeHandle` now needs to be the last element in a GUI because of changes
     to Vizia's event targetting mechanism.
 
-- The `raw_window_handle` version used by NIH-plug has been updated to version
+- The `raw_window_handle` version used by nih_plug has been updated to version
   0.5.x.
 
 ### Added
 
-- Added initial RISC-V support to `nih_plug_xtask`.
-  ([#95](https://github.com/robbert-vdh/nih-plug/pull/95)).
+- Added initial RISC-V support to `nih_plug-xtask`.
+  ([#95](https://github.com/robbert-vdh/nih_plug/pull/95)).
 
 ### Changed
 
 - `ParentWindowHandle` has changed to be a sum type of different parent window
   handle types, similar to `RawWindowHandle`. This makes it easier to use GUI
   libraries that link against a different version of `raw_window_handle` than
-  the one used by NIH-plug itself by simply wrapping around
+  the one used by nih_plug itself by simply wrapping around
   `ParentWindowHandle`.
 - `nih_debug_assert*!()` failures are now promoted to a warning instead of a
   debug message. This makes the non-fatal debug assertion failures easier to
@@ -224,7 +241,7 @@ maintanance.
 ### Changed
 
 - `FloatParam` and `IntParam` ranges can now be accessed using methods on the
-  parameters ([#89](https://github.com/robbert-vdh/nih-plug/pull/89)).
+  parameters ([#89](https://github.com/robbert-vdh/nih_plug/pull/89)).
 
 ## [2023-09-21]
 
@@ -242,8 +259,8 @@ maintanance.
 
 ### Fixed
 
-- The `nih_export_*!()` macros now use `$crate` to refer to NIH-plug itself,
-  which makes it possible to use the NIH-plug crate under a different name.
+- The `nih_export_*!()` macros now use `$crate` to refer to nih_plug itself,
+  which makes it possible to use the nih_plug crate under a different name.
 
 ## [2023-08-05]
 
@@ -320,7 +337,7 @@ maintanance.
 
 ### Fixed
 
-- The upgrade to CLAP 1.1.8 caused NIH-plug to switch from the draft version of
+- The upgrade to CLAP 1.1.8 caused nih_plug to switch from the draft version of
   the voice info extension to the final version, fixing voice stacking with
   recent versions of Bitwig.
 
@@ -360,7 +377,7 @@ maintanance.
 ### Changed
 
 - Buffer management has been completely rewritten so it can be shared among all
-  of NIH-plug's backends. This should not result in any noticeable changes, but
+  of nih_plug's backends. This should not result in any noticeable changes, but
   it should reduce the chances of backend-specific bugs when it comes to
   interacting with audio buffers and it will make it simpler to implement buffer
   management for new plugin APIs.
@@ -370,7 +387,7 @@ maintanance.
 - When a main IO audio buffers has more output channels than input channels, the
   excess output channels are now correctly filled with zeroes instead of
   containing whatever data was left in the host's output buffers. As part of
-  this change NIH-plug's buffer management has been refactored to reuse the same
+  this change nih_plug's buffer management has been refactored to reuse the same
   logic in all of its wrappers.
 - Any outstanding VST3 output events are now sent to the host during a parameter
   flush.
@@ -402,7 +419,7 @@ maintanance.
 ### Added
 
 - Added a `NoteEvent::channel()` method to get an event's channel, if it has
-  any. ([#62](https://github.com/robbert-vdh/nih-plug/pull/62))
+  any. ([#62](https://github.com/robbert-vdh/nih_plug/pull/62))
 
 ## [2023-03-07]
 
@@ -437,7 +454,7 @@ This document is now also used to keep track of non-breaking changes.
 ### Breaking changes
 
 - The way audio IO layouts are configured has changed completely to align better
-  with NIH-plug's current and future supported plugin API backends. Rather than
+  with nih_plug's current and future supported plugin API backends. Rather than
   defining a default layout and allowing the host/backend to change the channel
   counts by polling the `Plugin::accepts_bus_config()` function, the plugin now
   explicitly enumerates all supported audio IO layouts in a declarative fashion.
@@ -451,7 +468,7 @@ This document is now also used to keep track of non-breaking changes.
   on how this works. The `Plugin::AUDIO_IO_LAYOUTS` field's documentation also
   contains an example for how to initialize the layouts slice.
 
-- As a result of the above change, NIH-plug's standalones no longer have
+- As a result of the above change, nih_plug's standalones no longer have
   `--input` and `--output` command line arguments to change the number of input
   and output channels. Instead, they now have an `--audio-layout` option that
   lets the user select an audio layout from the list of available layouts by
@@ -471,7 +488,7 @@ This document is now also used to keep track of non-breaking changes.
 
 ### Breaking changes
 
-- NIH-plug has gained support MIDI SysEx in a simple, type-safe, and
+- nih_plug has gained support MIDI SysEx in a simple, type-safe, and
   realtime-safe way. This sadly does mean that every `Plugin` instance now needs
   to define a `SysExMessage` type definition and constructor function as Rust
   does not yet support defaults for associated types (Rust issue
@@ -605,7 +622,7 @@ This document is now also used to keep track of non-breaking changes.
   `nih_plug::context::init`, `nih_plug::context::process`, and
   `nih_plug::context::gui` to make it clearer which structs go with which
   context. You again don't have to change anything if you use the prelude.
-- NIH-plug has gained support for asynchronously running background tasks in a
+- nih_plug has gained support for asynchronously running background tasks in a
   simple, type-safe, and realtime-safe way. This sadly does mean that every
   `Plugin` instance now needs to define a `BackgroundTask` type definition and
   constructor function as Rust does not yet support defaults for associated
@@ -649,7 +666,7 @@ This document is now also used to keep track of non-breaking changes.
   required custom `Params` implementations to have multiple almost identical
   copies of a parameter struct. The current version supports both fields with
   unique parameter ID prefixes, and arrays of parameter objects. See the
-  [`Params`](https://nih-plug.robbertvanderhelm.nl/nih_plug/param/internals/trait.Params.html)
+  [`Params`](https://nih_plug.robbertvanderhelm.nl/nih_plug/param/internals/trait.Params.html)
   trait for more information on the new syntax.
 
 ## [2022-09-22]
@@ -747,7 +764,7 @@ This document is now also used to keep track of non-breaking changes.
 - The `Params::serialize_fields()` and `Params::deserialize_fields()` methods
   and the `State` struct now use `BTreeMap`s instead of `HashMap`s so the order
   is consistent the plugin's state to JSON multiple times. These things are part
-  of NIH-plug's internals, so unless you're implementing the `Params` trait by
+  of nih_plug's internals, so unless you're implementing the `Params` trait by
   hand you will not notice any changes.
 
 ## [2022-06-01]

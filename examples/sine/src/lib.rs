@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use std::f32::consts;
 use std::sync::Arc;
 
@@ -226,5 +226,5 @@ impl Vst3Plugin for Sine {
     ];
 }
 
-nih_export_clap!(Sine);
-nih_export_vst3!(Sine);
+nice_export_clap!(Sine);
+nice_export_vst3!(Sine);

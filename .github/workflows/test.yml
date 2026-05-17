@@ -58,9 +58,9 @@ jobs:
         # to date. We only really need this in one of the builds.
         run: cargo test --locked --workspace --features "simd,standalone,zstd"
 
-  # This makes sure that NIH-plug can be compiled without VST3 support
+  # This makes sure that nice-plug can be compiled without VST3 support
   build-without-vst3:
-    name: Build NIH-plug without VST3 support
+    name: Build nice-plug without VST3 support
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

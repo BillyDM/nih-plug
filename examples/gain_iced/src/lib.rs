@@ -1,9 +1,9 @@
-use nih_plug::prelude::*;
-use nih_plug_iced::iced::{
+use nice_plug::prelude::*;
+use nice_plug_iced::iced::{
     self, Center, PollSubNotifier, Theme,
     widget::{Column, ProgressBar, button, column, slider, text},
 };
-use nih_plug_iced::{EditorState, NihGuiContext, WindowState, application, create_iced_editor};
+use nice_plug_iced::{EditorState, NiceGuiContext, WindowState, application, create_iced_editor};
 use std::sync::{Arc, atomic::Ordering};
 
 const MIN_GAIN_DB: f32 = -30.0;
@@ -88,7 +88,7 @@ impl Default for GainParams {
 }
 
 impl Plugin for Gain {
-    const NAME: &'static str = "Gain (nih_plug_iced)";
+    const NAME: &'static str = "Gain (nice-plug_iced)";
     const VENDOR: &'static str = "Moist Plugins GmbH";
     const URL: &'static str = "https://youtu.be/dQw4w9WgXcQ";
     const EMAIL: &'static str = "info@example.com";
@@ -126,10 +126,10 @@ impl Plugin for Gain {
             },
             self.notifier.clone(),
             Default::default(),
-            |editor_state, nih_ctx| {
+            |editor_state, nice_ctx| {
                 application(
                     editor_state,
-                    nih_ctx,
+                    nice_ctx,
                     MyGui::new,
                     MyGui::update,
                     MyGui::view,
@@ -223,22 +223,22 @@ struct MyGui {
     /// state to persist across editor opens.
     editor_state: EditorState<MyEditorState>,
 
-    /// A handle that can be used to request operations from nih-plug, like
+    /// A handle that can be used to request operations from nice-plug, like
     /// resizing the window.
     #[allow(unused)]
-    nih_ctx: NihGuiContext,
+    nice_ctx: NiceGuiContext,
 
     value: i64,
     peak_meter_db: f32,
 }
 
 impl MyGui {
-    pub fn new(editor_state: EditorState<MyEditorState>, nih_ctx: NihGuiContext) -> Self {
+    pub fn new(editor_state: EditorState<MyEditorState>, nice_ctx: NiceGuiContext) -> Self {
         Self {
             editor_state,
-            nih_ctx,
+            nice_ctx,
             value: 0,
-            peak_meter_db: nih_plug::util::gain_to_db(0.0),
+            peak_meter_db: nice_plug::util::gain_to_db(0.0),
         }
     }
 
@@ -247,12 +247,12 @@ impl MyGui {
     }
 
     pub fn update(&mut self, message: Message) {
-        let setter = self.nih_ctx.param_setter();
+        let setter = self.nice_ctx.param_setter();
         let params = &self.editor_state.params;
 
         match message {
             Message::Poll => {
-                self.peak_meter_db = nih_plug::util::gain_to_db(
+                self.peak_meter_db = nice_plug::util::gain_to_db(
                     self.editor_state.peak_meter.load(Ordering::Relaxed),
                 );
             }
@@ -299,7 +299,7 @@ impl MyGui {
 }
 
 impl ClapPlugin for Gain {
-    const CLAP_ID: &'static str = "com.moist-plugins-gmbh-egui.nih-plug-gain-iced";
+    const CLAP_ID: &'static str = "com.moist-plugins-gmbh-egui.nice-plug-gain-iced";
     const CLAP_DESCRIPTION: Option<&'static str> =
         Some("A smoothed gain parameter example plugin with Iced GUI");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
@@ -318,5 +318,5 @@ impl Vst3Plugin for Gain {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }
 
-nih_export_clap!(Gain);
-nih_export_vst3!(Gain);
+nice_export_clap!(Gain);
+nice_export_vst3!(Gain);

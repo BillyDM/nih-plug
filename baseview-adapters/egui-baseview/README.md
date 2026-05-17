@@ -2,7 +2,7 @@
 
 [![Documentation](https://docs.rs/egui-baseview/badge.svg)](https://docs.rs/egui-baseview)
 [![Crates.io](https://img.shields.io/crates/v/egui-baseview.svg)](https://crates.io/crates/egui-baseview)
-[![License](https://img.shields.io/crates/l/egui-baseview.svg)](https://codeberg.org/BillyDM/nih-plug/src/branch/main/baseview-adapters/egui-baseview/LICENSE-APACHE)
+[![License](https://img.shields.io/crates/l/egui-baseview.svg)](https://codeberg.org/BillyDM/nice-plug/src/branch/main/baseview-adapters/egui-baseview/LICENSE-APACHE)
 
 A [`baseview`](https://github.com/RustAudio/baseview) backend for [`egui`](https://github.com/emilk/egui)
 

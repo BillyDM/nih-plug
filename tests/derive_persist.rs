@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 
 #[derive(Params, Default)]
 struct WrapperParams {

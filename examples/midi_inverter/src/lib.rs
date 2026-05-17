@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use std::sync::Arc;
 
 /// A plugin that inverts all MIDI note numbers, channels, CCs, velocities, pressures, and
@@ -231,5 +231,5 @@ impl Vst3Plugin for MidiInverter {
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Tools];
 }
 
-nih_export_clap!(MidiInverter);
-nih_export_vst3!(MidiInverter);
+nice_export_clap!(MidiInverter);
+nice_export_vst3!(MidiInverter);

@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -113,5 +113,5 @@ impl Vst3Plugin for SysEx {
     ];
 }
 
-nih_export_clap!(SysEx);
-nih_export_vst3!(SysEx);
+nice_export_clap!(SysEx);
+nice_export_vst3!(SysEx);

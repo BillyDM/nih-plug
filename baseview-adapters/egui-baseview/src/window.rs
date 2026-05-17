@@ -11,10 +11,10 @@ use raw_window_handle::HasRawWindowHandle;
 
 use crate::{GraphicsConfig, renderer::Renderer};
 
-#[cfg(feature = "nih_log")]
-use nih_plug_core::log::{error, warn};
+#[cfg(feature = "nice_log")]
+use nice_plug_core::log::{error, warn};
 
-#[cfg(all(feature = "tracing", not(feature = "nih_log")))]
+#[cfg(all(feature = "tracing", not(feature = "nice_log")))]
 use tracing::{error, warn};
 
 pub struct Queue<'a> {

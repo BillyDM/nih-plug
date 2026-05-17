@@ -1,0 +1,24 @@
+[package]
+name = "nice-log"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "An opinionated yet flexible logger catering to the needs of the nice-plug plugin framework"
+keywords = ["log", "logging", "nice-plug"]
+
+[dependencies]
+atty = "0.2.14"
+log = "0.4.29"
+once_cell = "1.21"
+termcolor = "1.4"
+time = { version = "0.3.47", features = ["formatting", "local-offset", "macros"] }
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.44"
+features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_Debug",
+]
