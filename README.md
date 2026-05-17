@@ -1,11 +1,13 @@
-# nice-plug
+# nice-plug 🙂🔌
 
 > The main repository is at Codeberg https://codeberg.org/BillyDM/nice-plug. Please
 > post any issues and pull requests there. A read-only mirror is available at
 > https://github.com/BillyDM/nice-plug for users who prefer that.
 
-An audio plugin development framework for the [Rust](https://rust-lang.org/) programming
-language that is nice to use :)
+A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
+use :)
+
+---
 
 The idea is to have a stateful yet simple plugin API that gets rid of as much
 unnecessary ceremony wherever possible, while also keeping the amount of magic to
@@ -27,6 +29,8 @@ quickly get started with nice-plug.
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
+- [Contributing](#contributing)
+- [AI Policy](#ai-policy)
 - [Licensing](#licensing)
 
 ## Baseview adapters
