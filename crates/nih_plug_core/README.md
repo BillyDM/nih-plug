@@ -1,5 +1,7 @@
 # nih_plug_core
 
+> This crate is no longer maintained. Please use [nice-plug-core](https://crates.io/crates/nice-plug-core) instead.
+
 [![Documentation](https://docs.rs/nih_plug_core/badge.svg)](https://docs.rs/nih_plug_core)
 [![Crates.io](https://img.shields.io/crates/v/nih_plug_core.svg)](https://crates.io/crates/nih_plug_core)
 [![License](https://img.shields.io/crates/l/nih_plug_core.svg)](https://codeberg.org/BillyDM/nih-plug/src/branch/main/LICENSE)

@@ -1,6 +1,6 @@
 [package]
 name = "nih_plug_egui"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
     "Billy Messenger <billydm@noreply.codeberg.org>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
@@ -9,9 +9,9 @@ description = "An adapter to use egui GUIs with NIH-plug"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-readme.workspace = true
 keywords = ["gui", "nih-plug", "plugin", "clap", "vst3"]
 categories = ["gui"]
+readme = "README.md"
 
 [features]
 default = ["opengl"]
