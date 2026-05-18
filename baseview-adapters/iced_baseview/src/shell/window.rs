@@ -15,7 +15,7 @@ use iced_widget::core::Size;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
 #[cfg(feature = "nice-log")]
-use nice_plug_core::log::error;
+use nice_plug_core::nice_error as error;
 
 #[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::error;

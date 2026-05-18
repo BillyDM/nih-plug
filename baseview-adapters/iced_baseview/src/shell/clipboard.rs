@@ -4,7 +4,7 @@ use crate::core::clipboard::Kind;
 use raw_window_handle_06::HasDisplayHandle;
 
 #[cfg(feature = "nice-log")]
-use nice_plug_core::log::warn;
+use nice_plug_core::nice_warn as warn;
 #[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::warn;
 

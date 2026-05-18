@@ -16,7 +16,7 @@ use std::time::Instant;
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "nice-log")]
-use nice_plug_core::log::{debug, error, warn};
+use nice_plug_core::{nice_dbg as debug, nice_error as error, nice_warn as warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::{debug, error, warn};

@@ -12,7 +12,7 @@ use raw_window_handle::HasRawWindowHandle;
 use crate::{GraphicsConfig, renderer::Renderer};
 
 #[cfg(feature = "nice-log")]
-use nice_plug_core::log::{error, warn};
+use nice_plug_core::{nice_error as error, nice_warn as warn};
 
 #[cfg(all(feature = "tracing", not(feature = "nice-log")))]
 use tracing::{error, warn};
