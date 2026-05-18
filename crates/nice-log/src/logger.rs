@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use termcolor::Color;
 use time::UtcOffset;
 
-use crate::target::{OutputTargetImpl, WriteExt};
+use crate::platform::{OutputTargetImpl, WriteExt};
 
 /// The formatting description for times. Each log message is prefixed by the current time as
 /// `hh:mm:ss`.

@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use crate::LOGGER_INSTANCE;
 use crate::logger::Logger;
-use crate::target::OutputTargetImpl;
+use crate::platform::OutputTargetImpl;
 
 /// Constructs an nice-log logger.
 #[derive(Debug)]
