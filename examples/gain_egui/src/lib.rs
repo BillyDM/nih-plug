@@ -294,17 +294,13 @@ impl Plugin for Gain {
                                 );
 
                                 // Demonstrate sending a message to the audio thread.
-                                if ui.button("send message").clicked() {
-                                    if let Err(e) = gui_state
+                                if ui.button("send message").clicked()
+                                    && let Err(e) = gui_state
                                         .msg_channel
                                         .to_audio_tx
                                         .push(GuiToAudioMsg::MessageA)
-                                    {
-                                        nice_error!(
-                                            "Failed to send message to audio thread: {}",
-                                            e
-                                        );
-                                    }
+                                {
+                                    nice_error!("Failed to send message to audio thread: {}", e);
                                 }
                                 // Demonstrate receiving messages from the audio thread.
                                 while let Ok(msg) = gui_state.msg_channel.from_audio_rx.pop() {

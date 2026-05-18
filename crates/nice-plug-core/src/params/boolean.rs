@@ -65,9 +65,9 @@ impl Debug for BoolParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This uses the above `Display` instance to show the value
         if self.value.load(Ordering::Relaxed) != self.unmodulated_value.load(Ordering::Relaxed) {
-            write!(f, "{}: {} (modulated)", &self.name, &self)
+            write!(f, "{}: {} (modulated)", self.name, self)
         } else {
-            write!(f, "{}: {}", &self.name, &self)
+            write!(f, "{}: {}", self.name, self)
         }
     }
 }

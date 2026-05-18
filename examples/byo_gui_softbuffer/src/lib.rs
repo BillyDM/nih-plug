@@ -99,8 +99,13 @@ impl baseview::WindowHandler for CustomSoftbufferWindow {
         // Use this to set parameter values.
         let _param_setter = ParamSetter::new(self.gui_context.as_ref());
 
+        // Suppress clippy warnings here because the user is likely to want to
+        // use more events.
+        #[allow(clippy::single_match)]
+        #[allow(clippy::collapsible_match)]
         match &event {
             // Do event processing here.
+            #[allow(clippy::single_match)]
             baseview::Event::Window(event) => match event {
                 baseview::WindowEvent::Resized(window_info) => {
                     self.params.editor_state.size.store((

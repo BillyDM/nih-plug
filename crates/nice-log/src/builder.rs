@@ -1,4 +1,4 @@
-///! A builder interface for the logger.
+//! A builder interface for the logger.
 use log::LevelFilter;
 use std::collections::HashSet;
 use std::error::Error;

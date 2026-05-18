@@ -84,9 +84,9 @@ impl Debug for IntParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This uses the above `Display` instance to show the value
         if self.modulated_plain_value() != self.unmodulated_plain_value() {
-            write!(f, "{}: {} (modulated)", &self.name, &self)
+            write!(f, "{}: {} (modulated)", self.name, self)
         } else {
-            write!(f, "{}: {}", &self.name, &self)
+            write!(f, "{}: {}", self.name, self)
         }
     }
 }

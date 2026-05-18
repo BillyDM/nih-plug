@@ -45,6 +45,7 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
     /// The plugin's editor, if it has one. This object does not do anything on its own, but we need
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
+    #[allow(clippy::type_complexity)]
     pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
     /// A channel for sending tasks to the GUI window, if the plugin has a GUI. Set in `run()`.
     gui_tasks_sender: AtomicRefCell<Option<Sender<GuiTask>>>,

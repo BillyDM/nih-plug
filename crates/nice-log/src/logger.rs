@@ -16,7 +16,7 @@ const TIME_FORMAT_DESCRIPTION: &[time::format_description::FormatItem] =
     time::macros::format_description!("[hour]:[minute]:[second]");
 
 thread_local! {
-    static IS_REENTRANT_LOGGING_CALL: Cell<bool> = Cell::new(false);
+    static IS_REENTRANT_LOGGING_CALL: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The nice-log logger. Construct one using the [`LoggerBuilder`].

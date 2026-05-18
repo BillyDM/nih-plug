@@ -473,7 +473,7 @@ impl PolyModSynth {
         match self.voices.iter().position(|voice| voice.is_none()) {
             Some(free_voice_idx) => {
                 self.voices[free_voice_idx] = Some(new_voice);
-                return self.voices[free_voice_idx].as_mut().unwrap();
+                self.voices[free_voice_idx].as_mut().unwrap()
             }
             None => {
                 // If there is no free voice, find and steal the oldest one
@@ -499,7 +499,7 @@ impl PolyModSynth {
                 }
 
                 *oldest_voice = Some(new_voice);
-                return oldest_voice.as_mut().unwrap();
+                oldest_voice.as_mut().unwrap()
             }
         }
     }

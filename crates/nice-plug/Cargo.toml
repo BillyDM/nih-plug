@@ -66,9 +66,9 @@ unsafe_flush_denormals = []
 
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1" }
-nice-plug-core = { path = "../nice-plug-core", version = "0.1" }
+nice-plug-core = { path = "../nice-plug-core", version = "0.1.2" }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
-nice-log = { path = "../nice-log", version = "0.2.1" }
+nice-log = { path = "../nice-log", version = "0.2.2" }
 # This supports CLAP 1.2.2
 clap-sys = { git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156" }
 # All the claps!

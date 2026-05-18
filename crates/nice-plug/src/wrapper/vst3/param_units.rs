@@ -96,7 +96,7 @@ impl ParamUnits {
 
         // Then we need to assign the correct parent IDs. We'll also sort the units so the order is
         // stable.
-        groups_units.sort_by(|(group_name_l, _), (group_name_r, _)| group_name_l.cmp(group_name_r));
+        groups_units.sort_by_key(|(group_name_l, _)| *group_name_l);
 
         // We need to be able to map group names to unit IDs
         // NOTE: Now it starts getting complicated because VST3 units are one indexed, so the unit

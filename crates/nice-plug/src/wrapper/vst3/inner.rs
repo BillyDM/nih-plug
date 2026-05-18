@@ -44,6 +44,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// The plugin's editor, if it has one. This object does not do anything on its own, but we need
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
+    #[allow(clippy::type_complexity)]
     pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
 
     /// The host's [`IComponentHandler`] instance, if passed through
