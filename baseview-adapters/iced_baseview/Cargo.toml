@@ -1,6 +1,6 @@
 [package]
 name = "iced_baseview"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
   "Billy Messenger <BillyDM@protonmail.com>",
   "Robbert van der Helm <mail@robbertvanderhelm.nl>",
@@ -95,7 +95,6 @@ unconditional-rendering = []
 sipper = ["iced_runtime/sipper"]
 # Enables the Unix X11 backend
 x11 = ["iced_renderer/x11", "window_clipboard/x11"]
-rustanalyzer_opengl_workaround = []
 
 [dependencies]
 iced_debug = "0.14"
@@ -120,5 +119,3 @@ nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.1", option
 
 [dev-dependencies]
 tracing-subscriber = "0.3.22"
-baseview = { workspace = true, features = ["opengl"] }
-iced_baseview = { path = ".", features = ["rustanalyzer_opengl_workaround"] }

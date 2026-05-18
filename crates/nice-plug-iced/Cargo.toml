@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-iced"
-version = "0.1.0"
+version = "0.1.1"
 description = "An adapter to use iced GUIs with nice-plug"
 edition.workspace = true
 license.workspace = true
@@ -84,7 +84,7 @@ nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.1" }
 iced_futures = "0.14"
 iced_debug = "0.14"
 iced_program = "0.14"
-iced_baseview = { path = "../../baseview-adapters/iced_baseview", version = "0.2", default-features = false, features = [
+iced_baseview = { path = "../../baseview-adapters/iced_baseview", version = "0.2.1", default-features = false, features = [
     "nice-log",
 ] }
 crossbeam-utils = "0.8"

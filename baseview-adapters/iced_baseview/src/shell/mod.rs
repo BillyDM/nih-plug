@@ -1104,7 +1104,6 @@ fn clone_window_options(window: &WindowOpenOptions) -> WindowOpenOptions {
         title: window.title.clone(),
         size: window.size,
         scale: window.scale,
-        #[cfg(feature = "rustanalyzer_opengl_workaround")]
-        gl_config: None,
+        ..Default::default()
     }
 }
