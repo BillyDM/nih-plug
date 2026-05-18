@@ -1,11 +1,18 @@
 # nice-plug 🙂🔌
 
+A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
+use :)
+
+---
+
 > The main repository is at Codeberg https://codeberg.org/BillyDM/nice-plug. Please
 > post any issues and pull requests there. A read-only mirror is available at
 > https://github.com/BillyDM/nice-plug for users who prefer that.
 
-A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
-use :)
+> nice-plug started out as a fork of the awesome [NIH-plug](https://github.com/robbert-vdh/nih-plug)
+> framework authored by Robbert van der Helm. It has since become its own separate
+> community-led project, and is now the recommended toolkit for Rust audio plugin
+> developers.
 
 ---
 
