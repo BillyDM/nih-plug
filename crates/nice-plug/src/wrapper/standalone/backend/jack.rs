@@ -64,14 +64,18 @@ impl<P: Plugin> Backend<P> for Jack {
         + Send,
     ) {
         let client = self.client.take().unwrap();
-        let buffer_size = client.buffer_size();
+        // JACK may negotiate a smaller buffer size after the client is activated than what this
+        // initial query reports. We treat this value as a maximum: any `num_frames` up to and
+        // including it is fine because `BufferManager` was preallocated for it.
+        // Only a growth beyond this would force an abort.
+        let max_buffer_size = client.buffer_size();
 
         // We'll preallocate the buffers here, and then assign them to the slices belonging to the
         // JACK ports later. For consistency with the other backends we'll reuse the
         // `BufferManager`, which means we'll need to collect pointers to individual channel slices
         // into vectors so we can provide the needed `*mut *mut f32` pointers.
         let mut buffer_manager =
-            BufferManager::for_audio_io_layout(buffer_size as usize, self.audio_io_layout);
+            BufferManager::for_audio_io_layout(max_buffer_size as usize, self.audio_io_layout);
         let mut main_output_channel_pointers = ChannelPointerVec(Vec::with_capacity(
             self.audio_io_layout
                 .main_output_channels
@@ -114,13 +118,14 @@ impl<P: Plugin> Backend<P> for Jack {
         let midi_input = self.midi_input.clone();
         let midi_output = self.midi_output.clone();
         let process_handler = jack::contrib::ClosureProcessHandler::new(move |client, ps| {
-            // In theory we could handle `num_frames <= buffer_size`, but JACK will never chop up
-            // buffers like that so we'll just make it easier for ourselves by not supporting that
+            // `BufferManager` is pre-allocated for `max_buffer_size`, so any `num_frames` up to
+            // that is safe to process. A grow beyond it would overrun the aux input storage, so
+            // we still bail in that case.
             let num_frames = ps.n_frames();
-            if num_frames != buffer_size {
+            if num_frames > max_buffer_size {
                 crate::nice_error!(
-                    "Buffer size changed from {buffer_size} to {num_frames}. Buffer size changes \
-                     are currently not supported, aborting..."
+                    "JACK buffer size grew from {max_buffer_size} to {num_frames}, which exceeds \
+                     the pre-allocated maximum. Restarting standalone should hopefully pick up the new size."
                 );
                 unparker.unpark();
                 return Control::Quit;
