@@ -195,6 +195,7 @@ where
 
         let mut bg_color = Rgba::BLACK;
         let mut close_requested = false;
+        let old_physical_size = physical_size;
         let mut key_capture = KeyCapture::default();
         let mut queue = Queue::new(
             &mut bg_color,
@@ -203,6 +204,13 @@ where
             &mut key_capture,
         );
         (build)(&egui_ctx, &mut queue, &mut state);
+
+        if physical_size != old_physical_size {
+            window.resize(baseview::Size {
+                width: physical_size.width as f64,
+                height: physical_size.height as f64,
+            });
+        }
 
         let clipboard_ctx = match copypasta::ClipboardContext::new() {
             Ok(clipboard_ctx) => Some(clipboard_ctx),
@@ -337,6 +345,7 @@ where
         ));
 
         //let mut repaint_requested = false;
+        let old_physical_size = self.physical_size;
         let mut queue = Queue::new(
             &mut self.bg_color,
             &mut self.close_requested,
@@ -372,6 +381,13 @@ where
                 }),
                 _ => {}
             }
+        }
+
+        if self.physical_size != old_physical_size {
+            window.resize(baseview::Size {
+                width: self.physical_size.width.max(1) as f64,
+                height: self.physical_size.height.max(1) as f64,
+            });
         }
 
         let now = Instant::now();

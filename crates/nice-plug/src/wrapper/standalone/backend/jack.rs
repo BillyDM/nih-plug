@@ -125,7 +125,8 @@ impl<P: Plugin> Backend<P> for Jack {
             if num_frames > max_buffer_size {
                 crate::nice_error!(
                     "JACK buffer size grew from {max_buffer_size} to {num_frames}, which exceeds \
-                     the pre-allocated maximum. Restarting standalone should hopefully pick up the new size."
+                     the pre-allocated maximum. Restarting standalone should hopefully pick up \
+                     the new size."
                 );
                 unparker.unpark();
                 return Control::Quit;

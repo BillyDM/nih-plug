@@ -21,7 +21,7 @@ nice-plug = { path = "../../crates/nice-plug", default-features = true, features
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.1", default-features = false, features = [
+nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.2", default-features = false, features = [
     "opengl",
 ] }
 baseview = { workspace = true, features = ["opengl"] }
