@@ -9,17 +9,6 @@ use :)
 
 ---
 
-> The main repository is at [Codeberg](https://codeberg.org/RustAudio/nice-plug).
-> Please post any issues and pull requests there. A read-only mirror is available at
-> (TODO) for users who prefer that.
-
-> nice-plug started out as a fork of the awesome [NIH-plug](https://github.com/robbert-vdh/nih-plug)
-> framework authored by Robbert van der Helm. It has since become its own separate
-> community-led project, and is now the recommended toolkit for Rust audio plugin
-> developers.
-
----
-
 The idea is to have a stateful yet simple plugin API that gets rid of as much
 unnecessary ceremony wherever possible, while also keeping the amount of magic to
 a minimum and making it easy to experiment with different approaches to things. See
@@ -32,6 +21,17 @@ the [cookiecutter template](https://github.com/robbert-vdh/nice-plug-template) t
 quickly get started with nice-plug.
 -->
 
+---
+
+> The main repository is at [Codeberg](https://codeberg.org/RustAudio/nice-plug).
+> Please post any issues and pull requests there. A read-only mirror is available at
+> (TODO) for users who prefer that.
+
+> nice-plug started out as a fork of the awesome [NIH-plug](https://github.com/robbert-vdh/nih-plug)
+> framework authored by Robbert van der Helm. It has since become its own separate
+> community-led project, and is now the recommended toolkit for Rust audio plugin
+> developers.
+
 ### Table of contents
 
 - [Baseview adapters](#baseview-adapters)
@@ -41,11 +41,13 @@ quickly get started with nice-plug.
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
 - [Get Involved](#get-involved)
-- [Contributing](#contributing)
-- [AI Policy](#ai-policy)
+  - [Contributing](#contributing)
+  - [AI Policy](#ai-policy)
 - [Licensing](#licensing)
 
-## Baseview adapters
+---
+
+# Baseview adapters
 
 This repository contains [baseview](https://github.com/RustAudio/baseview) adapters
 for popular Rust GUI frameworks. These can be used on their own without the rest of
@@ -56,7 +58,7 @@ the nice-plug framework.
 - [iced_baseview](baseview-adapters/iced_baseview/) - adapter for
 [Iced](https://iced.rs/)
 
-## Framework
+# Framework
 
 For a list of available crate flags, see
 [crates/nice-plug/Cargo.toml](crates/nice-plug/Cargo.toml).
@@ -206,7 +208,7 @@ If you have any questions or you wish to get involved in the project, feel free
 to join us in the [Rust Audio Discord Server](https://discord.gg/Qs2Zwtf9Gf)
 in the `#nice-plug` channel!
 
-## Contributing
+### Contributing
 
 Contributions are very much welcomed! As long as they comply to the policy and
 licensing requirements below.
@@ -215,7 +217,7 @@ licensing requirements below.
 > enable the nightly compiler for your local repository with `rustup override add
 nightly`.
 
-## AI policy
+### AI policy
 
 The general AI policy of the RustAudio Community applies to this repository. Please
 ensure compliance to these rules before submitting your contribution to this project.
