@@ -40,6 +40,7 @@ quickly get started with nice-plug.
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
+- [Get Involved](#get-involved)
 - [Contributing](#contributing)
 - [AI Policy](#ai-policy)
 - [Licensing](#licensing)
