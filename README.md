@@ -199,6 +199,12 @@ examples.
 - [**sysex**](examples/sysex) is a simple example of how to send and
   receive SysEx messages by defining custom message types.
 
+# Get Involved
+
+If you have any questions or you wish to get involved in the project, feel free
+to join us in the [Rust Audio Discord Server](https://discord.gg/Qs2Zwtf9Gf)
+in the `#nice-plug` channel!
+
 ## Contributing
 
 Contributions are very much welcomed! As long as they comply to the policy and
@@ -216,7 +222,7 @@ ensure compliance to these rules before submitting your contribution to this pro
 Please refer to the Rust Audio community's policy an AI usage:
 https://rust.audio/community/ai/
 
-## Licensing
+# Licensing
 
 > Check each crate's Cargo.toml file for more information.
 
