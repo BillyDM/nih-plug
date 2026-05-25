@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./assets/logo.svg" width="78px" height="78px"/>
+<img src="./assets/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
 A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
