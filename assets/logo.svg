@@ -22,7 +22,8 @@
      ry="2.5625"
      transform="scale(-1,1)" />
   <g
-     id="g1">
+     id="g1"
+     transform="translate(0.08812816)">
     <path
        id="path1"
        style="fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:4.96512"
