@@ -18,10 +18,7 @@ fn main() {
                 title: String::from("iced_baseview text input"),
                 size: Size::new(500.0, 500.0),
                 scale: WindowScalePolicy::SystemScaleFactor,
-                // NOTE: OpenGL support is not needed here, but rust-analyzer gets confused when
-                // some crates do use it and others don't. You should disable the opengl feature
-                // in your crate.
-                gl_config: None,
+                ..Default::default()
             },
             ..Default::default()
         },
