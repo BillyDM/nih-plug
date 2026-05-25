@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use crossbeam::sync::Parker;
-use jack::{AsyncClient, AudioIn, AudioOut, Client, ClientOptions, Control, MidiIn, MidiOut, Port};
+use jack::{
+    AsyncClient, AudioIn, AudioOut, Client, ClientOptions, Control, MidiIn, MidiOut, Port, Unowned,
+};
 use nice_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers};
 use nice_plug_core::buffer::Buffer;
 use nice_plug_core::context::process::Transport;
@@ -463,7 +465,15 @@ impl Jack {
 
         // We don't connect the inputs automatically to avoid feedback loops, but this should be
         // safe. And if this fails, then that's fine.
-        for (i, output) in self.main_outputs.lock().iter().enumerate() {
+        let outputs: Vec<Port<Unowned>> = {
+            self.main_outputs
+                .lock()
+                .iter()
+                .map(|p| p.clone_unowned())
+                .collect()
+        };
+
+        for (i, output) in outputs.iter().enumerate() {
             // The system ports are 1-indexed
             let port_no = i + 1;
 
