@@ -1,9 +1,11 @@
-# nice-plug 🙂🔌
+<div align="center">
+<img src="./assets/logo.svg" width="74px" height="74px"/>
+<h1>nice-plug</h1>
 
 A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
 use :)
 
----
+</div>
 
 > The main repository is at Codeberg https://codeberg.org/BillyDM/nice-plug. Please
 > post any issues and pull requests there. A read-only mirror is available at
