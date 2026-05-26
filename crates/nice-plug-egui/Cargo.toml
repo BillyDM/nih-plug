@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-egui"
-version = "0.1.2"
+version = "0.1.3"
 authors = [
     "Billy Messenger <billydm@noreply.codeberg.org>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
