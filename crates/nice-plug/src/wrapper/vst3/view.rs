@@ -7,8 +7,8 @@ use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use vst3::Steinberg::{
-    FIDString, TBool, char16, int16, kInvalidArgument, kNotImplemented, kResultFalse, kResultOk,
-    tresult,
+    FIDString, TBool, char16, int16, kInvalidArgument, kNotImplemented, kPlatformTypeHWND,
+    kPlatformTypeNSView, kPlatformTypeX11EmbedWindowID, kResultFalse, kResultOk, tresult,
 };
 use vst3::Steinberg::{
     IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewContentScaleSupport,
@@ -19,7 +19,7 @@ use vst3::{Class, ComPtr, ComRef, ComWrapper};
 
 use super::inner::{Task, WrapperInner};
 use crate::editor::{Modifiers, VirtualKeyCode};
-use crate::wrapper::vst3::Vst3Plugin;
+use crate::wrapper::vst3::{Vst3Plugin, util::fid_matches};
 
 /// Lowest VST3 virtual key code (`KEY_BACK` in the VST3 SDK
 /// `VirtualKeyCodes` enum, `pluginterfaces/base/keycodes.h`). Values
@@ -141,18 +141,6 @@ use {
         FileDescriptor, IEventHandler, IEventHandlerTrait, IRunLoop, IRunLoopTrait,
     },
 };
-
-// Window handle type constants missing from vst3
-#[allow(unused)]
-const VST3_PLATFORM_HWND: &str = "HWND";
-#[allow(unused)]
-const VST3_PLATFORM_HIVIEW: &str = "HIView";
-#[allow(unused)]
-const VST3_PLATFORM_NSVIEW: &str = "NSView";
-#[allow(unused)]
-const VST3_PLATFORM_UIVIEW: &str = "UIView";
-#[allow(unused)]
-const VST3_PLATFORM_X11_WINDOW: &str = "X11EmbedWindowID";
 
 /// The plugin's [`IPlugView`] instance created in [`IEditController::create_view()`] if `P` has an
 /// editor. This is managed separately so the lifetime bounds match up.
@@ -392,56 +380,54 @@ impl<P: Vst3Plugin> RunLoopEventHandler<P> {
 impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     #[cfg(all(target_family = "unix", not(target_os = "macos")))]
     unsafe fn isPlatformTypeSupported(&self, type_: FIDString) -> tresult {
-        let type_ = unsafe { CStr::from_ptr(type_) };
-        match type_.to_str() {
-            Ok(type_) if type_ == VST3_PLATFORM_X11_WINDOW => kResultOk,
-            _ => {
-                crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", type_);
-                kResultFalse
-            }
+        if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
+            kResultOk
+        } else {
+            crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", unsafe {
+                CStr::from_ptr(type_)
+            });
+            kResultFalse
         }
     }
 
     #[cfg(target_os = "macos")]
     unsafe fn isPlatformTypeSupported(&self, type_: FIDString) -> tresult {
-        let type_ = unsafe { CStr::from_ptr(type_) };
-        match type_.to_str() {
-            Ok(type_) if type_ == VST3_PLATFORM_NSVIEW => kResultOk,
-            _ => {
-                crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", type_);
-                kResultFalse
-            }
+        if unsafe { fid_matches(type_, kPlatformTypeNSView) } {
+            kResultOk
+        } else {
+            crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", unsafe {
+                CStr::from_ptr(type_)
+            });
+            kResultFalse
         }
     }
 
     #[cfg(target_os = "windows")]
     unsafe fn isPlatformTypeSupported(&self, type_: FIDString) -> tresult {
-        let type_ = unsafe { CStr::from_ptr(type_) };
-        match type_.to_str() {
-            Ok(type_) if type_ == VST3_PLATFORM_HWND => kResultOk,
-            _ => {
-                crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", type_);
-                kResultFalse
-            }
+        if unsafe { fid_matches(type_, kPlatformTypeHWND) } {
+            kResultOk
+        } else {
+            crate::nice_debug_assert_failure!("Invalid window handle type: {:?}", unsafe {
+                CStr::from_ptr(type_)
+            });
+            kResultFalse
         }
     }
 
     unsafe fn attached(&self, parent: *mut c_void, type_: FIDString) -> tresult {
         let mut editor_handle = self.editor_handle.write();
         if editor_handle.is_none() {
-            let type_ = unsafe { CStr::from_ptr(type_) };
-            let parent_handle = match type_.to_str() {
-                Ok(type_) if type_ == VST3_PLATFORM_X11_WINDOW => {
-                    ParentWindowHandle::X11Window(parent as usize as u32)
-                }
-                Ok(type_) if type_ == VST3_PLATFORM_NSVIEW => {
-                    ParentWindowHandle::AppKitNsView(parent)
-                }
-                Ok(type_) if type_ == VST3_PLATFORM_HWND => ParentWindowHandle::Win32Hwnd(parent),
-                _ => {
-                    crate::nice_debug_assert_failure!("Unknown window handle type: {:?}", type_);
-                    return kInvalidArgument;
-                }
+            let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
+                ParentWindowHandle::X11Window(parent as usize as u32)
+            } else if unsafe { fid_matches(type_, kPlatformTypeNSView) } {
+                ParentWindowHandle::AppKitNsView(parent)
+            } else if unsafe { fid_matches(type_, kPlatformTypeHWND) } {
+                ParentWindowHandle::Win32Hwnd(parent)
+            } else {
+                crate::nice_debug_assert_failure!("Unknown window handle type: {:?}", unsafe {
+                    CStr::from_ptr(type_)
+                });
+                return kInvalidArgument;
             };
 
             *editor_handle = Some(

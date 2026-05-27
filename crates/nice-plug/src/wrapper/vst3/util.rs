@@ -1,5 +1,5 @@
-use std::cmp;
-use vst3::Steinberg::Vst::TChar;
+use std::{cmp, ffi::CStr};
+use vst3::Steinberg::{FIDString, Vst::TChar};
 use widestring::U16CString;
 
 /// When `Plugin::MIDI_INPUT` is set to `MidiConfig::MidiCCs` or higher then we'll register 130*16
@@ -54,6 +54,12 @@ pub fn u16strlcpy(dest: &mut [TChar], src: &str) {
     let copy_len = cmp::min(dest.len() - 1, src_utf16_chars_signed.len());
     dest[..copy_len].copy_from_slice(&src_utf16_chars_signed[..copy_len]);
     dest[copy_len] = 0;
+}
+
+/// Compare a host-provided [`FIDString`] to one of the SDK's string constants. These are plain C
+/// string pointers, so pointer equality is not sufficient.
+pub unsafe fn fid_matches(type_: FIDString, expected: FIDString) -> bool {
+    unsafe { !type_.is_null() && CStr::from_ptr(type_) == CStr::from_ptr(expected) }
 }
 
 #[cfg(test)]
