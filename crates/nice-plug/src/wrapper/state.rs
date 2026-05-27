@@ -106,7 +106,7 @@ pub(crate) unsafe fn serialize_json<'a, P: Plugin>(
         let state_bytes = json.len();
         let compressed_state_bytes = compressed.len();
         let compression_ratio = compressed_state_bytes as f32 / state_bytes as f32 * 100.0;
-        nice_trace!(
+        nice_plug_core::nice_trace!(
             "Compressed {state_bytes} bytes of state to {compressed_state_bytes} bytes \
              ({compression_ratio:.1}% compression ratio)"
         );
