@@ -14,7 +14,7 @@ pub fn reflink<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<Option<
         fs::remove_file(to).context("Could not remove file before reflinking")?;
     }
 
-    reflink::reflink_or_copy(from, to).context("Could not reflink or copy file")
+    reflink_copy::reflink_or_copy(from, to).context("Could not reflink or copy file")
 }
 
 /// Either reflink `from` to `to` if `from` contains a single element, or combine multiple binaries
