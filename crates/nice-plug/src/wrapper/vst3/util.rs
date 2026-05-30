@@ -47,12 +47,10 @@ pub fn u16strlcpy(dest: &mut [TChar], src: &str) {
         }
     };
     let src_utf16_chars = src_utf16.as_slice();
-    let src_utf16_chars_signed: &[TChar] =
-        unsafe { &*(src_utf16_chars as *const [u16] as *const [TChar]) };
 
     // Make sure there's always room for a null terminator
-    let copy_len = cmp::min(dest.len() - 1, src_utf16_chars_signed.len());
-    dest[..copy_len].copy_from_slice(&src_utf16_chars_signed[..copy_len]);
+    let copy_len = cmp::min(dest.len() - 1, src_utf16_chars.len());
+    dest[..copy_len].copy_from_slice(&src_utf16_chars[..copy_len]);
     dest[copy_len] = 0;
 }
 

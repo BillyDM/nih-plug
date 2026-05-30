@@ -553,14 +553,12 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         }
 
         // After the state has been updated, notify the host about the new parameter values
-        let task_posted =
-            self.event_loop
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .schedule_gui(Task::TriggerRestart(
-                    RestartFlags_::kParamValuesChanged as i32,
-                ));
+        let task_posted = self
+            .event_loop
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .schedule_gui(Task::TriggerRestart(RestartFlags_::kParamValuesChanged));
         crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
@@ -569,7 +567,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         let old_latency = self.current_latency.swap(samples, Ordering::SeqCst);
         if old_latency != samples {
             let task_posted =
-                self.schedule_gui(Task::TriggerRestart(RestartFlags_::kLatencyChanged as i32));
+                self.schedule_gui(Task::TriggerRestart(RestartFlags_::kLatencyChanged));
             crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
     }

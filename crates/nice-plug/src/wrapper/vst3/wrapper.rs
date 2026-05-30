@@ -70,6 +70,12 @@ impl<P: Vst3Plugin> Wrapper<P> {
     }
 }
 
+impl<P: Vst3Plugin> Default for Wrapper<P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<P: Vst3Plugin> Drop for Wrapper<P> {
     fn drop(&mut self) {
         crate::nice_debug_assert_eq!(Arc::strong_count(&self.inner), 1);
@@ -170,7 +176,10 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 let info = unsafe { &mut *info };
                 info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
                 info.direction = dir;
-                info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                }
 
                 let has_main_input = current_audio_io_layout.main_input_channels.is_some();
                 let aux_input_start_idx = if has_main_input { 1 } else { 0 };
@@ -207,7 +216,10 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 let info = unsafe { &mut *info };
                 info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
                 info.direction = dir;
-                info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                }
 
                 let has_main_output = current_audio_io_layout.main_output_channels.is_some();
                 let aux_output_start_idx = if has_main_output { 1 } else { 0 };
@@ -252,7 +264,10 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 info.channelCount = 16;
                 u16strlcpy(&mut info.name, "Note Input");
                 info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
-                info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                }
                 kResultOk
             }
             (t, d, 0)
@@ -268,7 +283,10 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 info.channelCount = 16;
                 u16strlcpy(&mut info.name, "Note Output");
                 info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
-                info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
+                }
                 kResultOk
             }
             _ => kInvalidArgument,
@@ -569,7 +587,7 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
             info.id = VST3_MIDI_PARAMS_START + midi_param_relative_idx;
             u16strlcpy(&mut info.title, &name);
             u16strlcpy(&mut info.shortTitle, &name);
-            info.flags = ParameterFlags_::kIsReadOnly as i32 | (1 << 4); // kIsHidden
+            info.flags = ParameterFlags_::kIsReadOnly | (1 << 4); // kIsHidden
         } else {
             let param_hash = &self.inner.param_hashes[param_index as usize];
             let param_unit = &self
@@ -593,13 +611,13 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
             info.unitId = *param_unit;
             info.flags = 0;
             if automatable && !hidden {
-                info.flags |= ParameterFlags_::kCanAutomate as i32;
+                info.flags |= ParameterFlags_::kCanAutomate;
             }
             if hidden {
-                info.flags |= ParameterFlags_::kIsReadOnly as i32 | (1 << 4); // kIsHidden
+                info.flags |= ParameterFlags_::kIsReadOnly | (1 << 4); // kIsHidden
             }
             if is_bypass {
-                info.flags |= ParameterFlags_::kIsBypass as i32;
+                info.flags |= ParameterFlags_::kIsBypass;
             }
         }
 
@@ -614,7 +632,7 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
     ) -> tresult {
         check_null_ptr!(string);
 
-        let dest = unsafe { &mut *(string as *mut [TChar; 128]) };
+        let dest = unsafe { &mut *(string) };
 
         // TODO: We don't implement these methods at all for our generated MIDI CC parameters,
         //       should be fine right? They should be hidden anyways.
@@ -1269,10 +1287,8 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 && has_main_output
                             {
                                 let audio_output = &*data.outputs;
-                                let ptrs = NonNull::new(
-                                    audio_output.__field0.channelBuffers32 as *mut *mut f32,
-                                )
-                                .unwrap();
+                                let ptrs =
+                                    NonNull::new(audio_output.__field0.channelBuffers32).unwrap();
                                 let num_channels = audio_output.numChannels as usize;
 
                                 *buffer_source.main_output_channel_pointers =
@@ -1285,10 +1301,8 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 && has_main_input
                             {
                                 let audio_input = &*data.inputs;
-                                let ptrs = NonNull::new(
-                                    audio_input.__field0.channelBuffers32 as *mut *mut f32,
-                                )
-                                .unwrap();
+                                let ptrs =
+                                    NonNull::new(audio_input.__field0.channelBuffers32).unwrap();
                                 let num_channels = audio_input.numChannels as usize;
 
                                 *buffer_source.main_input_channel_pointers =
@@ -1307,9 +1321,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                     }
 
                                     let audio_input = &*data.inputs.add(aux_input_idx);
-                                    match NonNull::new(
-                                        audio_input.__field0.channelBuffers32 as *mut *mut f32,
-                                    ) {
+                                    match NonNull::new(audio_input.__field0.channelBuffers32) {
                                         Some(ptrs) => {
                                             let num_channels = audio_input.numChannels as usize;
 
@@ -1333,9 +1345,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                     }
 
                                     let audio_output = &*data.outputs.add(aux_output_idx);
-                                    match NonNull::new(
-                                        audio_output.__field0.channelBuffers32 as *mut *mut f32,
-                                    ) {
+                                    match NonNull::new(audio_output.__field0.channelBuffers32) {
                                         Some(ptrs) => {
                                             let num_channels = audio_output.numChannels as usize;
 
@@ -1376,19 +1386,25 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                     if !data.processContext.is_null() {
                         let context = unsafe { &*data.processContext };
 
-                        transport.playing = context.state & kPlaying as u32 != 0;
-                        transport.recording = context.state & kRecording as u32 != 0;
-                        if context.state & kTempoValid as u32 != 0 {
-                            transport.tempo = Some(context.tempo);
-                        }
-                        if context.state & kTimeSigValid as u32 != 0 {
-                            transport.time_sig_numerator = Some(context.timeSigNumerator);
-                            transport.time_sig_denominator = Some(context.timeSigDenominator);
+                        #[allow(clippy::unnecessary_cast)]
+                        {
+                            transport.playing = context.state & kPlaying as u32 != 0;
+                            transport.recording = context.state & kRecording as u32 != 0;
+
+                            if context.state & kTempoValid as u32 != 0 {
+                                transport.tempo = Some(context.tempo);
+                            }
+
+                            if context.state & kTimeSigValid as u32 != 0 {
+                                transport.time_sig_numerator = Some(context.timeSigNumerator);
+                                transport.time_sig_denominator = Some(context.timeSigDenominator);
+                            }
                         }
 
                         // We need to compensate for the block splitting here
                         transport.pos_samples =
                             Some(context.projectTimeSamples + block_start as i64);
+                        #[allow(clippy::unnecessary_cast)]
                         if context.state & kProjectTimeMusicValid as u32 != 0 {
                             if P::SAMPLE_ACCURATE_AUTOMATION
                                 && block_start > 0
@@ -1404,6 +1420,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                             }
                         }
 
+                        #[allow(clippy::unnecessary_cast)]
                         if context.state & kBarPositionValid as u32 != 0 {
                             if P::SAMPLE_ACCURATE_AUTOMATION && block_start > 0 {
                                 // The transport object knows how to recompute this from the other information
@@ -1416,6 +1433,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 transport.bar_start_pos_beats = Some(context.barPositionMusic);
                             }
                         }
+                        #[allow(clippy::unnecessary_cast)]
                         if context.state & kCycleActive as u32 != 0
                             && context.state & kCycleValid as u32 != 0
                         {
@@ -1819,6 +1837,7 @@ impl<P: Vst3Plugin> INoteExpressionControllerTrait for Wrapper<P> {
 }
 
 impl<P: Vst3Plugin> IProcessContextRequirementsTrait for Wrapper<P> {
+    #[allow(clippy::unnecessary_cast)]
     unsafe fn getProcessContextRequirements(&self) -> uint32 {
         (IProcessContextRequirements_::Flags_::kNeedProjectTimeMusic
             | IProcessContextRequirements_::Flags_::kNeedBarPositionMusic
