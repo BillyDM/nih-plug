@@ -52,9 +52,6 @@ pub(crate) struct WrapperProcessContext<'a, P: Vst3Plugin> {
     pub(super) transport: Transport,
 }
 
-unsafe impl<P: Vst3Plugin> Send for WrapperGuiContext<P> {}
-unsafe impl<P: Vst3Plugin> Sync for WrapperGuiContext<P> {}
-
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
 /// [`Editor::spawn()`][crate::prelude::Editor::spawn()] so it can interact with the rest of the plugin and
 /// with the host for things like setting parameters.

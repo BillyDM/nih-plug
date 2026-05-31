@@ -148,9 +148,6 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     pub param_ptr_to_hash: HashMap<ParamPtr, u32>,
 }
 
-unsafe impl<P: Vst3Plugin> Send for WrapperInner<P> {}
-unsafe impl<P: Vst3Plugin> Sync for WrapperInner<P> {}
-
 /// Tasks that can be sent from the plugin to be executed on the main thread in a non-blocking
 /// realtime-safe way (either a random thread or `IRunLoop` on Linux, the OS' message loop on
 /// Windows and macOS).

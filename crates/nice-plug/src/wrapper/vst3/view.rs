@@ -147,7 +147,7 @@ use {
 pub(crate) struct WrapperView<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
     editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: RwLock<Option<Box<dyn Any>>>,
+    editor_handle: Arc<Mutex<Option<Box<dyn Any + Send>>>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -195,9 +195,22 @@ struct RunLoopEventHandler<P: Vst3Plugin> {
     /// tasks off this queue there until it is empty.
     tasks: ArrayQueue<Task<P>>,
 
-    /// We need access to the IEventHandler pointer to be able to call `IRunLoop::unregisterEventHandler()` when this object gets dropped.
-    event_handler_ptr: Cell<*mut IEventHandler>,
+    /// A self-referencing pointer to the outer `ComWrapper<RunLoopEventHandler>`, needed to call
+    /// `IRunLoop::unregisterEventHandler()` when this object gets dropped.
+    event_handler_ptr: EventHandlerSelfRefPtr,
 }
+
+/// A self-referencing pointer to the outer `ComWrapper<RunLoopEventHandler>`, needed to call
+/// `IRunLoop::unregisterEventHandler()` when this object gets dropped.
+#[cfg(target_os = "linux")]
+struct EventHandlerSelfRefPtr(Cell<*mut IEventHandler>);
+
+// Safety: `ComWrapper<RunLoopEventHandler>` is Send + Sync, so the raw self-referential
+// pointer is also Send + Sync.
+#[cfg(target_os = "linux")]
+unsafe impl Send for EventHandlerSelfRefPtr {}
+#[cfg(target_os = "linux")]
+unsafe impl Sync for EventHandlerSelfRefPtr {}
 
 #[cfg(target_os = "linux")]
 impl<P: Vst3Plugin> Class for RunLoopEventHandler<P> {
@@ -209,7 +222,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
         Self {
             inner,
             editor,
-            editor_handle: RwLock::new(None),
+            editor_handle: Arc::new(Mutex::new(None)),
             plug_frame: RwLock::new(None),
             #[cfg(target_os = "linux")]
             run_loop_event_handler: RwLock::new(None),
@@ -226,12 +239,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
     #[must_use]
     pub unsafe fn request_resize(this: &ComWrapper<Self>) -> bool {
         // Don't do anything if the editor is not open, because that would be strange
-        if this
-            .editor_handle
-            .try_read()
-            .map(|e| e.is_none())
-            .unwrap_or(true)
-        {
+        if !this.inner.is_editor_open.load(Ordering::SeqCst) {
             return false;
         }
 
@@ -335,10 +343,14 @@ impl<P: Vst3Plugin> RunLoopEventHandler<P> {
             socket_read_fd,
             socket_write_fd,
             tasks: ArrayQueue::new(TASK_QUEUE_CAPACITY),
-            event_handler_ptr: Cell::new(std::ptr::null_mut()),
+            event_handler_ptr: EventHandlerSelfRefPtr(Cell::new(std::ptr::null_mut())),
         });
         let event_handler_ptr = handler.to_com_ptr::<IEventHandler>().unwrap().into_raw();
-        handler.event_handler_ptr.set(event_handler_ptr);
+
+        // Safety: `event_handler_ptr` is a self-referential pointer to the outer
+        // `ComWrapper<RunLoopEventHandler>`, so it is valid for the lifetime of
+        // this struct.
+        handler.event_handler_ptr.0.set(event_handler_ptr);
 
         assert_eq!(
             unsafe {
@@ -415,7 +427,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn attached(&self, parent: *mut c_void, type_: FIDString) -> tresult {
-        let mut editor_handle = self.editor_handle.write();
+        let mut editor_handle = self.editor_handle.lock();
         if editor_handle.is_none() {
             let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
                 ParentWindowHandle::X11Window(parent as usize as u32)
@@ -448,7 +460,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn removed(&self) -> tresult {
-        let mut editor_handle = self.editor_handle.write();
+        let mut editor_handle = self.editor_handle.lock();
         if editor_handle.is_some() {
             self.inner.is_editor_open.store(false, Ordering::SeqCst);
             *editor_handle = None;
@@ -657,7 +669,7 @@ impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
 
         unsafe {
             self.run_loop
-                .unregisterEventHandler(self.event_handler_ptr.get());
+                .unregisterEventHandler(self.event_handler_ptr.0.get());
         }
     }
 }
