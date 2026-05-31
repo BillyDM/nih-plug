@@ -257,10 +257,13 @@ impl<P: Vst3Plugin> WrapperView<P> {
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
                 let result = unsafe { plug_frame.resizeView(plug_view.as_ptr(), &mut size) };
 
-                debug_assert_eq!(
-                    result, kResultOk,
-                    "The host denied the resize, we currently don't handle this for VST3 plugins"
-                );
+                #[cfg(debug_assertions)]
+                if result != kResultOk {
+                    crate::nice_warn!(
+                        "The host denied the resize, we currently don't handle this for VST3 \
+                         plugins"
+                    );
+                }
 
                 result == kResultOk
             }
