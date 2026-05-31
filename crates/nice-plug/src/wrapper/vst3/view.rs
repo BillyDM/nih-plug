@@ -147,7 +147,7 @@ use {
 pub(crate) struct WrapperView<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
     editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: Arc<Mutex<Option<Box<dyn Any + Send>>>>,
+    editor_handle: Mutex<Option<Box<dyn Any + Send>>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -222,7 +222,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
         Self {
             inner,
             editor,
-            editor_handle: Arc::new(Mutex::new(None)),
+            editor_handle: Mutex::new(None),
             plug_frame: RwLock::new(None),
             #[cfg(target_os = "linux")]
             run_loop_event_handler: RwLock::new(None),
