@@ -2,6 +2,7 @@
 
 use baseview::{WindowHandle, WindowOpenOptions, WindowScalePolicy, gl::GlConfig};
 use crossbeam::atomic::AtomicCell;
+use glow::Context;
 use nice_plug::params::persist::PersistentField;
 use nice_plug::prelude::*;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
@@ -38,6 +39,55 @@ impl Drop for CustomGlWindow {
     }
 }
 
+/// Helper for parsing and interpreting the OpenGL shader version. This will
+/// help ensure maximum compatibility with systems.
+/// (borrowed and modified from
+/// https://github.com/emilk/egui/blob/main/crates/egui_glow/src/shader_version.rs)
+fn get_shader_version_string(gl: &Arc<Context>) -> &'static str {
+    use glow::HasContext as _;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if gl.version().major < 2 {
+        // this checks on desktop that we are not using opengl 1.1 microsoft sw rendering context.
+        // ShaderVersion::get fn will segfault due to SHADING_LANGUAGE_VERSION (added in gl2.0)
+        panic!("OpenGL 2.0+ is not supported on this device.");
+    }
+
+    let glsl_ver = unsafe { gl.get_parameter_string(glow::SHADING_LANGUAGE_VERSION) };
+
+    let shader_version = {
+        let start = glsl_ver.find(|c| char::is_ascii_digit(&c)).unwrap();
+        let es = glsl_ver[..start].contains(" ES ");
+        let ver = glsl_ver[start..]
+            .split_once(' ')
+            .map_or(&glsl_ver[start..], |x| x.0);
+        let [maj, min]: [u8; 2] = ver
+            .splitn(3, '.')
+            .take(2)
+            .map(|x| x.parse().unwrap_or_default())
+            .collect::<Vec<u8>>()
+            .try_into()
+            .unwrap();
+
+        // Put your supported shader versions here
+        if es {
+            if maj >= 3 {
+                "#version 300 es"
+            } else {
+                "#version 100"
+            }
+        } else if maj > 1 || (maj == 1 && min >= 40) {
+            "#version 140"
+        } else {
+            "#version 120"
+        }
+    };
+
+    nice_log!("Shader version: {shader_version} ({glsl_ver:?})");
+
+    shader_version
+}
+
 impl CustomGlWindow {
     fn new(
         window: &mut baseview::Window<'_>,
@@ -61,6 +111,8 @@ impl CustomGlWindow {
             let gl = Arc::new(glow::Context::from_loader_function(|s| {
                 gl_context.get_proc_address(s)
             }));
+
+            let shader_version = get_shader_version_string(&gl);
 
             let vertex_array = gl
                 .create_vertex_array()
@@ -99,7 +151,7 @@ impl CustomGlWindow {
                 let shader = gl
                     .create_shader(*shader_type)
                     .expect("Cannot create shader");
-                gl.shader_source(shader, &format!("{}\n{}", "#version 130", shader_source));
+                gl.shader_source(shader, &format!("{}\n{}", shader_version, shader_source));
                 gl.compile_shader(shader);
                 if !gl.get_shader_compile_status(shader) {
                     panic!("{}", gl.get_shader_info_log(shader));
