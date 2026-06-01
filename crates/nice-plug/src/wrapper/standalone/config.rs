@@ -10,6 +10,8 @@ pub struct WrapperConfig {
     ///
     /// The 'auto' option will try all backends in order, and falls back to the dummy backend with
     /// no audio input or output if the other backends are not available.
+    ///
+    /// The default value is `auto`.
     #[clap(value_parser, short = 'b', long, default_value = "auto")]
     pub backend: BackendType,
     /// The audio layout to use. Defaults to the first layout.
@@ -23,16 +25,42 @@ pub struct WrapperConfig {
     /// The audio backend's sample rate.
     ///
     /// This setting is ignored when using the JACK backend.
+    ///
+    /// The default value is `48000`.
     #[clap(value_parser, short = 'r', long, default_value = "48000")]
     pub sample_rate: f32,
     /// The audio backend's period size.
     ///
     /// This setting is ignored when using the JACK backend.
+    ///
+    /// The default value is `512`.
     #[clap(value_parser, short = 'p', long, default_value = "512")]
     pub period_size: u32,
+    /// The amount of latency added in seconds between the input and output audio streams. If this
+    /// value is too small, then underflows may occur.
+    ///
+    /// This setting is ignored when using the JACK backend.
+    ///
+    /// The default value is `0.15` (150 ms).
+    #[clap(value_parser, long, default_value = "0.15")]
+    pub input_latency: f32,
+    /// The capacity of the input to output audio channel buffer in seconds. If this is too small,
+    /// then overflows may occur. This should be at least twice as large as the `input_latency`.
+    ///
+    /// This setting is ignored when using the JACK backend.
+    ///
+    /// The default value is `0.4` (400 ms).
+    #[clap(value_parser, long, default_value = "0.4")]
+    pub input_capacity: f32,
+    /// The capacity of the MIDI event queue. If this is too small, then MIDI messages may be
+    /// dropped.
+    ///
+    /// The default value is `2048`.
+    #[clap(value_parser, long, default_value = "2048")]
+    pub midi_capacity: u32,
 
-    /// The input device for the ALSA, CoreAudio, and WASAPI backends. No input will be connected if
-    /// this is not specified.
+    /// The input device for the ALSA, CoreAudio, and WASAPI backends. No input will be connected
+    /// if this is not specified.
     ///
     /// Specifying an empty string or other invalid value will list all available input devices.
     #[clap(value_parser, long)]
@@ -71,6 +99,8 @@ pub struct WrapperConfig {
     /// If set, then the plugin's MIDI output port will be connected to this JACK MIDI input port.
     ///
     /// This option is only used with the JACK backend.
+    ///
+    /// The default value is `None`.
     #[clap(value_parser, long)]
     pub connect_jack_midi_output: Option<String>,
 
@@ -80,16 +110,24 @@ pub struct WrapperConfig {
     //
     // Currently baseview has no way to report this to us, so we'll expose it as a command line
     // option instead.
+    ///
+    /// The default value is `1.0`.
     #[clap(value_parser, long, default_value = "1.0")]
     pub dpi_scale: f32,
 
     /// The transport's tempo.
+    ///
+    /// The default value is `120`.
     #[clap(value_parser, long, default_value = "120")]
     pub tempo: f32,
     /// The time signature's numerator.
+    ///
+    /// The default value is `4`.
     #[clap(value_parser, long, default_value = "4")]
     pub timesig_num: u32,
     /// The time signature's denominator.
+    ///
+    /// The default value is `4`.
     #[clap(value_parser, long, default_value = "4")]
     pub timesig_denom: u32,
 }
