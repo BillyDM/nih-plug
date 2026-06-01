@@ -19,7 +19,7 @@ default = ["vst3"]
 # occur in the processing function during debug builds. Keep in mind that panics
 # may also allocate if they use string formatting, so temporarily disabling this
 # feature may be necessary when debugging panics in DSP code.
-assert_process_allocs = ["dep:nice-assert-no-alloc"]
+assert_process_allocs = ["dep:nice-assert-no-alloc", "nice-plug-core/assert_process_allocs"]
 # Enables an export target for standalone binaries through the
 # `nice_export_standalone()` function. Disabled by default as this requires
 # building additional dependencies for audio and MIDI handling.
@@ -71,8 +71,7 @@ nice-plug-derive = { path = "../nice-plug-derive", version = "0.1" }
 nice-plug-core = { path = "../nice-plug-core", version = "0.1.2" }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 nice-log = { path = "../nice-log", version = "0.2.2" }
-# This supports CLAP 1.2.2
-clap-sys = { git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156" }
+clap-sys = "0.5.0"
 # All the claps!
 clap = { version = "4.1.8", features = [
   "derive",
