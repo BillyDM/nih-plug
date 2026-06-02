@@ -2,7 +2,7 @@
 //! needs to be. We only support the predefined expressions.
 
 use nice_plug_core::midi::{NoteEvent, sysex::SysExMessage};
-use vst3_sys::vst::{NoteExpressionValueEvent, NoteOnEvent};
+use vst3::Steinberg::Vst::{NoteExpressionValueEvent, NoteOnEvent};
 
 type MidiNote = u8;
 type MidiChannel = u8;
@@ -92,7 +92,7 @@ impl NoteExpressionController {
     /// Register the note ID from a note on event so it can later be retrieved when handling a note
     /// expression value event.
     pub fn register_note(&mut self, event: &NoteOnEvent) {
-        self.note_ids[self.note_ids_idx] = (event.note_id, event.pitch as u8, event.channel as u8);
+        self.note_ids[self.note_ids_idx] = (event.noteId, event.pitch as u8, event.channel as u8);
         self.note_ids_idx = (self.note_ids_idx + 1) % NOTE_IDS_LEN;
     }
 
@@ -108,9 +108,9 @@ impl NoteExpressionController {
         let (note_id, note, channel) = *self
             .note_ids
             .iter()
-            .find(|(note_id, _, _)| *note_id == event.note_id)?;
+            .find(|(note_id, _, _)| *note_id == event.noteId)?;
 
-        match event.type_id {
+        match event.typeId {
             VOLUME_EXPRESSION_ID => Some(NoteEvent::PolyVolume {
                 timing,
                 voice_id: Some(note_id),
@@ -171,33 +171,33 @@ impl NoteExpressionController {
     ) -> Option<NoteExpressionValueEvent> {
         match &event {
             NoteEvent::PolyVolume { gain, .. } => Some(NoteExpressionValueEvent {
-                type_id: VOLUME_EXPRESSION_ID,
-                note_id,
+                typeId: VOLUME_EXPRESSION_ID,
+                noteId: note_id,
                 value: *gain as f64 / 4.0,
             }),
             NoteEvent::PolyPan { pan, .. } => Some(NoteExpressionValueEvent {
-                type_id: PAN_EXPRESSION_ID,
-                note_id,
+                typeId: PAN_EXPRESSION_ID,
+                noteId: note_id,
                 value: (*pan as f64 + 1.0) / 2.0,
             }),
             NoteEvent::PolyTuning { tuning, .. } => Some(NoteExpressionValueEvent {
-                type_id: TUNING_EXPRESSION_ID,
-                note_id,
+                typeId: TUNING_EXPRESSION_ID,
+                noteId: note_id,
                 value: (*tuning as f64 / 240.0) + 0.5,
             }),
             NoteEvent::PolyVibrato { vibrato, .. } => Some(NoteExpressionValueEvent {
-                type_id: VIBRATO_EXPRESSION_ID,
-                note_id,
+                typeId: VIBRATO_EXPRESSION_ID,
+                noteId: note_id,
                 value: *vibrato as f64,
             }),
             NoteEvent::PolyExpression { expression, .. } => Some(NoteExpressionValueEvent {
-                type_id: EXPRESSION_EXPRESSION_ID,
-                note_id,
+                typeId: EXPRESSION_EXPRESSION_ID,
+                noteId: note_id,
                 value: *expression as f64,
             }),
             NoteEvent::PolyBrightness { brightness, .. } => Some(NoteExpressionValueEvent {
-                type_id: BRIGHTNESS_EXPRESSION_ID,
-                note_id,
+                typeId: BRIGHTNESS_EXPRESSION_ID,
+                noteId: note_id,
                 value: *brightness as f64,
             }),
             _ => None,

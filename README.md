@@ -233,9 +233,3 @@ The framework, all of the crates in `crates/`, and the example plugins in
 `examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
 
 All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0". 
-
-However, the [VST3 bindings](https://github.com/RustAudio/vst3-sys) used by
-`nice_export_vst3!()` are licensed under the GPLv3 license. This means that
-unless you replace these bindings with your own bindings made from scratch, any
-VST3 plugins built with nice-plug need to be able to comply with the terms of the
-GPLv3 license.

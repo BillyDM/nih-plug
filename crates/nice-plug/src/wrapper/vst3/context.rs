@@ -14,7 +14,7 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use vst3_sys::vst::IComponentHandler;
+use vst3::Steinberg::Vst::IComponentHandlerTrait;
 
 use crate::wrapper::vst3::Vst3Plugin;
 
@@ -126,7 +126,7 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     }
 }
 
-impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
+impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Vst3
     }
@@ -146,7 +146,7 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
         match &*self.inner.component_handler.borrow() {
             Some(handler) => match self.inner.param_ptr_to_hash.get(&param) {
                 Some(hash) => unsafe {
-                    handler.begin_edit(*hash);
+                    handler.beginEdit(*hash);
                 },
                 None => crate::nice_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
@@ -187,9 +187,7 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
                         );
                     }
 
-                    unsafe {
-                        handler.perform_edit(*hash, normalized as f64);
-                    }
+                    unsafe { handler.performEdit(*hash, normalized as f64) };
                 }
                 None => crate::nice_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
@@ -214,7 +212,7 @@ impl<P: Vst3Plugin> GuiContext for WrapperGuiContext<P> {
         match &*self.inner.component_handler.borrow() {
             Some(handler) => match self.inner.param_ptr_to_hash.get(&param) {
                 Some(hash) => unsafe {
-                    handler.end_edit(*hash);
+                    handler.endEdit(*hash);
                 },
                 None => crate::nice_debug_assert_failure!("Unknown parameter: {:?}", param),
             },
