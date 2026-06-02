@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./assets/logo.svg" width="84px" height="84px"/>
+<img src="./branding/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
 A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
@@ -232,4 +232,4 @@ https://rust.audio/community/ai/
 The framework, all of the crates in `crates/`, and the example plugins in
 `examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
 
-All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0". 
+All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0".
