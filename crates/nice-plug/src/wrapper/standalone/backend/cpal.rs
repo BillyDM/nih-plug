@@ -986,7 +986,6 @@ impl CpalMidir {
 
             if finished {
                 data.fill(T::default());
-                return;
             }
         }
     }
