@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/iced_baseview.svg)](https://crates.io/crates/iced_baseview)
 [![License](https://img.shields.io/crates/l/iced_baseview.svg)](https://codeberg.org/BillyDM/nice-plug/src/branch/main/baseview-adapters/iced_baseview/LICENSE-APACHE)
 
-A [`baseview`](https://github.com/RustAudio/baseview) backend for [`Iced`](https://github.com/hecrj/iced)
+A [`baseview`](https://github.com/RustAudio/baseview) backend for [`Iced`](https://iced.rs/)
 
 <div align="center">
     <img src="screenshot.png">
