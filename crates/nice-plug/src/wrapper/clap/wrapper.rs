@@ -155,8 +155,9 @@ pub struct Wrapper<P: ClapPlugin> {
     /// `latency_changed` needs to be called in `activate` in order to inform the host of the
     /// latency change.
     latency_changed: AtomicBool,
-    /// The current latency in samples, as set by the plugin through the [`ProcessContext`]. Uses
-    /// the latency extension.
+    /// The current latency in samples, as set by the plugin through the
+    /// [`ProcessContext`](nice_plug_core::context::process::ProcessContext). Uses the latency
+    /// extension.
     pub current_latency: AtomicU32,
     /// A data structure that helps manage and create buffers for all of the plugin's inputs and
     /// outputs based on channel pointers provided by the host.
@@ -216,9 +217,9 @@ pub struct Wrapper<P: ClapPlugin> {
     /// Mappings from string parameter identifiers to parameter hashes. Useful for debug logging
     /// and when storing and restoring plugin state.
     param_id_to_hash: HashMap<String, u32>,
-    /// The inverse mapping from [`param_by_hash`][Self::param_by_hash]. This is needed to be able
-    /// to have an ergonomic parameter setting API that uses references to the parameters instead of
-    /// having to add a setter function to the parameter (or even worse, have it be completely
+    /// The inverse mapping from `param_by_hash`. This is needed to be able to have an ergonomic
+    /// parameter setting API that uses references to the parameters instead of having to add a
+    /// setter function to the parameter (or even worse, have it be completely
     /// untyped).
     pub param_ptr_to_hash: HashMap<ParamPtr, u32>,
     /// For all polyphonically modulatable parameters, mappings from the parameter hash's hash to
@@ -848,13 +849,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
-    /// Convenience function for setting a value for a parameter as triggered by a VST3 parameter
+    /// Convenience function for setting a value for a parameter as triggered by a CLAP parameter
     /// update. The same rate is for updating parameter smoothing.
-    ///
-    /// After calling this function, you should call
-    /// [`notify_param_values_changed()`][Self::notify_param_values_changed()] to allow the editor
-    /// to update itself. This needs to be done separately so you can process parameter changes in
-    /// batches.
     ///
     /// # Note
     ///
@@ -1459,8 +1455,7 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     /// Handle an incoming CLAP event. The sample index is provided to support block splitting for
-    /// sample accurate automation. [`input_events`][Self::input_events] must be cleared at the
-    /// start of each process block.
+    /// sample accurate automation. `input_events` must be cleared at the start of each process block.
     ///
     /// To save on mutex operations when handing MIDI events, the lock guard for the input events
     /// need to be passed into this function.
