@@ -70,7 +70,9 @@ impl<P: Plugin> Backend<P> for Jack {
         // initial query reports. We treat this value as a maximum: any `num_frames` up to and
         // including it is fine because `BufferManager` was preallocated for it.
         // Only a growth beyond this would force an abort.
-        let max_buffer_size = client.buffer_size();
+        //
+        // Sometimes jack will use a buffer size of `2048` anyway, so use that as the minimum.
+        let max_buffer_size = client.buffer_size().max(2048);
 
         // We'll preallocate the buffers here, and then assign them to the slices belonging to the
         // JACK ports later. For consistency with the other backends we'll reuse the
@@ -105,8 +107,10 @@ impl<P: Plugin> Backend<P> for Jack {
             )));
         }
 
-        let mut input_events: Vec<PluginNoteEvent<P>> = Vec::with_capacity(2048);
-        let mut output_events: Vec<PluginNoteEvent<P>> = Vec::with_capacity(2048);
+        let mut input_events: Vec<PluginNoteEvent<P>> =
+            Vec::with_capacity(self.config.midi_capacity as usize);
+        let mut output_events: Vec<PluginNoteEvent<P>> =
+            Vec::with_capacity(self.config.midi_capacity as usize);
 
         // This thread needs to be blocked until processing is finished
         let parker = Parker::new();

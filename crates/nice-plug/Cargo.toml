@@ -30,6 +30,8 @@ standalone = [
   "dep:jack",
   "dep:midir",
   "dep:rtrb",
+  "dep:fixed-resample",
+  "dep:audioadapter-buffers"
 ]
 # Enables the `nice_export_vst3!()` macro. Enabled by default.
 vst3 = ["dep:vst3", "dep:widestring"]
@@ -87,6 +89,8 @@ baseview = { workspace = true, optional = true }
 cpal = { version = "0.17.3", optional = true }
 jack = { version = "0.13.5", optional = true }
 midir = { version = "0.11.0", optional = true }
+fixed-resample = { version = "0.11.2", default-features = false, features = ["channel"], optional = true }
+audioadapter-buffers = { version = "3", optional = true }
 rtrb = { workspace = true, optional = true }
 # Used for the `vst3` feature
 vst3 = { version = "0.3.0", optional = true }
