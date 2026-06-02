@@ -357,7 +357,9 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                     move |window| {
                         let parent_handle = match window.raw_window_handle() {
                             raw_window_handle::RawWindowHandle::Xlib(handle) => {
-                                ParentWindowHandle::X11Window(handle.window as u32)
+                                #[allow(clippy::unnecessary_cast)]
+                                let w = handle.window as u32;
+                                ParentWindowHandle::X11Window(w)
                             }
                             raw_window_handle::RawWindowHandle::Xcb(handle) => {
                                 ParentWindowHandle::X11Window(handle.window)

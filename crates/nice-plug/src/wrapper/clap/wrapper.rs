@@ -2903,7 +2903,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                 let api = unsafe { CStr::from_ptr(window.api) };
                 let parent_handle = unsafe {
                     if api == CLAP_WINDOW_API_X11 {
-                        ParentWindowHandle::X11Window(window.specific.x11 as u32)
+                        #[allow(clippy::unnecessary_cast)]
+                        let w = window.specific.x11 as u32;
+                        ParentWindowHandle::X11Window(w)
                     } else if api == CLAP_WINDOW_API_COCOA {
                         ParentWindowHandle::AppKitNsView(window.specific.cocoa)
                     } else if api == CLAP_WINDOW_API_WIN32 {

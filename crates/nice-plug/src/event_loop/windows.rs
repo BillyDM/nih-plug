@@ -110,7 +110,7 @@ where
             CreateWindowExA(
                 WINDOW_EX_STYLE(0),
                 class_name_ptr,
-                PCSTR(b"nice-plug event loop\0".as_ptr()),
+                PCSTR(c"nice-plug event loop".as_ptr() as *const u8),
                 WINDOW_STYLE(0),
                 0,
                 0,
@@ -190,38 +190,40 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    match message {
-        WM_CREATE => {
-            let create_params = lparam.0 as *const CREATESTRUCTA;
-            assert!(!create_params.is_null());
+    unsafe {
+        match message {
+            WM_CREATE => {
+                let create_params = lparam.0 as *const CREATESTRUCTA;
+                assert!(!create_params.is_null());
 
-            let poll_callback = (*create_params).lpCreateParams as *mut PollCallback;
-            assert!(!poll_callback.is_null());
+                let poll_callback = (*create_params).lpCreateParams as *mut PollCallback;
+                assert!(!poll_callback.is_null());
 
-            // Store this for later use
-            SetWindowLongPtrA(handle, GWLP_USERDATA, poll_callback as isize);
-        }
-        NOTIFY_MESSAGE_ID => {
-            let callback = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut PollCallback;
-            if callback.is_null() {
-                nice_debug_assert_failure!(
-                    "The notify function got called before the window was created"
-                );
-                return LRESULT(0);
+                // Store this for later use
+                SetWindowLongPtrA(handle, GWLP_USERDATA, poll_callback as isize);
             }
+            NOTIFY_MESSAGE_ID => {
+                let callback = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut PollCallback;
+                if callback.is_null() {
+                    nice_debug_assert_failure!(
+                        "The notify function got called before the window was created"
+                    );
+                    return LRESULT(0);
+                }
 
-            // This callback function just keeps popping off and handling tasks from the tasks queue
-            // until there's nothing left
-            (*callback)();
+                // This callback function just keeps popping off and handling tasks from the tasks queue
+                // until there's nothing left
+                (*callback)();
+            }
+            WM_DESTROY => {
+                // Make sure to deallocate the polling callback we stored earlier
+                let _the_bodies_hit_the_floor =
+                    Box::from_raw(GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut PollCallback);
+                SetWindowLongPtrA(handle, GWLP_USERDATA, 0);
+            }
+            _ => (),
         }
-        WM_DESTROY => {
-            // Make sure to deallocate the polling callback we stored earlier
-            let _the_bodies_hit_the_floor =
-                Box::from_raw(GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut PollCallback);
-            SetWindowLongPtrA(handle, GWLP_USERDATA, 0);
-        }
-        _ => (),
+
+        DefWindowProcA(handle, message, wparam, lparam)
     }
-
-    DefWindowProcA(handle, message, wparam, lparam)
 }

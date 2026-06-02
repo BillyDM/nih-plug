@@ -46,6 +46,21 @@ use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
 use crate::wrapper::util::{clamp_input_event_timing, clamp_output_event_timing, process_wrapper};
 use crate::wrapper::vst3::Vst3Plugin;
 
+#[allow(clippy::unnecessary_cast)]
+const K_SYMBOLIC_SAMPLE_SIZE_32: i32 = vst3::Steinberg::Vst::SymbolicSampleSizes_::kSample32 as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_MEDIA_TYPE_AUDIO: i32 = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_MEDIA_TYPE_EVENT: i32 = vst3::Steinberg::Vst::MediaTypes_::kEvent as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_BUS_DIRECTION_INPUT: i32 = vst3::Steinberg::Vst::BusDirections_::kInput as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_BUS_DIRECTION_OUTPUT: i32 = vst3::Steinberg::Vst::BusDirections_::kOutput as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_BUS_TYPE_MAIN: i32 = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_BUS_TYPE_AUX: i32 = vst3::Steinberg::Vst::BusTypes_::kAux as i32;
+
 pub struct Wrapper<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
 }
@@ -115,9 +130,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
         // A plugin has a main input and output bus if the default number of channels is non-zero,
         // and a plugin can also have auxiliary input and output busses
         match type_ {
-            x if x == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                && dir == vst3::Steinberg::Vst::BusDirections_::kInput as i32 =>
-            {
+            x if x == K_MEDIA_TYPE_AUDIO && dir == K_BUS_DIRECTION_INPUT => {
                 let main_busses = if current_audio_io_layout.main_input_channels.is_some() {
                     1
                 } else {
@@ -127,9 +140,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
 
                 main_busses + aux_busses
             }
-            x if x == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                && dir == vst3::Steinberg::Vst::BusDirections_::kOutput as i32 =>
-            {
+            x if x == K_MEDIA_TYPE_AUDIO && dir == K_BUS_DIRECTION_OUTPUT => {
                 let main_busses = if current_audio_io_layout.main_output_channels.is_some() {
                     1
                 } else {
@@ -139,14 +150,14 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
 
                 main_busses + aux_busses
             }
-            x if x == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                && dir == vst3::Steinberg::Vst::BusDirections_::kInput as i32
+            x if x == K_MEDIA_TYPE_EVENT
+                && dir == K_BUS_DIRECTION_INPUT
                 && P::MIDI_INPUT >= MidiConfig::Basic =>
             {
                 1
             }
-            x if x == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                && dir == vst3::Steinberg::Vst::BusDirections_::kOutput as i32
+            x if x == K_MEDIA_TYPE_EVENT
+                && dir == K_BUS_DIRECTION_OUTPUT
                 && P::MIDI_OUTPUT >= MidiConfig::Basic =>
             {
                 1
@@ -167,14 +178,11 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
         let current_audio_io_layout = self.inner.current_audio_io_layout.load();
 
         match (type_, dir, index) {
-            (t, d, _)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kInput as i32 =>
-            {
+            (t, d, _) if t == K_MEDIA_TYPE_AUDIO && d == K_BUS_DIRECTION_INPUT => {
                 unsafe { *info = mem::zeroed() };
 
                 let info = unsafe { &mut *info };
-                info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
+                info.mediaType = K_MEDIA_TYPE_AUDIO;
                 info.direction = dir;
                 #[allow(clippy::unnecessary_cast)]
                 {
@@ -185,14 +193,14 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 let aux_input_start_idx = if has_main_input { 1 } else { 0 };
                 let aux_input_idx = (index - aux_input_start_idx).max(0) as usize;
                 if index == 0 && has_main_input {
-                    info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
+                    info.busType = K_BUS_TYPE_MAIN;
                     info.channelCount =
                         current_audio_io_layout.main_input_channels.unwrap().get() as i32;
                     u16strlcpy(&mut info.name, &current_audio_io_layout.main_input_name());
 
                     kResultOk
                 } else if aux_input_idx < current_audio_io_layout.aux_input_ports.len() {
-                    info.busType = vst3::Steinberg::Vst::BusTypes_::kAux as i32;
+                    info.busType = K_BUS_TYPE_AUX;
                     info.channelCount =
                         current_audio_io_layout.aux_input_ports[aux_input_idx].get() as i32;
                     u16strlcpy(
@@ -207,14 +215,11 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                     kInvalidArgument
                 }
             }
-            (t, d, _)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kOutput as i32 =>
-            {
+            (t, d, _) if t == K_MEDIA_TYPE_AUDIO && d == K_BUS_DIRECTION_OUTPUT => {
                 unsafe { *info = mem::zeroed() };
 
                 let info = unsafe { &mut *info };
-                info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
+                info.mediaType = K_MEDIA_TYPE_AUDIO;
                 info.direction = dir;
                 #[allow(clippy::unnecessary_cast)]
                 {
@@ -225,7 +230,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 let aux_output_start_idx = if has_main_output { 1 } else { 0 };
                 let aux_output_idx = (index - aux_output_start_idx).max(0) as usize;
                 if index == 0 && has_main_output {
-                    info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
+                    info.busType = K_BUS_TYPE_MAIN;
                     // NOTE: See above, this becomes a 0 channel output if the plugin doesn't have a
                     //       main output
                     info.channelCount = current_audio_io_layout
@@ -236,7 +241,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
 
                     kResultOk
                 } else if aux_output_idx < current_audio_io_layout.aux_output_ports.len() {
-                    info.busType = vst3::Steinberg::Vst::BusTypes_::kAux as i32;
+                    info.busType = K_BUS_TYPE_AUX;
                     info.channelCount =
                         current_audio_io_layout.aux_output_ports[aux_output_idx].get() as i32;
                     u16strlcpy(
@@ -252,18 +257,18 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 }
             }
             (t, d, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kInput as i32
+                if t == K_MEDIA_TYPE_EVENT
+                    && d == K_BUS_DIRECTION_INPUT
                     && P::MIDI_INPUT >= MidiConfig::Basic =>
             {
                 unsafe { *info = mem::zeroed() };
 
                 let info = unsafe { &mut *info };
-                info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kEvent as i32;
-                info.direction = vst3::Steinberg::Vst::BusDirections_::kInput as i32;
+                info.mediaType = K_MEDIA_TYPE_EVENT;
+                info.direction = K_BUS_DIRECTION_INPUT;
                 info.channelCount = 16;
                 u16strlcpy(&mut info.name, "Note Input");
-                info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
+                info.busType = K_BUS_TYPE_MAIN;
                 #[allow(clippy::unnecessary_cast)]
                 {
                     info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
@@ -271,18 +276,18 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 kResultOk
             }
             (t, d, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kOutput as i32
+                if t == K_MEDIA_TYPE_EVENT
+                    && d == K_BUS_DIRECTION_OUTPUT
                     && P::MIDI_OUTPUT >= MidiConfig::Basic =>
             {
                 unsafe { *info = mem::zeroed() };
 
                 let info = unsafe { &mut *info };
-                info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kEvent as i32;
-                info.direction = vst3::Steinberg::Vst::BusDirections_::kOutput as i32;
+                info.mediaType = K_MEDIA_TYPE_EVENT;
+                info.direction = K_BUS_DIRECTION_OUTPUT;
                 info.channelCount = 16;
                 u16strlcpy(&mut info.name, "Note Output");
-                info.busType = vst3::Steinberg::Vst::BusTypes_::kMain as i32;
+                info.busType = K_BUS_TYPE_MAIN;
                 #[allow(clippy::unnecessary_cast)]
                 {
                     info.flags = vst3::Steinberg::Vst::BusInfo_::BusFlags_::kDefaultActive as u32;
@@ -308,23 +313,23 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
         let out_info = unsafe { &mut *out_info };
         match (in_info.mediaType, in_info.busIndex) {
             (t, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
+                if t == K_MEDIA_TYPE_AUDIO
                     // We only have an IO pair when the plugin has both a main input and a main output
                     && current_audio_io_layout.main_input_channels.is_some()
                     && current_audio_io_layout.main_output_channels.is_some() =>
             {
-                out_info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kAudio as i32;
+                out_info.mediaType = K_MEDIA_TYPE_AUDIO;
                 out_info.busIndex = in_info.busIndex;
                 out_info.channel = in_info.channel;
 
                 kResultOk
             }
             (t, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
+                if t == K_MEDIA_TYPE_EVENT
                     && P::MIDI_INPUT >= MidiConfig::Basic
                     && P::MIDI_OUTPUT >= MidiConfig::Basic =>
             {
-                out_info.mediaType = vst3::Steinberg::Vst::MediaTypes_::kEvent as i32;
+                out_info.mediaType = K_MEDIA_TYPE_EVENT;
                 out_info.busIndex = in_info.busIndex;
                 out_info.channel = in_info.channel;
 
@@ -346,10 +351,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
         // We don't support this, but the validator will get very angry with us if we let it know
         // that
         match (type_, dir, index) {
-            (t, d, _)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kInput as i32 =>
-            {
+            (t, d, _) if t == K_MEDIA_TYPE_AUDIO && d == K_BUS_DIRECTION_INPUT => {
                 let main_busses = if current_audio_io_layout.main_input_channels.is_some() {
                     1
                 } else {
@@ -363,10 +365,7 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                     kInvalidArgument
                 }
             }
-            (t, d, _)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kAudio as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kOutput as i32 =>
-            {
+            (t, d, _) if t == K_MEDIA_TYPE_AUDIO && d == K_BUS_DIRECTION_OUTPUT => {
                 let main_busses = if current_audio_io_layout.main_output_channels.is_some() {
                     1
                 } else {
@@ -381,15 +380,15 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 }
             }
             (t, d, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kInput as i32
+                if t == K_MEDIA_TYPE_EVENT
+                    && d == K_BUS_DIRECTION_INPUT
                     && P::MIDI_INPUT >= MidiConfig::Basic =>
             {
                 kResultOk
             }
             (t, d, 0)
-                if t == vst3::Steinberg::Vst::MediaTypes_::kEvent as i32
-                    && d == vst3::Steinberg::Vst::BusDirections_::kOutput as i32
+                if t == K_MEDIA_TYPE_EVENT
+                    && d == K_BUS_DIRECTION_OUTPUT
                     && P::MIDI_OUTPUT >= MidiConfig::Basic =>
             {
                 kResultOk
@@ -860,7 +859,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
         };
 
         let current_audio_io_layout = self.inner.current_audio_io_layout.load();
-        let num_channels = if dir == vst3::Steinberg::Vst::BusDirections_::kInput as i32 {
+        let num_channels = if dir == K_BUS_DIRECTION_INPUT {
             let has_main_input = current_audio_io_layout.main_input_channels.is_some();
             let aux_input_start_idx = if has_main_input { 1 } else { 0 };
             let aux_input_idx = (index - aux_input_start_idx).max(0) as usize;
@@ -871,7 +870,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
             } else {
                 return kInvalidArgument;
             }
-        } else if dir == vst3::Steinberg::Vst::BusDirections_::kOutput as i32 {
+        } else if dir == K_BUS_DIRECTION_OUTPUT {
             let has_main_output = current_audio_io_layout.main_output_channels.is_some();
             let aux_output_start_idx = if has_main_output { 1 } else { 0 };
             let aux_output_idx = (index - aux_output_start_idx).max(0) as usize;
@@ -894,7 +893,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
     }
 
     unsafe fn canProcessSampleSize(&self, symbolic_sample_size: int32) -> tresult {
-        if symbolic_sample_size == vst3::Steinberg::Vst::SymbolicSampleSizes_::kSample32 as i32 {
+        if symbolic_sample_size == K_SYMBOLIC_SAMPLE_SIZE_32 {
             kResultOk
         } else {
             kResultFalse
@@ -910,10 +909,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
 
         // There's no special handling for offline processing at the moment
         let setup = unsafe { &*setup };
-        crate::nice_debug_assert_eq!(
-            setup.symbolicSampleSize,
-            vst3::Steinberg::Vst::SymbolicSampleSizes_::kSample32 as i32
-        );
+        crate::nice_debug_assert_eq!(setup.symbolicSampleSize, K_SYMBOLIC_SAMPLE_SIZE_32);
 
         // This is needed when activating the plugin and when restoring state
         self.inner.current_buffer_config.store(Some(BufferConfig {
@@ -923,10 +919,17 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
             process_mode: self.inner.current_process_mode.load(),
         }));
 
+        #[allow(clippy::unnecessary_cast)]
+        const K_REALTIME: i32 = ProcessModes_::kRealtime as i32;
+        #[allow(clippy::unnecessary_cast)]
+        const K_PREFETCH: i32 = ProcessModes_::kPrefetch as i32;
+        #[allow(clippy::unnecessary_cast)]
+        const K_OFFLINE: i32 = ProcessModes_::kOffline as i32;
+
         let mode = match setup.processMode {
-            n if n == ProcessModes_::kRealtime as i32 => ProcessMode::Realtime,
-            n if n == ProcessModes_::kPrefetch as i32 => ProcessMode::Buffered,
-            n if n == ProcessModes_::kOffline as i32 => ProcessMode::Offline,
+            n if n == K_REALTIME => ProcessMode::Realtime,
+            n if n == K_PREFETCH => ProcessMode::Buffered,
+            n if n == K_OFFLINE => ProcessMode::Offline,
             n => {
                 crate::nice_debug_assert_failure!(
                     "Unknown rendering mode '{}', defaulting to realtime",
@@ -994,10 +997,7 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                 .sample_rate;
 
             crate::nice_debug_assert!(data.numInputs >= 0 && data.numOutputs >= 0);
-            crate::nice_debug_assert_eq!(
-                data.symbolicSampleSize,
-                vst3::Steinberg::Vst::SymbolicSampleSizes_::kSample32 as i32
-            );
+            crate::nice_debug_assert_eq!(data.symbolicSampleSize, K_SYMBOLIC_SAMPLE_SIZE_32);
             crate::nice_debug_assert!(data.numSamples >= 0);
 
             let total_buffer_len = data.numSamples as usize;

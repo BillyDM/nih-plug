@@ -20,6 +20,11 @@ use crate::wrapper::vst3::util::u16strlcpy;
 /// everything, so we'll play it safe.
 pub const VST3_SDK_VERSION: &str = "VST 3.6.14";
 
+#[allow(clippy::unnecessary_cast)]
+const K_CLASS_CARDINALITY_MANY_INSTANCES: i32 = ClassCardinality_::kManyInstances as i32;
+#[allow(clippy::unnecessary_cast)]
+const K_FACTORY_FLAG_UNICODE: i32 = FactoryFlags_::kUnicode as i32;
+
 /// The information queried about a plugin through the `IPluginFactory*` methods. Stored in a
 /// separate struct so it can be type erased and stored in an array.
 #[derive(Debug)]
@@ -55,7 +60,7 @@ impl PluginInfo {
         strlcpy(&mut info.vendor, self.vendor);
         strlcpy(&mut info.url, self.url);
         strlcpy(&mut info.email, self.email);
-        info.flags = FactoryFlags_::kUnicode as i32;
+        info.flags = K_FACTORY_FLAG_UNICODE;
 
         info
     }
@@ -65,7 +70,7 @@ impl PluginInfo {
     pub fn create_class_info(&self) -> PClassInfo {
         let mut info: PClassInfo = unsafe { std::mem::zeroed() };
         info.cid = self.cid.map(|b| b as std::ffi::c_char);
-        info.cardinality = ClassCardinality_::kManyInstances as i32;
+        info.cardinality = K_CLASS_CARDINALITY_MANY_INSTANCES;
         strlcpy(&mut info.category, "Audio Module Class");
         strlcpy(&mut info.name, self.name);
 
@@ -77,7 +82,7 @@ impl PluginInfo {
     pub fn create_class_info_2(&self) -> PClassInfo2 {
         let mut info: PClassInfo2 = unsafe { std::mem::zeroed() };
         info.cid = self.cid.map(|b| b as std::ffi::c_char);
-        info.cardinality = ClassCardinality_::kManyInstances as i32;
+        info.cardinality = K_CLASS_CARDINALITY_MANY_INSTANCES;
         strlcpy(&mut info.category, "Audio Module Class");
         strlcpy(&mut info.name, self.name);
         #[allow(clippy::unnecessary_cast)]
@@ -97,7 +102,7 @@ impl PluginInfo {
     pub fn create_class_info_unicode(&self) -> PClassInfoW {
         let mut info: PClassInfoW = unsafe { std::mem::zeroed() };
         info.cid = self.cid.map(|b| b as std::ffi::c_char);
-        info.cardinality = ClassCardinality_::kManyInstances as i32;
+        info.cardinality = K_CLASS_CARDINALITY_MANY_INSTANCES;
         strlcpy(&mut info.category, "Audio Module Class");
         u16strlcpy(&mut info.name, self.name);
         #[allow(clippy::unnecessary_cast)]
