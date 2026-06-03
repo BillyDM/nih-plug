@@ -23,10 +23,6 @@ quickly get started with nice-plug.
 
 ---
 
-> The main repository is at [Codeberg](https://codeberg.org/RustAudio/nice-plug).
-> Please post any issues and pull requests there. A read-only mirror is available at
-> (TODO) for users who prefer that.
-
 > nice-plug started out as a fork of the awesome [NIH-plug](https://github.com/robbert-vdh/nih-plug)
 > framework authored by Robbert van der Helm. It has since become its own separate
 > community-led project, and is now the recommended toolkit for Rust audio plugin
@@ -234,3 +230,5 @@ The framework, all of the crates in `crates/`, and the example plugins in
 `examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
 
 All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0".
+
+The logos in `branding/` are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
