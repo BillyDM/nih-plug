@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, IsTerminal, Write};
 use std::path::Path;
 use termcolor::{BufferedStandardStream, Color, ColorChoice, ColorSpec, WriteColor};
 
@@ -196,7 +196,7 @@ fn stderr_color_support() -> ColorChoice {
 
     // If `CLICOLOR` is unset or set to a truthy value, and colors aren't forced, then terminal
     // support determines whether or not colors are used
-    if atty::is(atty::Stream::Stderr) {
+    if std::io::stderr().is_terminal() {
         ColorChoice::Auto
     } else {
         ColorChoice::Never
