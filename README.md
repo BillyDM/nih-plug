@@ -120,6 +120,7 @@ For a list of available crate flags, see
   See the [iced_baseview](baseview-adapters/iced_baseview/) crate for prerequisites.
 - 3rd party adapters for other Rust GUI frameworks are also available:
   - [vizia-plug](https://github.com/vizia/vizia-plug) - Adapter for [Vizia](https://github.com/vizia/vizia).
+  - [nice-plug-slint](https://github.com/aidan729/nice-plug-slint) - Adapter for [Slint](https://slint.dev/).
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
