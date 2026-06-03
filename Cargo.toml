@@ -36,7 +36,7 @@ authors = [
   "Billy Messenger <billydm@noreply.codeberg.org>",
 ]
 license = "ISC"
-repository = "https://codeberg.org/BillyDM/nice-plug"
+repository = "https://codeberg.org/RustAudio/nice-plug"
 
 [workspace.dependencies]
 anyhow = "1.0"
