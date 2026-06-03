@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-core"
-version = "0.1.2"
+version = "0.1.3"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -26,7 +26,7 @@ assert_process_allocs = ["dep:nice-assert-no-alloc"]
 simd = []
 
 [dependencies]
-nice-plug-derive = { path = "../nice-plug-derive", version = "0.1" }
+nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.1" }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 log = "0.4"
 atomic_float.workspace = true
@@ -41,7 +41,3 @@ raw-window-handle.workspace = true
 
 [dev-dependencies]
 approx.workspace = true
-log = { version = "0.4", features = [
-  "max_level_debug",
-  "release_max_level_info",
-] }

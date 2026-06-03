@@ -167,6 +167,14 @@ impl Plugin for Gain {
     // then this would be the place. State is kept around when the host reconfigures the
     // plugin. If we do need special initialization, we could implement the `initialize()` and/or
     // `reset()` methods
+    fn initialize(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        _buffer_config: &BufferConfig,
+        _context: &mut impl InitContext<Self>,
+    ) -> bool {
+        true
+    }
 
     fn process(
         &mut self,

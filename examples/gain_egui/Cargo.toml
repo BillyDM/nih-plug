@@ -17,11 +17,11 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 egui = { workspace = true, features = ["default_fonts"] }
-nice-plug = { path = "../../crates/nice-plug", default-features = true, features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", default-features = true, features = [
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.2", default-features = false, features = [
+nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.4", default-features = false, features = [
     "opengl",
 ] }
 baseview = { workspace = true, features = ["opengl"] }

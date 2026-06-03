@@ -1,10 +1,6 @@
 # nice-plug: bundler and other utilities
 
-This is nice-plug's `cargo xtask` command, as a library. This way you can use it
-in your own projects without having to either fork this repo or vendor the
-binary into your own repo. This is necessary until Cargo supports [running
-binaries from dependencies
-directly](https://github.com/rust-lang/rfcs/pull/3168).
+This is nice-plug's `cargo xtask` command, as a library. This can be used as an alternative to the [cargo-nice-plug](../cargo-nice-plug) program.
 
 To use this, add an `xtask` binary to your project using `cargo new --bin xtask`. Then add that binary to the Cargo workspace in your repository's main
 `Cargo.toml` file like so:
@@ -23,7 +19,7 @@ function from the new xtask binary:
 # xtask/Cargo.toml
 
 [dependencies]
-nice-plug-xtask = { git = "https://codeberg.org/BillyDM/nice-plug.git" }
+nice-plug-xtask = "0.1.0"
 ```
 
 ```rust
@@ -34,7 +30,7 @@ fn main() -> nice_plug_xtask::Result<()> {
 }
 ```
 
-Lastly, create a `.cargo/config` file in your repository and add a Cargo alias.
+Lastly, create a `.cargo/config.toml` file in your repository and add a Cargo alias.
 This allows you to run the binary using `cargo xtask`:
 
 ```toml
@@ -42,4 +38,13 @@ This allows you to run the binary using `cargo xtask`:
 
 [alias]
 xtask = "run --package xtask --release --"
+```
+
+Now you can build the plugin with:
+```shell
+cargo xtask bundle <package_name>
+```
+or if you want to build your plugin in release mode:
+```shell
+cargo xtask bundle <package_name> --release
 ```

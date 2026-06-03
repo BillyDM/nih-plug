@@ -5,6 +5,10 @@ edition.workspace = true
 authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
 description = "nice-plug's cargo xtask command, as a library"
 license.workspace = true
+repository.workspace = true
+categories = ["multimedia::audio"]
+keywords = ["plugin", "clap", "vst3"]
+readme = "README.md"
 
 [dependencies]
 anyhow.workspace = true

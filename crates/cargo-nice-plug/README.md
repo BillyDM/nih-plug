@@ -1,18 +1,26 @@
 # nice-plug: cargo subcommand for bundling plugins
 
-This is nice-plug's `cargo xtask` command, but as a `cargo` subcommand. This way
-you can use it outside of nice-plug projects. If you're using nice-plug, you'll
-want to use the xtask integration directly instead so you don't need to worry
-about keeping the command up to date, see:
-<https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/nice-plug-xtask>.
+This is nice-plug's `cargo xtask` command, but as a `cargo` subcommand. This can
+be used as an alternative to
+<https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/nice-plug-xtask>
+if you don't want to create an `xtask` module in your workspace.
 
-Since this has not yet been published to `crates.io`, you'll need to install
-this using:
+## Installation
+
+This can be installed by running:
 
 ```shell
-cargo install --git https://codeberg.org/BillyDM/nice-plug.git cargo-nice-plug
+cargo install cargo-nice-plug
 ```
-I m
+
+Alternatively, you can install directly from the git repository:
+
+```shell
+cargo install --git https://codeberg.org/RustAudio/nice-plug.git cargo-nice-plug
+```
+
+## Usage
+
 Once that's installed, you can compile and bundle plugins using:
 
 ```shell

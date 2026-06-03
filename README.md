@@ -2,6 +2,10 @@
 <img src="./branding/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
+[![Documentation](https://docs.rs/nice_plug/badge.svg)](https://docs.rs/nice_plug)
+[![Crates.io](https://img.shields.io/crates/v/nice_plug.svg)](https://crates.io/crates/nice_plug)
+[![License](https://img.shields.io/crates/l/nice_plug.svg)](https://codeberg.org/RustAudio/nice-plug/src/branch/main/LICENSE)
+
 A [Rust](https://rust-lang.org/) audio plugin development framework that is nice to
 use :)
 
@@ -14,12 +18,6 @@ unnecessary ceremony wherever possible, while also keeping the amount of magic t
 a minimum and making it easy to experiment with different approaches to things. See
 the [current features](#current-features) section for more information on the
 project's current status.
-
-<!--- TODO
-Check out the [documentation](https://nice-plug.robbertvanderhelm.nl/), or use
-the [cookiecutter template](https://github.com/robbert-vdh/nice-plug-template) to
-quickly get started with nice-plug.
--->
 
 ---
 
@@ -36,6 +34,7 @@ quickly get started with nice-plug.
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
+- [Getting Started](#getting-started)
 - [Get Involved](#get-involved)
   - [Contributing](#contributing)
   - [AI Policy](#ai-policy)
@@ -143,18 +142,6 @@ For a list of available crate flags, see
 - See the [`Plugin`](src/plugin.rs) trait's documentation for an incomplete list
   of the functionality that has currently not yet been implemented.
 
-### Building
-
-nice-plug works with the latest stable Rust compiler.
-
-After installing [Rust](https://rustup.rs/), you can compile any of the plugins
-in the `plugins` directory in the following way, replacing `gain` with the name
-of the plugin:
-
-```shell
-cargo xtask bundle gain --release
-```
-
 ### Plugin formats
 
 nice-plug can currently export VST3 and
@@ -198,6 +185,21 @@ examples.
   compositional `Buffer` interfaces.
 - [**sysex**](examples/sysex) is a simple example of how to send and
   receive SysEx messages by defining custom message types.
+
+The example plugins can be built using:
+
+```shell
+cargo xtask bundle <package_name> --release
+```
+
+# Getting Started
+
+See [Getting Started with nice-plug](GETTING_STARTED.md) for a quick guide on
+getting started with using nice-plug to develop your own plugins.
+
+### Cargo.toml
+
+Create a new library called 
 
 # Get Involved
 

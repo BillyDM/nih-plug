@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
     "assert_process_allocs",
 ] }
 parking_lot.workspace = true

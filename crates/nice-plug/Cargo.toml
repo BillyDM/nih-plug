@@ -7,7 +7,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["audio", "plugin", "vst", "vst3"]
-description = "A simple but modern API-agnostic audio plugin framework"
+categories = ["multimedia::audio"]
+description = "An audio plugin development framework that is nice to use :)"
+readme = "../README.md"
 
 # Show documentation with all features enabled on docs.rs
 [package.metadata.docs.rs]
@@ -64,10 +66,10 @@ zstd = ["dep:zstd"]
 unsafe_flush_denormals = []
 
 [dependencies]
-nice-plug-derive = { path = "../nice-plug-derive", version = "0.1" }
-nice-plug-core = { path = "../nice-plug-core", version = "0.1.2" }
+nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.1" }
+nice-plug-core = { path = "../nice-plug-core", version = "0.1.3" }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
-nice-log = { path = "../nice-log", version = "0.2.2" }
+nice-log = { path = "../nice-log", version = "0.2.3" }
 clap-sys = "0.5.0"
 # All the claps!
 clap = { version = "4.1.8", features = [
@@ -115,7 +117,3 @@ features = [
 
 [dev-dependencies]
 approx.workspace = true
-log = { version = "0.4", features = [
-  "max_level_debug",
-  "release_max_level_info",
-] }
