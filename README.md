@@ -43,8 +43,8 @@ for a quick guide on getting started with using nice-plug to develop your own pl
 
 # Features
 
-For a list of available crate flags, see
-[crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
+> For a list of available crate flags, see
+> [crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
 
 - Supports both VST3 and [CLAP](https://github.com/free-audio/clap) by simply
   adding the corresponding `nice_export_<api>!(Foo)` macro to your plugin's

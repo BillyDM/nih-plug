@@ -18,8 +18,11 @@ crate-type = ["cdylib"]
 Add the nice-plug dependency to your `Cargo.toml`:
 ```toml
 [dependencies]
-nice-plug = "0.1.0"
+nice-plug = "0.1"
 ```
+
+> For a list of available crate flags, see
+> [crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
 
 ## 2. (Optional) Compiler settings
 
@@ -34,6 +37,7 @@ opt-level = 1
 [profile.release]
 codegen-units = 1
 lto = "thin"
+# (optional) helps reduce binary size
 strip = "symbols"
 
 [profile.profiling]
@@ -56,9 +60,26 @@ tracing = { version = "0.1", features = [
 ] }
 ```
 
+Additionally, you can enable the `unsafe_flush_denormals` feature flag, which can lead to a significant performance increases in some cases. HOWEVER, the Rust compiler technically considers this to be undefined behavior, so use at your own risk! Though if any UB did occur, the only damage will likely just be audio glitches, not memory safety issues.
+
+```toml
+[dependencies]
+nice-plug = { version = "0.1", features = ["unsafe_flush_denormals"] }
+```
+
 ## 3. (Optional) Standalone build target
 
-If you wish to also export your plugin as a standalone application, add a `main.rs` file next to the `lib.rs` file with the following contents:
+If you wish to also export your plugin as a standalone application, add "lib" to "crate-type" and enable the `standalone` feature flag:
+
+```toml
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nice-plug = { version = "0.1", features = ["standalone"] }
+```
+
+And add a `main.rs` file next to the `lib.rs` file with the following contents:
 ```rust
 use nice_plug::prelude::*;
 
@@ -71,7 +92,7 @@ fn main() {
 
 While `cargo` is great, it alone is not sufficient for building CLAP/VST3 plugins. For this there are two available options:
 
-*(TODO: Explain how to create plugin bundles)*
+*(TODO: Explain how to create plugin bundles and how to create universal MacOS binaries)*
 
 ### Option A: Using cargo-nice-plug
 
@@ -100,7 +121,7 @@ Here is the boilerplate for the simplest plugin with a single gain parameter. Ad
 use nice_plug::prelude::*;
 use std::sync::Arc;
 
-struct MyPlugin {
+pub struct MyPlugin {
     params: Arc<MyPluginParams>,
 }
 
