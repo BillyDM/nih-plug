@@ -2,7 +2,7 @@
 <img src="https://codeberg.org/RustAudio/nice-plug/raw/branch/main/branding/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
-[![Documentation](https://docs.rs/nice_plug/badge.svg)](https://docs.rs/nice_plug)
+[![Documentation](https://docs.rs/nice-plug/badge.svg)](https://docs.rs/nice_plug)
 [![Crates.io](https://img.shields.io/crates/v/nice_plug.svg)](https://crates.io/crates/nice_plug)
 [![License](https://img.shields.io/crates/l/nice_plug.svg)](https://codeberg.org/RustAudio/nice-plug/src/branch/main/LICENSE)
 
