@@ -9,7 +9,7 @@ repository.workspace = true
 keywords = ["audio", "plugin", "clap", "vst", "vst3"]
 categories = ["multimedia::audio"]
 description = "An audio plugin development framework that is nice to use :)"
-readme = "../README.md"
+readme = "../../README.md"
 
 # Show documentation with all features enabled on docs.rs
 [package.metadata.docs.rs]
