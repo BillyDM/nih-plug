@@ -20,7 +20,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", default-featur
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.1.1" }
+nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.1.2" }
 atomic_float.workspace = true
 # Important: `wgpu` is extremely spammy with its logs, so disable it by adding these crates:
 log = { version = "0.4", features = ["max_level_debug"] }

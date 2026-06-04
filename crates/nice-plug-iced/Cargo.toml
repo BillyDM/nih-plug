@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-iced"
-version = "0.1.1"
+version = "0.1.2"
 description = "An adapter to use iced GUIs with nice-plug"
 edition.workspace = true
 license.workspace = true
