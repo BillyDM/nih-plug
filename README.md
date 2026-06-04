@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./branding/logo.svg" width="84px" height="84px"/>
+<img src="https://codeberg.org/RustAudio/nice-plug/src/branch/main/branding/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
 [![Documentation](https://docs.rs/nice_plug/badge.svg)](https://docs.rs/nice_plug)
@@ -48,15 +48,15 @@ This repository contains [baseview](https://github.com/RustAudio/baseview) adapt
 for popular Rust GUI frameworks. These can be used on their own without the rest of
 the nice-plug framework.
 
-- [egui-baseview](baseview-adapters/egui-baseview/) - adapter for
+- [egui-baseview](https://codeberg.org/RustAudio/nice-plug/src/branch/main/baseview-adapters/egui-baseview) - adapter for
 [egui](https://github.com/emilk/egui)
-- [iced_baseview](baseview-adapters/iced_baseview/) - adapter for
+- [iced_baseview](https://codeberg.org/RustAudio/nice-plug/src/branch/main/baseview-adapters/iced_baseview) - adapter for
 [Iced](https://iced.rs/)
 
 # Framework
 
 For a list of available crate flags, see
-[crates/nice-plug/Cargo.toml](crates/nice-plug/Cargo.toml).
+[crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
 
 ### Current features
 
@@ -109,10 +109,8 @@ For a list of available crate flags, see
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
 - Comes with adapters for popular Rust GUI frameworks as well as some basic
   widgets for them that integrate with nice-plug's parameter system:
-  - [nice-plug-egui](crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
-  See the [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
-  - [nice-plug-iced](crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
-  See the [iced_baseview](baseview-adapters/iced_baseview/) crate for prerequisites.
+  - [nice-plug-egui](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
+  - [nice-plug-iced](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
 - 3rd party adapters for other Rust GUI frameworks are also available:
   - [vizia-plug](https://github.com/vizia/vizia-plug) - Adapter for [Vizia](https://github.com/vizia/vizia).
   - [nice-plug-slint](https://github.com/aidan729/nice-plug-slint) - Adapter for [Slint](https://slint.dev/).
@@ -139,51 +137,50 @@ For a list of available crate flags, see
 - Tested on Linux and Windows, with limited testing on macOS. Windows support
   has mostly been tested through Wine with
   [yabridge](https://github.com/robbert-vdh/yabridge).
-- See the [`Plugin`](src/plugin.rs) trait's documentation for an incomplete list
-  of the functionality that has currently not yet been implemented.
+- See the [`Plugin`](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-core/src/plugin.rs)
+  trait's documentation for an incomplete list of the functionality that has
+  currently not yet been implemented.
 
 ### Plugin formats
 
 nice-plug can currently export VST3 and
 [CLAP](https://github.com/free-audio/clap) plugins. Exporting a specific plugin
 format for a plugin is as simple as calling the `nice_export_<format>!(Foo);`
-macro. The `cargo xtask bundle` command will detect which plugin formats your
-plugin supports and create the appropriate bundles accordingly, even when cross
-compiling.
+macro. The `cargo nice-plug bundle`/`cargo xtask bundle` command will detect which
+plugin formats your plugin supports and create the appropriate bundles accordingly,
+even when cross compiling.
 
 ### Example plugins
 
 The best way to get an idea for what the API looks like is to look at the
 examples.
 
-- [**gain**](examples/gain) is a simple smoothed gain plugin that shows
-  off a couple other parts of the API, like support for storing arbitrary
-  serializable state.
+- [**gain**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/gain/src/lib.rs)
+  is a simple smoothed gain plugin that shows off a couple other parts of the API,
+  like support for storing arbitrary serializable state.
 - **gain_\<gui\>** are the same plugins as gain, but with a GUI to control the
   parameter and a digital peak meter.
-    - [**gain_egui**](examples/gain_egui) - See the
-    [egui-baseview](baseview-adapters/egui-baseview/) crate for prerequisites.
-    - [**gain_iced**](examples/gain_iced) - See the
-    [iced_baseview](baseview-adapters/iced_baseview/) crate for prerequisites.
+    - [**gain_egui**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/gain_egui)
+    - [**gain_iced**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/gain_iced)
 - Examples for adding your own custom GUI framework on top of raw rendering APIs:
-  - [**byo_gui_gl**](examples/byo_gui_gl) - for rendering with OpenGL
-  - [**byo_gui_wgpu**](examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)
-  - [**byo_gui_softbuffer**](examples/byo_gui_softbuffer) - for rendering with
+  - [**byo_gui_gl**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/byo_gui_gl) - for rendering with OpenGL
+  - [**byo_gui_wgpu**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)
+  - [**byo_gui_softbuffer**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/byo_gui_softbuffer) - for rendering with
   [softbuffer](https://github.com/rust-windowing/softbuffer) (software rendering)
-- [**midi_inverter**](examples/midi_inverter) takes note/MIDI events and
+- [**midi_inverter**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/midi_inverter/src/lib.rs) takes note/MIDI events and
   flips around the note, channel, expression, pressure, and CC values. This
   example demonstrates how to receive and output those events.
-- [**poly_mod_synth**](examples/poly_mod_synth) is a simple polyphonic
+- [**poly_mod_synth**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/poly_mod_synth/src/lib.rs) is a simple polyphonic
   synthesizer with support for polyphonic modulation in supported CLAP hosts.
   This demonstrates how polyphonic modulation can be used in nice-plug.
-- [**sine**](examples/sine) is a simple test tone generator plugin with
+- [**sine**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/sine/src/lib.rs) is a simple test tone generator plugin with
   frequency smoothing that can also make use of MIDI input instead of generating
   a static signal based on the plugin's parameters.
-- [**stft**](examples/stft) shows off some of nice-plug's other optional
+- [**stft**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/stft/src/lib.rs) shows off some of nice-plug's other optional
   higher level helper features, such as an adapter to process audio with a
   short-term Fourier transform using the overlap-add method, all using the
   compositional `Buffer` interfaces.
-- [**sysex**](examples/sysex) is a simple example of how to send and
+- [**sysex**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/sysex/src/lib.rs) is a simple example of how to send and
   receive SysEx messages by defining custom message types.
 
 The example plugins can be built using:
@@ -194,12 +191,8 @@ cargo xtask bundle <package_name> --release
 
 # Getting Started
 
-See [Getting Started with nice-plug](GETTING_STARTED.md) for a quick guide on
-getting started with using nice-plug to develop your own plugins.
-
-### Cargo.toml
-
-Create a new library called 
+See [Getting Started with nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/GETTING_STARTED.md)
+for a quick guide on getting started with using nice-plug to develop your own plugins.
 
 # Get Involved
 
@@ -231,6 +224,6 @@ https://rust.audio/community/ai/
 The framework, all of the crates in `crates/`, and the example plugins in
 `examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
 
-All of the crates in `baseview-adapters/` are licensed under "MIT or Apache-2.0".
+All of the crates in `baseview-adapters/` are licensed under "[MIT](https://mit-license.org/) or [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.html)".
 
 The logos in `branding/` are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
