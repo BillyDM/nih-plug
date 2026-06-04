@@ -28,7 +28,6 @@ project's current status.
 
 ### Table of contents
 
-- [Baseview adapters](#baseview-adapters)
 - [Framework](#framework)
   - [Current features](#current-features)
   - [Building](#building)
@@ -41,17 +40,6 @@ project's current status.
 - [Licensing](#licensing)
 
 ---
-
-# Baseview adapters
-
-This repository contains [baseview](https://github.com/RustAudio/baseview) adapters
-for popular Rust GUI frameworks. These can be used on their own without the rest of
-the nice-plug framework.
-
-- [egui-baseview](https://codeberg.org/RustAudio/nice-plug/src/branch/main/baseview-adapters/egui-baseview) - adapter for
-[egui](https://github.com/emilk/egui)
-- [iced_baseview](https://codeberg.org/RustAudio/nice-plug/src/branch/main/baseview-adapters/iced_baseview) - adapter for
-[Iced](https://iced.rs/)
 
 # Framework
 
@@ -219,11 +207,7 @@ https://rust.audio/community/ai/
 
 # Licensing
 
-> Check each crate's Cargo.toml file for more information.
-
-The framework, all of the crates in `crates/`, and the example plugins in
-`examples/` are all licensed under the [ISC license](https://www.isc.org/licenses/).
-
-All of the crates in `baseview-adapters/` are licensed under "[MIT](https://mit-license.org/) or [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.html)".
+The nice-plug framework and all of the example plugins are licensed under the
+[ISC license](https://www.isc.org/licenses/).
 
 The logos in `branding/` are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
