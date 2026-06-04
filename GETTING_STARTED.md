@@ -24,7 +24,28 @@ nice-plug = "0.1"
 > For a list of available crate flags, see
 > [crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
 
-## 2. (Optional) Compiler settings
+## 2. (Optional) Standalone build target
+
+If you wish to also export your plugin as a standalone application, add "lib" to "crate-type" and enable the `standalone` feature flag:
+
+```toml
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nice-plug = { version = "0.1", features = ["standalone"] }
+```
+
+And add a `main.rs` file next to the `lib.rs` file with the following contents:
+```rust
+use nice_plug::prelude::*;
+
+fn main() {
+    nice_export_standalone::<my_plugin::MyPlugin>();
+}
+```
+
+## 3. (Optional) Compiler settings
 
 For better perfomance, it is recommended to add the following profile settings to your `Cargo.toml`:
 
@@ -65,27 +86,6 @@ Additionally, you can enable the `unsafe_flush_denormals` feature flag, which ca
 ```toml
 [dependencies]
 nice-plug = { version = "0.1", features = ["unsafe_flush_denormals"] }
-```
-
-## 3. (Optional) Standalone build target
-
-If you wish to also export your plugin as a standalone application, add "lib" to "crate-type" and enable the `standalone` feature flag:
-
-```toml
-[lib]
-crate-type = ["cdylib", "lib"]
-
-[dependencies]
-nice-plug = { version = "0.1", features = ["standalone"] }
-```
-
-And add a `main.rs` file next to the `lib.rs` file with the following contents:
-```rust
-use nice_plug::prelude::*;
-
-fn main() {
-    nice_export_standalone::<my_plugin::MyPlugin>();
-}
 ```
 
 ## 4. Build system setup
