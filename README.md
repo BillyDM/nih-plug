@@ -1,5 +1,5 @@
 <div align="center">
-<img src="https://codeberg.org/RustAudio/nice-plug/src/branch/main/branding/logo.svg" width="84px" height="84px"/>
+<img src="https://codeberg.org/RustAudio/nice-plug/raw/branch/main/branding/logo.svg" width="84px" height="84px"/>
 <h1>nice-plug</h1>
 
 [![Documentation](https://docs.rs/nice_plug/badge.svg)](https://docs.rs/nice_plug)
