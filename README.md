@@ -27,11 +27,8 @@ a minimum and making it easy to experiment with different approaches to things.
 ### Table of contents
 
 - [Getting Started](#getting-started)
-- [Framework](#framework)
-  - [Current features](#current-features)
-  - [Building](#building)
-  - [Plugin formats](#plugin-formats)
-  - [Example plugins](#example-plugins)
+- [Features](#features)
+- [Example plugins](#example-plugins)
 - [Get Involved](#get-involved)
   - [Contributing](#contributing)
   - [AI Policy](#ai-policy)
@@ -44,12 +41,10 @@ a minimum and making it easy to experiment with different approaches to things.
 See [Getting Started with nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/GETTING_STARTED.md)
 for a quick guide on getting started with using nice-plug to develop your own plugins.
 
-# Framework
+# Features
 
 For a list of available crate flags, see
 [crates/nice-plug/Cargo.toml](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug/Cargo.toml).
-
-### Current features
 
 - Supports both VST3 and [CLAP](https://github.com/free-audio/clap) by simply
   adding the corresponding `nice_export_<api>!(Foo)` macro to your plugin's
@@ -123,7 +118,7 @@ For a list of available crate flags, see
 - See the [`Plugin`](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-core/src/plugin.rs)
   trait's documentation for a more complete overview of the core API.
 
-### Example plugins
+# Example plugins
 
 The best way to get an idea for what the API looks like is to look at the
 examples.
