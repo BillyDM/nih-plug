@@ -15,9 +15,7 @@ use :)
 
 The idea is to have a stateful yet simple plugin API that gets rid of as much
 unnecessary ceremony wherever possible, while also keeping the amount of magic to
-a minimum and making it easy to experiment with different approaches to things. See
-the [current features](#current-features) section for more information on the
-project's current status.
+a minimum and making it easy to experiment with different approaches to things.
 
 ---
 
@@ -28,18 +26,23 @@ project's current status.
 
 ### Table of contents
 
+- [Getting Started](#getting-started)
 - [Framework](#framework)
   - [Current features](#current-features)
   - [Building](#building)
   - [Plugin formats](#plugin-formats)
   - [Example plugins](#example-plugins)
-- [Getting Started](#getting-started)
 - [Get Involved](#get-involved)
   - [Contributing](#contributing)
   - [AI Policy](#ai-policy)
 - [Licensing](#licensing)
 
 ---
+
+# Getting Started
+
+See [Getting Started with nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/GETTING_STARTED.md)
+for a quick guide on getting started with using nice-plug to develop your own plugins.
 
 # Framework
 
@@ -114,29 +117,11 @@ For a list of available crate flags, see
   - Both monophonic and polyphonic parameter modulation are supported.
   - Plugins can declaratively define pages of remote controls that DAWs can bind
     to hardware controllers.
-- A plugin bundler accessible through the
-  `cargo xtask bundle <package> <build_arguments>` command that automatically
-  detects which plugin targets your plugin exposes and creates the correct
-  plugin bundles for your target operating system and architecture, with
-  cross-compilation support. The cargo subcommand can easily be added to [your
-  own project](https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/nice-plug-xtask)
-  as an alias or [globally](https://codeberg.org/BillyDM/nice-plug/src/branch/main/crates/cargo-nice-plug)
-  as a regular cargo subcommand.
-- Tested on Linux and Windows, with limited testing on macOS. Windows support
-  has mostly been tested through Wine with
-  [yabridge](https://github.com/robbert-vdh/yabridge).
+- A plugin bundler accessible with the [cargo-nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/cargo-nice-plug)
+  package or via a [custom xtask command](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-xtask).
+- Tested on Linux and Windows, with limited testing on macOS.
 - See the [`Plugin`](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-core/src/plugin.rs)
-  trait's documentation for an incomplete list of the functionality that has
-  currently not yet been implemented.
-
-### Plugin formats
-
-nice-plug can currently export VST3 and
-[CLAP](https://github.com/free-audio/clap) plugins. Exporting a specific plugin
-format for a plugin is as simple as calling the `nice_export_<format>!(Foo);`
-macro. The `cargo nice-plug bundle`/`cargo xtask bundle` command will detect which
-plugin formats your plugin supports and create the appropriate bundles accordingly,
-even when cross compiling.
+  trait's documentation for a more complete overview of the core API.
 
 ### Example plugins
 
@@ -176,11 +161,6 @@ The example plugins can be built using:
 ```shell
 cargo xtask bundle <package_name> --release
 ```
-
-# Getting Started
-
-See [Getting Started with nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/GETTING_STARTED.md)
-for a quick guide on getting started with using nice-plug to develop your own plugins.
 
 # Get Involved
 
