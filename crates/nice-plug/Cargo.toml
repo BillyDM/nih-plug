@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug"
-version = "0.1.4"
+version = "0.1.5"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -106,7 +106,7 @@ objc = "0.2.7"
 core-foundation = "0.9.3"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
-version = "0.44"
+workspace = true
 features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

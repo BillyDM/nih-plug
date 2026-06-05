@@ -53,6 +53,7 @@ semver = "1.0.27"
 pollster = "0.4.0"
 parking_lot = "0.12"
 thiserror = "2"
+windows = ">=0.59, <=0.62"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

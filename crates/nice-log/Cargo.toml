@@ -1,6 +1,6 @@
 [package]
 name = "nice-log"
-version = "0.2.3"
+version = "0.2.4"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -16,7 +16,7 @@ termcolor = "1.4"
 time = { version = "0.3.47", features = ["formatting", "local-offset", "macros"] }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
-version = "0.44"
+workspace = true
 features = [
   "Win32_Foundation",
   "Win32_System_Diagnostics_Debug",
