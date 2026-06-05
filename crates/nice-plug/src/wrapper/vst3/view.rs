@@ -131,7 +131,7 @@ fn vst3_modifiers(raw: i16) -> Modifiers {
 
 // Thanks for putting this behind a platform-specific ifdef...
 // NOTE: This should also be used on the BSDs, which should now be possible since vst3-sys is replaced by the vst3 crate. Because the vst3 crate also exposes these interfaces to other operating systems.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 use {
     crate::event_loop::{EventLoop, MainThreadExecutor, TASK_QUEUE_CAPACITY},
     crossbeam::queue::ArrayQueue,
@@ -153,7 +153,7 @@ pub(crate) struct WrapperView<P: Vst3Plugin> {
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
     /// Allows handling events events on the host's GUI thread when using Linux. Needed because
     /// otherwise REAPER doesn't like us very much.
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_family = "unix", not(target_os = "macos")))]
     run_loop_event_handler: RwLock<Option<ComWrapper<RunLoopEventHandler<P>>>>,
 
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
@@ -172,7 +172,7 @@ impl<P: Vst3Plugin> Class for WrapperView<P> {
 /// only exposed when compiling on Linux. This might be fixable since we use the vst3 crate.
 /// The struct will register itself when calling [`RunLoopEventHandler::new()`] and it will
 /// unregister itself when it gets dropped.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 struct RunLoopEventHandler<P: Vst3Plugin> {
     /// We need access to the inner wrapper so we that we can post any outstanding tasks there when
     /// this object gets dropped so no work is lost.
@@ -202,17 +202,17 @@ struct RunLoopEventHandler<P: Vst3Plugin> {
 
 /// A self-referencing pointer to the outer `ComWrapper<RunLoopEventHandler>`, needed to call
 /// `IRunLoop::unregisterEventHandler()` when this object gets dropped.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 struct EventHandlerSelfRefPtr(Cell<*mut IEventHandler>);
 
 // Safety: `ComWrapper<RunLoopEventHandler>` is Send + Sync, so the raw self-referential
 // pointer is also Send + Sync.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 unsafe impl Send for EventHandlerSelfRefPtr {}
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 unsafe impl Sync for EventHandlerSelfRefPtr {}
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> Class for RunLoopEventHandler<P> {
     type Interfaces = (IEventHandler,);
 }
@@ -224,7 +224,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
             editor,
             editor_handle: Mutex::new(None),
             plug_frame: RwLock::new(None),
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             run_loop_event_handler: RwLock::new(None),
             scaling_factor: AtomicF32::new(1.0),
         }
@@ -274,7 +274,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
     /// If the host supports `IRunLoop`, then this will post the task to a task queue that will be
     /// run on the host's UI thread. If not, then this will return an `Err` value containing the
     /// task so it can be run elsewhere.
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_family = "unix", not(target_os = "macos")))]
     pub fn do_maybe_in_run_loop(&self, task: Task<P>) -> Result<(), Task<P>> {
         match &*self.run_loop_event_handler.read() {
             Some(run_loop) => run_loop.post_task(task),
@@ -323,7 +323,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> RunLoopEventHandler<P> {
     pub fn new(inner: Arc<WrapperInner<P>>, run_loop: ComPtr<IRunLoop>) -> ComWrapper<Self> {
         let mut sockets = [0i32; 2];
@@ -540,7 +540,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             Some(frame) => {
                 // On Linux the host will expose another interface that lets us run code on the
                 // host's GUI thread. REAPER will segfault when we don't do this for resizes.
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_family = "unix", not(target_os = "macos")))]
                 {
                     *self.run_loop_event_handler.write() = frame
                         .cast()
@@ -549,7 +549,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 *self.plug_frame.write() = Some(frame.to_com_ptr());
             }
             None => {
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_family = "unix", not(target_os = "macos")))]
                 {
                     *self.run_loop_event_handler.write() = None;
                 }
@@ -605,7 +605,7 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> IEventHandlerTrait for RunLoopEventHandler<P> {
     unsafe fn onFDIsSet(&self, _fd: FileDescriptor) {
         // There should be a one-to-one correlation to bytes being written to `self.socket_read_fd`
@@ -642,7 +642,7 @@ impl<P: Vst3Plugin> IEventHandlerTrait for RunLoopEventHandler<P> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
     fn drop(&mut self) {
         // When this object gets dropped and there are still unprocessed tasks left, then we'll

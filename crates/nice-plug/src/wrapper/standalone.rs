@@ -78,7 +78,7 @@ pub fn nice_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Str
                 run_wrapper::<P, _>(backend, config.clone())
             });
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             let result = result.or_else(|_| {
                 match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Alsa) {
                     Ok(backend) => {
@@ -143,7 +143,7 @@ pub fn nice_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Str
                 false
             }
         },
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_family = "unix", not(target_os = "macos")))]
         config::BackendType::Alsa => {
             match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Alsa) {
                 Ok(backend) => run_wrapper::<P, _>(backend, config),

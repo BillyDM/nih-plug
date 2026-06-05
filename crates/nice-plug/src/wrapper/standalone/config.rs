@@ -142,7 +142,7 @@ pub enum BackendType {
     /// Use JACK for audio and MIDI.
     Jack,
     /// Use ALSA for audio and MIDI.
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_family = "unix", not(target_os = "macos")))]
     Alsa,
     /// Use CoreAudio for audio and MIDI.
     #[cfg(target_os = "macos")]

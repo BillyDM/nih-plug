@@ -605,7 +605,7 @@ fn compilation_target(cross_compile_target: Option<&str>) -> Result<CompilationT
             #[cfg(target_arch = "riscv64")]
             let architecture = Architecture::RISCV64;
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             return Ok(CompilationTarget::Linux(architecture));
             #[cfg(target_os = "macos")]
             return Ok(CompilationTarget::MacOS(architecture));
