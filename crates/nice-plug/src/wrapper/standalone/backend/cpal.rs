@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use cpal::{
     Device, FromSample, InputCallbackInfo, OutputCallbackInfo, Sample, SampleFormat, Stream,
-    StreamConfig, StreamError, traits::*,
+    StreamConfig, traits::*,
 };
 use crossbeam::sync::{Parker, Unparker};
 use midir::{
@@ -145,10 +145,13 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                 let input_unparker = input_parker.unparker().clone();
                 let error_cb = {
                     let input_unparker = input_unparker.clone();
-                    move |err| {
+                    move |err: cpal::Error| {
                         crate::nice_error!("Error during capture: {err:#}");
 
-                        if !matches!(err, StreamError::BufferUnderrun) {
+                        if !matches!(
+                            err.kind(),
+                            cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::Xrun
+                        ) {
                             input_unparker.clone().unpark();
                         }
                     }
@@ -157,11 +160,17 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                 let conversion_buf: Vec<f32> =
                     vec![0.0; self.config.period_size as usize * input.config.channels as usize];
 
+                crate::nice_log!(
+                    "Starting input stream: {:?} {:?}",
+                    &input.device,
+                    &input.config
+                );
+
                 macro_rules! build_input_streams {
                     ($sample_format:expr, $(($format:path, $primitive_type:ty)),*) => {
                         match $sample_format {
                             $($format => input.device.build_input_stream(
-                                &input.config,
+                                input.config,
                                 self.build_input_data_callback::<$primitive_type>(input_unparker, conversion_buf, rb_producer),
                                 error_cb,
                                 None,
@@ -184,9 +193,18 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                     (SampleFormat::F64, f64)
                 )
                 .expect("Fatal error creating the capture stream");
-                stream
-                    .play()
-                    .expect("Fatal error trying to start the capture stream");
+
+                if let Err(e) = stream.play() {
+                    if let cpal::ErrorKind::RealtimeDenied = e.kind() {
+                        crate::nice_warn!(
+                            "Failed to set realtime priority for input audio stream. This may \
+                             result in increased latency and/or audio glitches."
+                        );
+                    } else {
+                        panic!("Fatal error playing the output stream: {}", e);
+                    }
+                }
+
                 _input_stream = Some(stream);
 
                 // Playback is delayed one period if we're capturing audio so it has something to
@@ -306,20 +324,29 @@ impl<P: Plugin> Backend<P> for CpalMidir {
             let unparker = parker.unparker().clone();
             let error_cb = {
                 let unparker = unparker.clone();
-                move |err| {
+                move |err: cpal::Error| {
                     crate::nice_error!("Error during playback: {err:#}");
 
-                    if !matches!(err, StreamError::BufferUnderrun) {
+                    if !matches!(
+                        err.kind(),
+                        cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::Xrun
+                    ) {
                         unparker.clone().unpark();
                     }
                 }
             };
 
+            crate::nice_log!(
+                "Starting output stream: {:?} {:?}",
+                &self.output.device,
+                &self.output.config
+            );
+
             macro_rules! build_output_streams {
                 ($sample_format:expr, $(($format:path, $primitive_type:ty)),*) => {
                     match $sample_format {
                         $($format => self.output.device.build_output_stream(
-                            &self.output.config,
+                            self.output.config,
                             self.build_output_data_callback::<P, $primitive_type>(
                                 unparker,
                                 input_rb_consumer,
@@ -351,10 +378,16 @@ impl<P: Plugin> Backend<P> for CpalMidir {
             )
             .expect("Fatal error creating the output stream");
 
-            // TODO: Wait a period before doing this when also reading the input
-            output_stream
-                .play()
-                .expect("Fatal error trying to start the output stream");
+            if let Err(e) = output_stream.play() {
+                if let cpal::ErrorKind::RealtimeDenied = e.kind() {
+                    crate::nice_warn!(
+                        "Failed to set realtime priority for output audio stream. This may result \
+                         in increased latency and/or audio glitches."
+                    );
+                } else {
+                    panic!("Fatal error playing the output stream: {}", e);
+                }
+            }
 
             // Wait for the audio thread to exit
             parker.park();
