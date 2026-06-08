@@ -69,3 +69,8 @@ strip = "symbols"
 inherits = "release"
 debug = true
 strip = "none"
+
+[profile.ci]
+inherits = "dev"
+opt-level = 0
+debug = 0
