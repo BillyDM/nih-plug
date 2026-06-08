@@ -7,7 +7,7 @@ use core_foundation::runloop::{
     CFRunLoopWakeUp, kCFRunLoopCommonModes,
 };
 use crossbeam::channel::{self, Receiver, Sender};
-use objc::{class, msg_send, sel, sel_impl};
+use objc2::{class, msg_send};
 use std::os::raw::c_void;
 use std::sync::Weak;
 
