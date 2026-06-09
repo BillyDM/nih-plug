@@ -3,6 +3,8 @@
 mod stft;
 pub mod window;
 
+pub use atomic_float::{AtomicF32, AtomicF64};
+
 pub use stft::StftHelper;
 
 pub const MINUS_INFINITY_DB: f32 = -100.0;
