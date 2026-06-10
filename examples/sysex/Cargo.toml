@@ -1,9 +1,10 @@
 [package]
 name = "sysex"
 version = "0.1.0"
-edition.workspace = true
+edition = "2024"
+license = "ISC"
+repository = "https://codeberg.org/RustAudio/nice-plug"
 authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
-license.workspace = true
 publish = false
 
 [lib]

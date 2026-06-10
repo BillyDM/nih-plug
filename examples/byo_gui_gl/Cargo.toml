@@ -1,9 +1,10 @@
 [package]
 name = "byo_gui_gl"
 version = "0.1.0"
-edition.workspace = true
+edition = "2024"
+license = "ISC"
+repository = "https://codeberg.org/RustAudio/nice-plug"
 authors = ["Billy Messenger <60663878+BillyDM@users.noreply.github.com>"]
-license.workspace = true
 description = "A simple example plugin with a raw OpenGL context for rendering"
 publish = false
 
@@ -16,10 +17,10 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { workspace = true, features = ["opengl"] }
-raw-window-handle.workspace = true
+baseview = { version = "0.1.1", features = ["opengl"] }
+raw-window-handle = "0.5"
 glow = "0.17"
-crossbeam.workspace = true
-atomic_float.workspace = true
+crossbeam = "0.8"
+atomic_float = "1.1"
 # To make the state persistable
-serde.workspace = true
+serde = { version = "1.0", features = ["derive"] }

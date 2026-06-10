@@ -6,9 +6,9 @@ authors = [
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
 ]
 description = "A simple gain plugin with an egui GUI"
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+edition = "2024"
+license = "ISC"
+repository = "https://codeberg.org/RustAudio/nice-plug"
 publish = false
 
 [lib]
@@ -17,21 +17,19 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 egui = { version = "0.34.1", features = ["default_fonts"] }
-nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", default-features = true, features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.5", default-features = false, features = [
-    "opengl",
-] }
-baseview = { workspace = true, features = ["opengl"] }
-atomic_float.workspace = true
+nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.5" }
+baseview = { version = "0.1.1", features = ["opengl"] }
+atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the
 # GUI and the audio thread.
-rtrb.workspace = true
+rtrb = "0.3.3"
 # Optional, only include if you want to sync complex state between
 # the GUI and the audio thread.
-triple_buffer.workspace = true
+triple_buffer = "9.0.0"
 # If using wgpu, use the following to reduce log spam:
 log = { version = "0.4", features = [
     "max_level_debug",
