@@ -153,23 +153,25 @@ macro_rules! nice_export_vst3 {
                         return kInvalidArgument;
                     }
 
-                    let cid = &*(cid as *const [u8; 16]);
+                    unsafe {
+                        let cid = &*(cid as *const [u8; 16]);
 
-                    // This is a poor man's way of treating `$plugin_ty` like an indexable array.
-                    // Assuming `self.plugin_infos` is in the same order, we can simply check all of
-                    // the registered plugin CIDs for matches using an unrolled loop.
-                    let mut plugin_idx = 0;
-                    $({
-                        let plugin_info = &self.plugin_infos[plugin_idx];
-                        if cid == plugin_info.cid {
-                            let wrapper = ComWrapper::new(Wrapper::<$plugin_ty>::new());
-                            let unknown = wrapper.as_com_ref::<FUnknown>().unwrap();
-                            let ptr = unknown.as_ptr();
-                            return ((*(*ptr).vtbl).queryInterface)(ptr, iid as *const TUID, obj);
-                        }
+                        // This is a poor man's way of treating `$plugin_ty` like an indexable array.
+                        // Assuming `self.plugin_infos` is in the same order, we can simply check all of
+                        // the registered plugin CIDs for matches using an unrolled loop.
+                        let mut plugin_idx = 0;
+                        $({
+                            let plugin_info = &self.plugin_infos[plugin_idx];
+                            if cid == plugin_info.cid {
+                                let wrapper = ComWrapper::new(Wrapper::<$plugin_ty>::new());
+                                let unknown = wrapper.as_com_ref::<FUnknown>().unwrap();
+                                let ptr = unknown.as_ptr();
+                                return ((*(*ptr).vtbl).queryInterface)(ptr, iid as *const TUID, obj);
+                            }
 
-                        plugin_idx += 1;
-                    })+
+                            plugin_idx += 1;
+                        })+
+                    }
 
                     kInvalidArgument
                 }
