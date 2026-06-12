@@ -109,11 +109,28 @@ pub trait Editor: Send {
         false
     }
 
+    /// Called by the wrapper when the host has resized the plugin's view (either
+    /// because the host accepted an earlier [`GuiContext::request_resize()`], or
+    /// because the user dragged a host-provided resize handle). The editor should
+    /// resize its own window and contents to match these _logical_ dimensions
+    /// (i.e. before DPI scaling).
+    ///
+    /// Return `true` if the editor applied the new size, `false` if it rejected
+    /// it (e.g. the size is outside what the GUI supports). The default
+    /// implementation is a no-op that returns `false`, so editors that don't
+    /// support being resized by the host keep their previous fixed-size
+    /// behavior without any changes.
+    ///
+    /// This is the counterpart to [`size()`][Self::size()]: after a successful
+    /// `set_size`, `size()` should report the new dimensions.
+    fn set_size(&self, _width: u32, _height: u32) -> bool {
+        false
+    }
+
     // TODO: Reconsider adding a tick function here for the Linux `IRunLoop`. To keep this platform
     //       and API agnostic, add a way to ask the GuiContext if the wrapper already provides a
     //       tick function. If it does not, then the Editor implementation must handle this by
     //       itself. This would also need an associated `PREFERRED_FRAME_RATE` constant.
-    // TODO: Host->Plugin resizing
 }
 
 /// A raw window handle for platform and GUI framework agnostic editors. This implements
