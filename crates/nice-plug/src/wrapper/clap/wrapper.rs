@@ -2844,28 +2844,38 @@ impl<P: ClapPlugin> Wrapper<P> {
         true
     }
 
-    unsafe extern "C" fn ext_gui_can_resize(_plugin: *const clap_plugin) -> bool {
-        // Editors decide whether they actually honor a resize through
-        // `Editor::set_size()`. We advertise resizability unconditionally;
-        // editors that don't support it return `false` from `set_size()` (the
-        // default), so the host's resize is simply rejected at that point.
-        true
+    unsafe extern "C" fn ext_gui_can_resize(plugin: *const clap_plugin) -> bool {
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        // The editor decides whether it's resizable via `Editor::resize_hint()`.
+        match wrapper.editor.borrow().as_ref() {
+            Some(editor) => editor.lock().resize_hint().can_resize,
+            None => false,
+        }
     }
 
     unsafe extern "C" fn ext_gui_get_resize_hints(
-        _plugin: *const clap_plugin,
+        plugin: *const clap_plugin,
         hints: *mut clap_gui_resize_hints,
     ) -> bool {
-        check_null_ptr!(false, hints);
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, hints);
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        // Freely resizable in both axes, no aspect-ratio lock or stepping. If an
-        // editor needs constraints it can clamp inside `Editor::set_size()`.
+        let hint = match wrapper.editor.borrow().as_ref() {
+            Some(editor) => editor.lock().resize_hint(),
+            None => return false,
+        };
+        if !hint.can_resize {
+            return false;
+        }
+
         let hints = unsafe { &mut *hints };
-        hints.can_resize_horizontally = true;
-        hints.can_resize_vertically = true;
-        hints.preserve_aspect_ratio = false;
-        hints.aspect_ratio_width = 1;
-        hints.aspect_ratio_height = 1;
+        hints.can_resize_horizontally = hint.can_resize_horizontally;
+        hints.can_resize_vertically = hint.can_resize_vertically;
+        hints.preserve_aspect_ratio = hint.preserve_aspect_ratio;
+        hints.aspect_ratio_width = hint.aspect_ratio_width;
+        hints.aspect_ratio_height = hint.aspect_ratio_height;
 
         true
     }

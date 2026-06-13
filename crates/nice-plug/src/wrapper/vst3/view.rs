@@ -567,10 +567,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn canResize(&self) -> tresult {
-        // We advertise resizability; editors that don't support it reject the
-        // resize from `Editor::set_size()` (called via `onSize`), which returns
-        // `kResultFalse` there.
-        kResultOk
+        // The editor decides whether it's resizable via `Editor::resize_hint()`.
+        if self.editor.lock().resize_hint().can_resize {
+            kResultOk
+        } else {
+            kResultFalse
+        }
     }
 
     unsafe fn checkSizeConstraint(&self, rect: *mut ViewRect) -> tresult {
