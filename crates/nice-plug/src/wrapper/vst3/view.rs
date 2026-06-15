@@ -514,17 +514,23 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn onSize(&self, new_size: *mut ViewRect) -> tresult {
         check_null_ptr!(new_size);
 
-        // TODO: Implement Host->Plugin resizing
-        let (unscaled_width, unscaled_height) = self.editor.lock().size();
+        // The host is telling us the view's new frame (after honoring an earlier
+        // `request_resize()`, or because the user dragged a host resize handle).
         let scaling_factor = self.scaling_factor.load(Ordering::Relaxed);
-        let (editor_width, editor_height) = (
-            (unscaled_width as f32 * scaling_factor).round() as i32,
-            (unscaled_height as f32 * scaling_factor).round() as i32,
-        );
+        let phys_width = unsafe { (*new_size).right - (*new_size).left };
+        let phys_height = unsafe { (*new_size).bottom - (*new_size).top };
+        if phys_width <= 0 || phys_height <= 0 {
+            return kResultFalse;
+        }
 
-        let width = unsafe { (*new_size).right - (*new_size).left };
-        let height = unsafe { (*new_size).bottom - (*new_size).top };
-        if width == editor_width && height == editor_height {
+        // The host works in physical pixels; the editor works in logical pixels.
+        let logical_width = (phys_width as f32 / scaling_factor).round() as u32;
+        let logical_height = (phys_height as f32 / scaling_factor).round() as u32;
+
+        // Apply the new size to the editor. Editors that don't support being
+        // resized return `false` from `set_size()`, in which case we tell the
+        // host we couldn't honor it.
+        if self.editor.lock().set_size(logical_width, logical_height) {
             kResultOk
         } else {
             kResultFalse
@@ -561,8 +567,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn canResize(&self) -> tresult {
-        // TODO: Implement Host->Plugin resizing
-        kResultFalse
+        // The editor decides whether it's resizable via `Editor::resize_hint()`.
+        if self.editor.lock().resize_hint().can_resize {
+            kResultOk
+        } else {
+            kResultFalse
+        }
     }
 
     unsafe fn checkSizeConstraint(&self, rect: *mut ViewRect) -> tresult {
