@@ -126,6 +126,7 @@ For now, integrations for the following GUI libraries are provided:
 
 - [nice-plug-egui](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
 - [nice-plug-iced](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
+  - [iced_audio](https://github.com/iced-rs/iced_audio) - Extra audio-related widgets for Iced.
 - nice-plug-slint (WIP) - Adapter for [Slint](https://slint.dev/).
 - [vizia-plug](https://github.com/vizia/vizia-plug) (3rd party) - Adapter for [Vizia](https://github.com/vizia/vizia).
 
