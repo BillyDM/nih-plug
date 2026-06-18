@@ -28,6 +28,7 @@ a minimum and making it easy to experiment with different approaches to things.
 
 - [Getting Started](#getting-started)
 - [Features](#features)
+- [GUI](#gui)
 - [Example plugins](#example-plugins)
 - [Get Involved](#get-involved)
   - [Contributing](#contributing)
@@ -93,13 +94,10 @@ for a quick guide on getting started with using nice-plug to develop your own pl
   `true`.
 - Optional support for compressing the human readable JSON state files using
   [Zstandard](https://en.wikipedia.org/wiki/Zstd).
-- Comes with adapters for popular Rust GUI frameworks as well as some basic
-  widgets for them that integrate with nice-plug's parameter system:
-  - [nice-plug-egui](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
-  - [nice-plug-iced](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
-- 3rd party adapters for other Rust GUI frameworks are also available:
-  - [vizia-plug](https://github.com/vizia/vizia-plug) - Adapter for [Vizia](https://github.com/vizia/vizia).
-  - [nice-plug-slint](https://github.com/aidan729/nice-plug-slint) - Adapter for [Slint](https://slint.dev/).
+- Modular GUI/Editor API that lets you use any GUI library that can run on
+  [baseview](https://github.com/RustAudio/baseview). By extension, this allows
+  for rendering with OpenGL, [wgpu](wgpu.rs), and/or
+  [softbuffer](https://github.com/rust-windowing/softbuffer).
 - Full support for receiving and outputting both modern polyphonic note
   expression events as well as MIDI CCs, channel pressure, and pitch bend for
   CLAP and VST3.
@@ -117,6 +115,28 @@ for a quick guide on getting started with using nice-plug to develop your own pl
 - Tested on Linux and Windows, with limited testing on macOS.
 - See the [`Plugin`](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-core/src/plugin.rs)
   trait's documentation for a more complete overview of the core API.
+
+# GUI
+
+Any GUI library that can run on [baseview](https://github.com/RustAudio/baseview)
+can be used for nice-plug.
+
+At this early stage, there is no single GUI framework that is being focused on.
+For now, integrations for the following GUI libraries are provided:
+
+- [nice-plug-egui](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-egui) - Adapter for [egui](https://github.com/emilk/egui).
+- [nice-plug-iced](https://codeberg.org/RustAudio/nice-plug/src/branch/main/crates/nice-plug-iced) - Adapter for [Iced](https://iced.rs/).
+- nice-plug-slint (WIP) - Adapter for [Slint](https://slint.dev/).
+- [vizia-plug](https://github.com/vizia/vizia-plug) (3rd party) - Adapter for [Vizia](https://github.com/vizia/vizia).
+
+Some of these options may or may not have first-party support in the future. The
+plan is to see which options the community gravitates towards, and then officially
+support one or two of the most popular ones.
+
+Also, keep in mind that none of these options currently have good documentation
+for how to create plugin GUIs with them. For now, take a look at the examples
+to get started. (Feel free to contribute any guides, documentation, and or
+example plugins!)
 
 # Example plugins
 
