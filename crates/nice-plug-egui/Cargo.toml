@@ -22,7 +22,7 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 
 [dependencies]
 raw-window-handle.workspace = true
-nice-plug-core = { path = "../nice-plug-core", version = "0.1.3" }
+nice-plug-core = { path = "../nice-plug-core", version = "0.1.5" }
 egui = { version = "0.34.1", default-features = false, features = ["bytemuck"] }
 egui-baseview = { version = "0.2.4", default-features = false, features = [
     "nice-log",
