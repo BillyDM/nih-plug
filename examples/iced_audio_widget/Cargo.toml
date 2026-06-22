@@ -1,0 +1,31 @@
+[package]
+name = "iced_audio_widget"
+version = "0.1.0"
+authors = [
+    "Billy Messenger <billydm@noreply.codeberg.org>",
+    "Robbert van der Helm <mail@robbertvanderhelm.nl>",
+]
+description = "A simple gain plugin with an egui GUI"
+edition = "2024"
+license = "ISC"
+repository = "https://codeberg.org/RustAudio/nice-plug"
+publish = false
+
+[lib]
+# The `lib` artifact is needed for the standalone target
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nice-plug = { version = "0.1.9", features = [
+    "assert_process_allocs",
+    "standalone",
+] }
+# The `canvas` feature must be enabled for iced_audio widgets to work.
+nice-plug-iced = { version = "0.1.3", features = ["canvas"] }
+iced_audio = { version = "0.14.1", features = ["nice-plug"] }
+atomic_float = "1.1"
+# Important: `wgpu` is extremely spammy with its logs, so disable it by adding these crates:
+log = { version = "0.4", features = ["max_level_debug"] }
+tracing = { version = "0.1.44", default-features = true, features = [
+    "max_level_info",
+] }

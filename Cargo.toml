@@ -17,6 +17,7 @@ members = [
   "examples/gain",
   "examples/gain_egui",
   "examples/gain_iced",
+  "examples/iced_audio_widget",
   "examples/midi_inverter",
   "examples/poly_mod_synth",
   "examples/sine",
