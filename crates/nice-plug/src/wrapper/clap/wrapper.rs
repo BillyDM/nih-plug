@@ -3281,7 +3281,14 @@ impl<P: ClapPlugin> Wrapper<P> {
                 ProcessMode::Realtime
             }
         };
-        wrapper.current_process_mode.store(mode);
+
+        if wrapper.current_process_mode.swap(mode) != mode
+            && wrapper.is_activated.load(Ordering::SeqCst)
+        {
+            // We may change process mode while activated. In that case, restart the audio processor
+            // so the plugin can react to the process mode change in `Plugin::initialize`.
+            unsafe_clap_call! { &*wrapper.host_callback=>request_restart(&*wrapper.host_callback) };
+        }
 
         true
     }
