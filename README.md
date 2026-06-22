@@ -151,6 +151,8 @@ examples.
   parameter and a digital peak meter.
     - [**gain_egui**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/gain_egui)
     - [**gain_iced**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/gain_iced)
+- [**iced_audio_widget**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/iced_audio_widget) is an example of how to use the
+  [iced_audio](https://github.com/iced-rs/iced_audio) widget library for [Iced](https://iced.rs/) in nice-plug.
 - Examples for adding your own custom GUI framework on top of raw rendering APIs:
   - [**byo_gui_gl**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/byo_gui_gl) - for rendering with OpenGL
   - [**byo_gui_wgpu**](https://codeberg.org/RustAudio/nice-plug/src/branch/main/examples/byo_gui_wgpu) - for rendering with [wgpu](wgpu.rs)
