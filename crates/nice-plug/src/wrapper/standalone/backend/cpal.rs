@@ -557,7 +557,7 @@ impl CpalMidir {
                 .context("Could not get supported audio output configurations")?
                 .filter(|c| match c.buffer_size() {
                     cpal::SupportedBufferSize::Range { min, max } => {
-                        c.channels() as usize == num_output_channels
+                        c.channels() as usize >= num_output_channels
                             && (c.min_sample_rate()..=c.max_sample_rate())
                                 .contains(&requested_sample_rate)
                             && (min..=max).contains(&&config.period_size)
@@ -567,8 +567,9 @@ impl CpalMidir {
                 .collect();
             let output_config_range = output_configs
                 .iter()
-                .find(|c| c.sample_format() == SampleFormat::F32)
-                .or_else(|| output_configs.first())
+                .filter(|c| c.sample_format() == SampleFormat::F32)
+                .min_by_key(|c| c.channels())
+                .or_else(|| output_configs.iter().min_by_key(|c| c.channels()))
                 .cloned()
                 .with_context(|| {
                     format!(
@@ -763,6 +764,7 @@ impl CpalMidir {
         // We'll receive interlaced input samples from CPAL. These need to converted to deinterlaced
         // channels, processed, and then copied those back to an interlaced buffer for the output.
         let buffer_size = self.config.period_size as usize;
+        let device_output_channels = self.output.config.channels as usize;
         let num_output_channels = self
             .audio_io_layout
             .main_output_channels
@@ -830,8 +832,8 @@ impl CpalMidir {
         let mut finished = false;
         move |data, _info| {
             if !finished {
-                'chunk: for data in data.chunks_mut(buffer_size * num_output_channels) {
-                    let out_frames = data.len() / num_output_channels;
+                'chunk: for data in data.chunks_mut(buffer_size * device_output_channels) {
+                    let out_frames = data.len() / device_output_channels;
 
                     let mut transport = Transport::new(config.sample_rate);
                     transport.pos_samples = Some(num_processed_samples as i64);
@@ -985,15 +987,16 @@ impl CpalMidir {
 
                     // The buffer's samples need to be written to `data` in an interlaced format
                     // SAFETY: Dropping `buffers` allows us to borrow `main_io_storage` again.
-                    if num_output_channels > main_io_storage.len() {
+                    if device_output_channels > main_io_storage.len() {
                         // If the output device has more channels than the plugin, make sure that
                         // the extra channels are filled with zeros.
                         data.fill(T::default());
                     }
                     for (ch, in_ch) in main_io_storage.iter().enumerate().take(num_output_channels)
                     {
-                        for (out_s, &in_s) in
-                            data[ch..].chunks_mut(num_output_channels).zip(in_ch.iter())
+                        for (out_s, &in_s) in data[ch..]
+                            .chunks_mut(device_output_channels)
+                            .zip(in_ch.iter())
                         {
                             out_s[0] = T::from_sample(in_s);
                         }
