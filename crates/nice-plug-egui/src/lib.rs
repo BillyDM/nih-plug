@@ -32,31 +32,10 @@ pub mod widgets;
 pub struct EguiSettings {
     pub graphics_config: GraphicsConfig,
 
-    #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
+    /// Only has effect on the opengl backend.
+    ///
     /// By default this is set to `false`.
     pub enable_vsync_on_x11: bool,
-
-    #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-    /// The configuration of the OpenGL context.
-    ///
-    /// By default this is set to:
-    /// ```ignore
-    /// GlConfig {
-    ///     version: (3, 2),
-    ///     profile: Profile::Core,
-    ///     red_bits: 8,
-    ///     blue_bits: 8,
-    ///     green_bits: 8,
-    ///     alpha_bits: 8,
-    ///     depth_bits: 24,
-    ///     stencil_bits: 8,
-    ///     samples: None,
-    ///     srgb: true,
-    ///     double_buffer: true,
-    ///     vsync: false,
-    /// }
-    /// ```
-    pub gl_config: GlConfig,
 }
 
 /// Create an [`Editor`] instance using an [`egui`] GUI. Using the user state parameter is

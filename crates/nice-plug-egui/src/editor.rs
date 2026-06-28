@@ -5,7 +5,8 @@ use crate::EguiState;
 use crossbeam::atomic::AtomicCell;
 use egui::Context;
 use egui::{Vec2, ViewportCommand};
-use egui_baseview::baseview::{PhySize, Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
+use egui_baseview::EguiWindowSettings;
+use egui_baseview::baseview::{PhySize, Size, WindowHandle, WindowScalePolicy};
 use egui_baseview::{EguiWindow, Queue};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::gui::ParamSetter;
@@ -73,53 +74,33 @@ where
         let update = self.update.clone();
         let state = self.user_state.clone();
         let egui_state = self.egui_state.clone();
-
-        #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-        let gl_config = {
-            let is_x11 = matches!(&parent, ParentWindowHandle::X11Window(_));
-
-            let mut gl_config = self.settings.gl_config.clone();
-
-            if is_x11 && self.settings.enable_vsync_on_x11 {
-                gl_config.vsync = true;
-            }
-
-            gl_config
-        };
-
         let (unscaled_width, unscaled_height) = self.egui_state.size();
         let scaling_factor = self.scaling_factor.load();
 
         #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-        let window_settings = WindowOpenOptions {
-            title: String::from("egui window"),
-            // Baseview should be doing the DPI scaling for us
-            size: Size::new(unscaled_width as f64, unscaled_height as f64),
-            // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-            //       not the mouse events.
-            scale: scaling_factor
-                .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-            gl_config: Some(gl_config),
-        };
+        let graphics_config = {
+            let mut config = self.settings.graphics_config.clone();
 
-        #[cfg(feature = "wgpu")]
-        let window_settings = WindowOpenOptions {
-            title: String::from("egui window"),
-            // Baseview should be doing the DPI scaling for us
-            size: Size::new(unscaled_width as f64, unscaled_height as f64),
-            // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-            //       not the mouse events.
-            scale: scaling_factor
-                .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-            ..Default::default()
+            let is_x11 = matches!(&parent, ParentWindowHandle::X11Window(_));
+            if is_x11 && self.settings.enable_vsync_on_x11 {
+                config.gl_config.vsync = true;
+            }
+
+            config
         };
+        #[cfg(all(feature = "wgpu", not(feature = "opengl")))]
+        let graphics_config = self.settings.graphics_config.clone();
 
         let window = EguiWindow::open_parented(
             &ParentWindowHandleAdapter(parent),
-            window_settings,
-            self.settings.graphics_config.clone(),
+            EguiWindowSettings::new()
+                .with_logical_size(Size::new(unscaled_width as f64, unscaled_height as f64))
+                .with_scale_policy(
+                    scaling_factor
+                        .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+                        .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+                )
+                .with_graphics_config(graphics_config),
             state,
             move |egui_ctx, queue, state| build(egui_ctx, queue, &mut state.lock()),
             move |egui_ctx, queue, state| {

@@ -16,12 +16,12 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-egui = { version = "0.34.1", features = ["default_fonts"] }
+egui = { version = "0.35.0", features = ["default_fonts"] }
 nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.1.5" }
+nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.2.0" }
 baseview = { version = "0.1.1", features = ["opengl"] }
 atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the

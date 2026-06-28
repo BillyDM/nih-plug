@@ -14,7 +14,7 @@ pub struct ResizableWindow {
 }
 
 impl ResizableWindow {
-    pub fn new(id_source: impl std::hash::Hash) -> Self {
+    pub fn new(id_source: impl egui::AsId) -> Self {
         Self {
             id: Id::new(id_source),
             min_size: Vec2::splat(16.0),
@@ -34,7 +34,7 @@ impl ResizableWindow {
         egui_state: &EguiState,
         add_contents: impl FnOnce(&mut Ui) -> R,
     ) -> InnerResponse<R> {
-        CentralPanel::default().show_inside(ui, move |ui| {
+        CentralPanel::default().show(ui, move |ui| {
             let ui_rect = ui.clip_rect();
             let mut content_ui =
                 ui.new_child(UiBuilder::new().max_rect(ui_rect).layout(*ui.layout()));

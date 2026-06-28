@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-egui"
-version = "0.1.5"
+version = "0.2.0"
 authors = [
     "Billy Messenger <billydm@noreply.codeberg.org>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
@@ -23,8 +23,8 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 [dependencies]
 raw-window-handle.workspace = true
 nice-plug-core = { path = "../nice-plug-core", version = "0.1.5" }
-egui = { version = "0.34.1", default-features = false, features = ["bytemuck"] }
-egui-baseview = { version = "0.2.4", default-features = false, features = [
+egui = { version = "0.35.0", default-features = false, features = ["bytemuck"] }
+egui-baseview = { version = "0.3.0", default-features = false, features = [
     "nice-log",
 ] }
 crossbeam.workspace = true
