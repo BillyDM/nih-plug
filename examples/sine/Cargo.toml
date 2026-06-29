@@ -8,9 +8,10 @@ authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
     "assert_process_allocs",
+    "standalone",
 ] }
