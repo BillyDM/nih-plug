@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 mod state;
+mod track_info;
 pub use state::*;
+pub use track_info::*;
 
 use crate::{
     audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig},
@@ -256,6 +258,9 @@ pub trait Plugin: Default + Send + 'static {
     /// `initialize()` may be called more than once before `deactivate()` is called, for instance
     /// when restoring state while the plugin is still activate.
     fn deactivate(&mut self) {}
+
+    /// Called when the host provides track information after [`initialize()`][Self::initialize()] and after changes are made to the track that the plugin is on.
+    fn track_info_updated(&mut self, info: TrackInfo) {}
 }
 
 /// Indicates the current situation after the plugin has processed audio.

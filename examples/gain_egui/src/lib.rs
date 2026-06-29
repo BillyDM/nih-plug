@@ -1,10 +1,10 @@
 use egui::{Margin, Vec2};
 use nice_plug::prelude::*;
 use nice_plug_egui::{EguiState, create_egui_editor, resizable_window::ResizableWindow, widgets};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const MIN_WINDOW_WIDTH: u32 = 300;
-const MIN_WINDOW_HEIGHT: u32 = 240;
+const MIN_WINDOW_HEIGHT: u32 = 300;
 
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -44,6 +44,9 @@ pub struct Gain {
 
     /// Temporarily hold on to the initial GUI state until the editor is first opened.
     initial_gui_state: Option<GuiState>,
+
+    /// Track information reported by the host through [`Plugin::track_info_updated()`].
+    track_info: Arc<Mutex<TrackInfo>>,
 }
 
 #[derive(Params)]
@@ -93,6 +96,8 @@ impl Default for Gain {
                 triple_buffer_state: triple_buffer_input,
                 next_value: 0,
             }),
+
+            track_info: Arc::new(std::sync::Mutex::new(TrackInfo::default())),
         }
     }
 }
@@ -221,6 +226,7 @@ impl Plugin for Gain {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let params = self.params.clone();
         let peak_meter = self.peak_meter.clone();
+        let track_info = self.track_info.clone();
         let egui_state = params.editor_state.clone();
 
         create_egui_editor(
@@ -235,6 +241,35 @@ impl Plugin for Gain {
                         egui::Frame::new()
                             .inner_margin(Margin::same(5))
                             .show(ui, |ui| {
+                                // Display the track information
+                                let track_info = track_info
+                                    .lock()
+                                    .map(|info| info.clone())
+                                    .unwrap_or_default();
+                                let name = track_info.name();
+                                if name.is_empty() {
+                                    ui.label("Track name: (unknown)");
+                                } else {
+                                    ui.label(format!("Track name: {name}"));
+                                }
+                                if let Some(color) = track_info.color() {
+                                    let (r, g, b, a) = color.rgba();
+
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("Track color: "));
+                                        let (rect, _response) = ui.allocate_exact_size(
+                                            egui::vec2(16.0, 16.0),
+                                            egui::Sense::hover(),
+                                        );
+
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            2.0,
+                                            egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+                                        );
+                                    });
+                                }
+
                                 // This is a fancy widget that can get all the information it needs to properly
                                 // display and modify the parameter from the parametr itself
                                 // It's not yet fully implemented, as the text is missing.
@@ -415,6 +450,12 @@ impl Plugin for Gain {
         }
 
         ProcessStatus::Normal
+    }
+
+    fn track_info_updated(&mut self, info: TrackInfo) {
+        if let Ok(mut track_info) = self.track_info.lock() {
+            *track_info = info;
+        }
     }
 }
 
