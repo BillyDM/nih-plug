@@ -557,25 +557,35 @@ impl CpalMidir {
                 .context("Could not get supported audio output configurations")?
                 .filter(|c| match c.buffer_size() {
                     cpal::SupportedBufferSize::Range { min, max } => {
-                        c.channels() as usize >= num_output_channels
-                            && (c.min_sample_rate()..=c.max_sample_rate())
-                                .contains(&requested_sample_rate)
+                        (c.min_sample_rate()..=c.max_sample_rate())
+                            .contains(&requested_sample_rate)
                             && (min..=max).contains(&&config.period_size)
                     }
                     cpal::SupportedBufferSize::Unknown => false,
                 })
                 .collect();
+            // Prefer a config with at least as many channels as the plugin, otherwise fall back to
+            // the one with the most channels so we can still play a plugin with more outputs than
+            // the device has (e.g. an ambisonic plugin on a stereo device).
+            let channel_distance = |c: &cpal::SupportedStreamConfigRange| {
+                let channels = c.channels() as usize;
+                if channels >= num_output_channels {
+                    (0u8, channels - num_output_channels)
+                } else {
+                    (1u8, num_output_channels - channels)
+                }
+            };
             let output_config_range = output_configs
                 .iter()
                 .filter(|c| c.sample_format() == SampleFormat::F32)
-                .min_by_key(|c| c.channels())
-                .or_else(|| output_configs.iter().min_by_key(|c| c.channels()))
+                .min_by_key(|c| channel_distance(c))
+                .or_else(|| output_configs.iter().min_by_key(|c| channel_distance(c)))
                 .cloned()
                 .with_context(|| {
                     format!(
-                        "The audio output device does not support {} audio channels at a sample \
+                        "The audio output device does not support any channel layout at a sample \
                          rate of {} Hz and a period size of {} samples",
-                        num_output_channels, config.sample_rate, config.period_size,
+                        config.sample_rate, config.period_size,
                     )
                 })?;
             let output_config = StreamConfig {
@@ -591,6 +601,17 @@ impl CpalMidir {
                 sample_format: output_sample_format,
             }
         };
+
+        let device_output_channels = output.config.channels as usize;
+        if device_output_channels < num_output_channels {
+            crate::nice_warn!(
+                "The audio output device only has {} channels, but the plugin has {} output \
+                 channels. Only the first {} channels will be played back.",
+                device_output_channels,
+                num_output_channels,
+                device_output_channels,
+            );
+        }
 
         // There's no obvious way to do sidechain inputs and additional outputs with the CPAL
         // backends like there is with JACK. So we'll just provide empty buffers instead.
@@ -992,8 +1013,9 @@ impl CpalMidir {
                         // the extra channels are filled with zeros.
                         data.fill(T::default());
                     }
-                    for (ch, in_ch) in main_io_storage.iter().enumerate().take(num_output_channels)
-                    {
+                    // Drop any plugin channels that don't fit on the device.
+                    let copied_channels = num_output_channels.min(device_output_channels);
+                    for (ch, in_ch) in main_io_storage.iter().enumerate().take(copied_channels) {
                         for (out_s, &in_s) in data[ch..]
                             .chunks_mut(device_output_channels)
                             .zip(in_ch.iter())
