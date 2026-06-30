@@ -47,6 +47,10 @@ use clap_sys::ext::render::{
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::ext::tail::{CLAP_EXT_TAIL, clap_plugin_tail};
 use clap_sys::ext::thread_check::{CLAP_EXT_THREAD_CHECK, clap_host_thread_check};
+use clap_sys::ext::track_info::{
+    CLAP_EXT_TRACK_INFO, CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME,
+    clap_host_track_info, clap_plugin_track_info, clap_track_info,
+};
 use clap_sys::ext::voice_info::{
     CLAP_EXT_VOICE_INFO, CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES, clap_host_voice_info,
     clap_plugin_voice_info, clap_voice_info,
@@ -71,7 +75,9 @@ use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
+use nice_plug_core::plugin::{
+    Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo,
+};
 use parking_lot::Mutex;
 use std::any::Any;
 use std::borrow::Borrow;
@@ -245,6 +251,12 @@ pub struct Wrapper<P: ClapPlugin> {
     clap_plugin_state: clap_plugin_state,
 
     clap_plugin_tail: clap_plugin_tail,
+
+    clap_plugin_track_info: clap_plugin_track_info,
+    host_track_info: AtomicRefCell<Option<ClapPtr<clap_host_track_info>>>,
+    /// The most recently reported track information. Hosts may send partial updates, so this is used
+    /// to merge successive track info queries.
+    current_track_info: AtomicRefCell<TrackInfo>,
 
     clap_plugin_voice_info: clap_plugin_voice_info,
     host_voice_info: AtomicRefCell<Option<ClapPtr<clap_host_voice_info>>>,
@@ -687,6 +699,12 @@ impl<P: ClapPlugin> Wrapper<P> {
             clap_plugin_tail: clap_plugin_tail {
                 get: Some(Self::ext_tail_get),
             },
+
+            clap_plugin_track_info: clap_plugin_track_info {
+                changed: Some(Self::ext_track_info_changed),
+            },
+            host_track_info: AtomicRefCell::new(None),
+            current_track_info: AtomicRefCell::new(TrackInfo::default()),
 
             clap_plugin_voice_info: clap_plugin_voice_info {
                 get: Some(Self::ext_voice_info_get),
@@ -1849,6 +1867,53 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
+    /// Query the host for the current track information and notify the plugin if anything changed.
+    fn update_track_info_from_host(&self) {
+        let host_track_info = self.host_track_info.borrow();
+        let Some(host_track_info) = host_track_info.as_ref() else {
+            return;
+        };
+
+        permit_alloc(|| {
+            let mut clap_info: clap_track_info = unsafe { mem::zeroed() };
+            let success = unsafe_clap_call! {
+                host_track_info=>get(&*self.host_callback, &mut clap_info)
+            };
+            if !success {
+                return;
+            }
+
+            let mut current_track_info = self.current_track_info.borrow_mut();
+            let mut name = current_track_info.name().to_owned();
+            let mut color = current_track_info.color();
+
+            if clap_info.flags & CLAP_TRACK_INFO_HAS_TRACK_NAME != 0 {
+                let name_bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        clap_info.name.as_ptr().cast::<u8>(),
+                        clap_sys::string_sizes::CLAP_NAME_SIZE,
+                    )
+                };
+                if let Ok(cstr) = CStr::from_bytes_until_nul(name_bytes) {
+                    name = cstr.to_string_lossy().into_owned()
+                } // Else there is no null terminator. In this case we do nothing with the name.
+            }
+
+            if clap_info.flags & CLAP_TRACK_INFO_HAS_TRACK_COLOR != 0 {
+                color = Some(TrackColor::new(
+                    clap_info.color.red,
+                    clap_info.color.green,
+                    clap_info.color.blue,
+                    clap_info.color.alpha,
+                ));
+            }
+
+            let track_info = TrackInfo::new(name, color);
+            *current_track_info = track_info.clone();
+            self.plugin.lock().track_info_updated(track_info);
+        });
+    }
+
     /// Immediately set the plugin state. Returns `false` if the deserialization failed. The plugin
     /// state is set from a couple places, so this function aims to deduplicate that. Includes
     /// `permit_alloc()`s around the deserialization and initialization for the use case where
@@ -1938,7 +2003,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                 &wrapper.host_callback,
                 CLAP_EXT_THREAD_CHECK,
             );
+            *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
+                &wrapper.host_callback,
+                CLAP_EXT_TRACK_INFO,
+            );
         }
+
+        wrapper.update_track_info_from_host();
 
         true
     }
@@ -2450,6 +2521,8 @@ impl<P: ClapPlugin> Wrapper<P> {
             &wrapper.clap_plugin_state as *const _ as *const c_void
         } else if id == CLAP_EXT_TAIL {
             &wrapper.clap_plugin_tail as *const _ as *const c_void
+        } else if id == CLAP_EXT_TRACK_INFO {
+            &wrapper.clap_plugin_track_info as *const _ as *const c_void
         } else if id == CLAP_EXT_VOICE_INFO && P::CLAP_POLY_MODULATION_CONFIG.is_some() {
             &wrapper.clap_plugin_voice_info as *const _ as *const c_void
         } else {
@@ -3375,6 +3448,13 @@ impl<P: ClapPlugin> Wrapper<P> {
             }
             None => false,
         }
+    }
+
+    unsafe extern "C" fn ext_track_info_changed(plugin: *const clap_plugin) {
+        check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        wrapper.update_track_info_from_host();
     }
 
     unsafe extern "C" fn ext_tail_get(plugin: *const clap_plugin) -> u32 {

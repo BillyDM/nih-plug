@@ -557,8 +557,7 @@ impl CpalMidir {
                 .context("Could not get supported audio output configurations")?
                 .filter(|c| match c.buffer_size() {
                     cpal::SupportedBufferSize::Range { min, max } => {
-                        (c.min_sample_rate()..=c.max_sample_rate())
-                            .contains(&requested_sample_rate)
+                        (c.min_sample_rate()..=c.max_sample_rate()).contains(&requested_sample_rate)
                             && (min..=max).contains(&&config.period_size)
                     }
                     cpal::SupportedBufferSize::Unknown => false,

@@ -8,7 +8,7 @@ use nice_plug_core::editor::Editor;
 use nice_plug_core::midi::{MidiConfig, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
+use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor, TrackInfo};
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -82,6 +82,11 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     pub current_buffer_config: AtomicCell<Option<BufferConfig>>,
     /// The current audio processing mode. Set in `IAudioProcessor::setup_processing()`.
     pub current_process_mode: AtomicCell<ProcessMode>,
+    /// The most recently reported track information. Hosts may send partial updates (e.g.
+    /// Ableton), so this is used to merge successive [`IInfoListener::setChannelContextInfos()`]
+    /// calls.
+    pub current_track_info: AtomicRefCell<TrackInfo>,
+
     /// The last process status returned by the plugin. This is used for tail handling.
     pub last_process_status: AtomicCell<ProcessStatus>,
     /// The current latency in samples, as set by the plugin through the [`InitContext`] and the
@@ -308,6 +313,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             ),
             current_buffer_config: AtomicCell::new(None),
             current_process_mode: AtomicCell::new(ProcessMode::Realtime),
+            current_track_info: AtomicRefCell::new(TrackInfo::default()),
             last_process_status: AtomicCell::new(ProcessStatus::Normal),
             current_latency: AtomicU32::new(0),
             // This is initialized just before calling `Plugin::initialize()` so that during the

@@ -3,7 +3,7 @@ use nice_plug_core::context::process::Transport;
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent};
 use nice_plug_core::params::ParamFlags;
-use nice_plug_core::plugin::ProcessStatus;
+use nice_plug_core::plugin::{ProcessStatus, TrackColor, TrackInfo};
 use std::borrow::Borrow;
 use std::ffi::c_void;
 use std::mem::{self, MaybeUninit};
@@ -16,17 +16,22 @@ use vst3::Steinberg::Vst::ProcessContext_::StatesAndFlags_::{
     kTempoValid, kTimeSigValid,
 };
 use vst3::Steinberg::Vst::{
-    BusDirection, CString, CtrlNumber, DataEvent, Event, Event_::EventTypes_, IAudioProcessor,
-    IAudioProcessorTrait, IComponent, IComponentHandler, IComponentTrait, IEditController,
-    IEditControllerTrait, IEventListTrait, IMidiMapping, IMidiMappingTrait,
-    INoteExpressionController, INoteExpressionControllerTrait, IParamValueQueueTrait,
-    IParameterChangesTrait, IProcessContextRequirements, IProcessContextRequirements_,
-    IProcessContextRequirementsTrait, IUnitInfo, IUnitInfoTrait, IoMode, LegacyMIDICCOutEvent,
-    MediaType, NoteExpressionTypeID, NoteExpressionTypeInfo, NoteExpressionValue,
-    NoteExpressionValueDescription, NoteOffEvent, NoteOnEvent, ParamID, ParamValue, ParameterInfo,
-    ParameterInfo_::ParameterFlags_, PolyPressureEvent, ProcessData, ProcessModes_, ProcessSetup,
-    ProgramListID, ProgramListInfo, SpeakerArrangement, String128, TChar, UnitID, UnitInfo,
-    kNoParamId, kNoParentUnitId, kNoProgramListId, kRootUnitId,
+    BusDirection, CString,
+    ChannelContext::{self, IInfoListener, IInfoListenerTrait},
+    CtrlNumber, DataEvent, Event,
+    Event_::EventTypes_,
+    IAttributeList, IAttributeListTrait, IAudioProcessor, IAudioProcessorTrait, IComponent,
+    IComponentHandler, IComponentTrait, IEditController, IEditControllerTrait, IEventListTrait,
+    IMidiMapping, IMidiMappingTrait, INoteExpressionController, INoteExpressionControllerTrait,
+    IParamValueQueueTrait, IParameterChangesTrait, IProcessContextRequirements,
+    IProcessContextRequirements_, IProcessContextRequirementsTrait, IUnitInfo, IUnitInfoTrait,
+    IoMode, LegacyMIDICCOutEvent, MediaType, NoteExpressionTypeID, NoteExpressionTypeInfo,
+    NoteExpressionValue, NoteExpressionValueDescription, NoteOffEvent, NoteOnEvent, ParamID,
+    ParamValue, ParameterInfo,
+    ParameterInfo_::ParameterFlags_,
+    PolyPressureEvent, ProcessData, ProcessModes_, ProcessSetup, ProgramListID, ProgramListInfo,
+    SpeakerArrangement, String128, TChar, UnitID, UnitInfo, kNoParamId, kNoParentUnitId,
+    kNoProgramListId, kRootUnitId,
 };
 use vst3::Steinberg::{
     FIDString, FUnknown, IBStream, IBStreamTrait, IPlugView, IPluginBaseTrait, TBool, TUID, int16,
@@ -74,6 +79,7 @@ impl<P: Vst3Plugin> Class for Wrapper<P> {
         INoteExpressionController,
         IProcessContextRequirements,
         IUnitInfo,
+        IInfoListener,
     );
 }
 
@@ -1947,5 +1953,56 @@ impl<P: Vst3Plugin> IUnitInfoTrait for Wrapper<P> {
         _data: *mut IBStream,
     ) -> tresult {
         kInvalidArgument
+    }
+}
+
+impl<P: Vst3Plugin> IInfoListenerTrait for Wrapper<P> {
+    unsafe fn setChannelContextInfos(&self, list: *mut IAttributeList) -> tresult {
+        fn track_color_from_vst3_color(color: u32) -> TrackColor {
+            TrackColor::new(
+                ((color >> 16) & 0xFF) as u8,
+                ((color >> 8) & 0xFF) as u8,
+                (color & 0xFF) as u8,
+                ((color >> 24) & 0xFF) as u8,
+            )
+        }
+        check_null_ptr!(list);
+
+        let list = unsafe { ComRef::from_raw(list) };
+        let Some(list) = list else {
+            return kInvalidArgument;
+        };
+
+        permit_alloc(|| {
+            let mut current_track_info = self.inner.current_track_info.borrow_mut();
+            let mut name = current_track_info.name().to_owned();
+            let mut color = current_track_info.color();
+
+            let mut name_buf: String128 = [0; 128];
+            if unsafe {
+                list.getString(
+                    ChannelContext::kChannelNameKey,
+                    name_buf.as_mut_ptr(),
+                    mem::size_of::<String128>() as u32,
+                )
+            } == kResultOk
+                && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
+            {
+                name = cstr.to_string_lossy();
+            } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
+
+            let mut color_value = 0i64;
+            if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }
+                == kResultOk
+            {
+                color = Some(track_color_from_vst3_color(color_value as u32));
+            }
+
+            let track_info = TrackInfo::new(name, color);
+            *current_track_info = track_info.clone();
+            self.inner.plugin.lock().track_info_updated(track_info);
+        });
+
+        kResultOk
     }
 }
