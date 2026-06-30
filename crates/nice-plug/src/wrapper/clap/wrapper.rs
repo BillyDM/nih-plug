@@ -48,8 +48,8 @@ use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::ext::tail::{CLAP_EXT_TAIL, clap_plugin_tail};
 use clap_sys::ext::thread_check::{CLAP_EXT_THREAD_CHECK, clap_host_thread_check};
 use clap_sys::ext::track_info::{
-    CLAP_EXT_TRACK_INFO, CLAP_TRACK_INFO_HAS_TRACK_COLOR,
-    CLAP_TRACK_INFO_HAS_TRACK_NAME, clap_host_track_info, clap_plugin_track_info, clap_track_info,
+    CLAP_EXT_TRACK_INFO, CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME,
+    clap_host_track_info, clap_plugin_track_info, clap_track_info,
 };
 use clap_sys::ext::voice_info::{
     CLAP_EXT_VOICE_INFO, CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES, clap_host_voice_info,
@@ -75,7 +75,9 @@ use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo};
+use nice_plug_core::plugin::{
+    Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo,
+};
 use parking_lot::Mutex;
 use std::any::Any;
 use std::borrow::Borrow;
@@ -1886,9 +1888,17 @@ impl<P: ClapPlugin> Wrapper<P> {
             let mut color = current_track_info.color();
 
             if clap_info.flags & CLAP_TRACK_INFO_HAS_TRACK_NAME != 0 {
-                name = unsafe { CStr::from_ptr(clap_info.name.as_ptr()) }
-                    .to_string_lossy()
-                    .into_owned();
+                let name_bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        clap_info.name.as_ptr().cast::<u8>(),
+                        clap_sys::string_sizes::CLAP_NAME_SIZE,
+                    )
+                };
+                match CStr::from_bytes_until_nul(name_bytes) {
+                    Ok(cstr) => name = cstr.to_string_lossy().into_owned(),
+                    // This error is when there is no null terminator. In this case we do nothing with the name.
+                    Err(_) => (),
+                }
             }
 
             if clap_info.flags & CLAP_TRACK_INFO_HAS_TRACK_COLOR != 0 {
@@ -1995,11 +2005,10 @@ impl<P: ClapPlugin> Wrapper<P> {
                 &wrapper.host_callback,
                 CLAP_EXT_THREAD_CHECK,
             );
-            *wrapper.host_track_info.borrow_mut() =
-                query_host_extension::<clap_host_track_info>(
-                    &wrapper.host_callback,
-                    CLAP_EXT_TRACK_INFO,
-                );
+            *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
+                &wrapper.host_callback,
+                CLAP_EXT_TRACK_INFO,
+            );
         }
 
         wrapper.update_track_info_from_host();
