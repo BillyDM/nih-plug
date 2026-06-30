@@ -1986,17 +1986,10 @@ impl<P: Vst3Plugin> IInfoListenerTrait for Wrapper<P> {
                     mem::size_of::<String128>() as u32,
                 )
             } == kResultOk
+                && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
             {
-                match U16CStr::from_slice_truncate(&name_buf) {
-                    Ok(cstr) => {
-                        if let Ok(parsed_name) = cstr.to_string() {
-                            name = parsed_name;
-                        }
-                    }
-                    // This error is when there is no null terminator. In this case we do nothing with the name.
-                    Err(_) => (),
-                }
-            }
+                name = cstr.to_string_lossy();
+            } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
 
             let mut color_value = 0i64;
             if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }

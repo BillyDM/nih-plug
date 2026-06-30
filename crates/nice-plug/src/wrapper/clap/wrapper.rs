@@ -1894,11 +1894,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                         clap_sys::string_sizes::CLAP_NAME_SIZE,
                     )
                 };
-                match CStr::from_bytes_until_nul(name_bytes) {
-                    Ok(cstr) => name = cstr.to_string_lossy().into_owned(),
-                    // This error is when there is no null terminator. In this case we do nothing with the name.
-                    Err(_) => (),
-                }
+                if let Ok(cstr) = CStr::from_bytes_until_nul(name_bytes) {
+                    name = cstr.to_string_lossy().into_owned()
+                } // Else there is no null terminator. In this case we do nothing with the name.
             }
 
             if clap_info.flags & CLAP_TRACK_INFO_HAS_TRACK_COLOR != 0 {

@@ -256,7 +256,7 @@ impl Plugin for Gain {
                                     let (r, g, b, a) = color.rgba();
 
                                     ui.horizontal(|ui| {
-                                        ui.label(format!("Track color: "));
+                                        ui.label("Track color: ");
                                         let (rect, _response) = ui.allocate_exact_size(
                                             egui::vec2(16.0, 16.0),
                                             egui::Sense::hover(),
