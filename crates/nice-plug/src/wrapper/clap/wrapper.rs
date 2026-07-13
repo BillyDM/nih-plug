@@ -1,6 +1,5 @@
 use atomic_float::AtomicF64;
 use atomic_refcell::{AtomicRefCell, AtomicRefMut};
-use baseview::dpi::PhysicalSize;
 use clap_sys::events::{
     CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_IS_LIVE, CLAP_EVENT_MIDI, CLAP_EVENT_MIDI_SYSEX,
     CLAP_EVENT_NOTE_CHOKE, CLAP_EVENT_NOTE_END, CLAP_EVENT_NOTE_EXPRESSION, CLAP_EVENT_NOTE_OFF,
@@ -72,7 +71,7 @@ use fragile::Fragile;
 use nice_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig, ProcessMode};
 use nice_plug_core::context::gui::AsyncExecutor;
 use nice_plug_core::context::process::Transport;
-use nice_plug_core::editor::{Editor, ParentWindowHandle};
+use nice_plug_core::editor::{Editor, ParentWindowHandle, dpi::PhysicalSize};
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;

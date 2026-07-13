@@ -1,7 +1,6 @@
 use atomic_float::AtomicF64;
-use baseview::dpi::PhysicalSize;
 use fragile::Fragile;
-use nice_plug_core::editor::{Editor, ParentWindowHandle};
+use nice_plug_core::editor::{Editor, ParentWindowHandle, dpi::PhysicalSize};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::ffi::{CStr, c_ulong, c_void};
