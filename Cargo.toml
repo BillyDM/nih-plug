@@ -17,7 +17,7 @@ members = [
   "examples/gain",
   "examples/gain_egui",
   "examples/gain_iced",
-  "examples/iced_audio_widget",
+  #"examples/iced_audio_widget", // TODO: Add this back when nice-plug-core 0.2 is published
   "examples/midi_inverter",
   "examples/poly_mod_synth",
   "examples/sine",
@@ -43,8 +43,8 @@ serde_json = "1.0"
 atomic_float = "1.1"
 atomic_refcell = "0.1"
 bitflags = "2"
-baseview = "0.1.1"
-raw-window-handle = "0.5"
+baseview = "0.2.1"
+raw-window-handle = "0.6"
 realfft = "3.0"
 approx = "0.5.1"
 crossbeam = "0.8"

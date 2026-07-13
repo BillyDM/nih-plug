@@ -1,11 +1,14 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw OpenGL context.
 
-use baseview::{WindowHandle, WindowOpenOptions, WindowScalePolicy, gl::GlConfig};
+use baseview::{
+    WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy,
+    dpi::{LogicalSize, Size},
+    gl::GlConfig,
+};
 use crossbeam::atomic::AtomicCell;
 use glow::Context;
 use nice_plug::params::persist::PersistentField;
 use nice_plug::prelude::*;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     Arc,
@@ -18,6 +21,7 @@ const PEAK_METER_DECAY_MS: f64 = 150.0;
 pub struct CustomGlWindow {
     gui_context: Arc<dyn GuiContext>,
     gl: Arc<glow::Context>,
+    window: WindowContext,
 
     vertex_array: glow::NativeVertexArray,
     program: glow::NativeProgram,
@@ -90,11 +94,10 @@ fn get_shader_version_string(gl: &Arc<Context>) -> &'static str {
 
 impl CustomGlWindow {
     fn new(
-        window: &mut baseview::Window<'_>,
+        window: WindowContext,
         gui_context: Arc<dyn GuiContext>,
         params: Arc<MyPluginParams>,
         peak_meter: Arc<AtomicF32>,
-        _scaling_factor: f32,
     ) -> Self {
         use glow::HasContext as _;
 
@@ -184,18 +187,18 @@ impl CustomGlWindow {
             program,
             params,
             peak_meter,
+            window,
         }
     }
 }
 
 impl baseview::WindowHandler for CustomGlWindow {
-    fn on_frame(&mut self, window: &mut baseview::Window) {
+    fn on_frame(&self) {
         use glow::HasContext as _;
         // Do rendering here.
 
-        let (_width, _height) = self.params.editor_state.size();
-
-        let gl_context = window
+        let gl_context = self
+            .window
             .gl_context()
             .expect("failed to get baseview gl context");
 
@@ -212,58 +215,65 @@ impl baseview::WindowHandler for CustomGlWindow {
         }
     }
 
-    fn on_event(
-        &mut self,
-        _window: &mut baseview::Window,
-        event: baseview::Event,
-    ) -> baseview::EventStatus {
+    fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
         // Use this to set parameter values.
         let _param_setter = ParamSetter::new(self.gui_context.as_ref());
 
-        // Suppress clippy warnings here because the user is likely to want to
-        // use more events.
-        #[allow(clippy::single_match)]
-        #[allow(clippy::collapsible_match)]
+        // Do event processing here.
+        #[allow(clippy::match_single_binding)]
         match &event {
             // Do event processing here.
-            #[allow(clippy::single_match)]
-            baseview::Event::Window(event) => match event {
-                baseview::WindowEvent::Resized(window_info) => {
-                    self.params.editor_state.size.store((
-                        window_info.logical_size().width.round() as u32,
-                        window_info.logical_size().height.round() as u32,
-                    ));
-                }
-                _ => {}
-            },
             _ => {}
         }
 
         baseview::EventStatus::Captured
     }
+
+    fn resized(&self, new_size: baseview::WindowSize) {
+        self.params
+            .editor_state
+            .window_scale_factor
+            .store(new_size.scale_factor as f32);
+        self.params.editor_state.size.store(new_size.logical.cast());
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CustomGlEditorState {
-    /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<(u32, u32)>,
+    size: AtomicCell<LogicalSize<f32>>,
+    #[serde(skip)]
+    window_scale_factor: AtomicCell<f32>,
+    #[serde(skip)]
+    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
+    /// should use the system scaling factor instead.
+    host_scale_factor: AtomicCell<Option<f32>>,
     /// Whether the editor's window is currently open.
     #[serde(skip)]
     open: AtomicBool,
 }
 
 impl CustomGlEditorState {
-    pub fn from_size(size: (u32, u32)) -> Arc<Self> {
+    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
         Arc::new(Self {
             size: AtomicCell::new(size),
+            window_scale_factor: AtomicCell::new(1.0),
+            host_scale_factor: AtomicCell::new(None),
             open: AtomicBool::new(false),
         })
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> (u32, u32) {
-        self.size.load()
+    pub fn size(&self) -> Size {
+        self.size.load().into()
+    }
+
+    pub fn window_scale_factor(&self) -> f32 {
+        self.window_scale_factor.load()
+    }
+
+    pub fn host_scale_factor(&self) -> Option<f32> {
+        self.host_scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
@@ -289,10 +299,6 @@ impl<'a> PersistentField<'a, CustomGlEditorState> for Arc<CustomGlEditorState> {
 pub struct CustomGlEditor {
     params: Arc<MyPluginParams>,
     peak_meter: Arc<AtomicF32>,
-
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    scaling_factor: AtomicCell<Option<f32>>,
 }
 
 impl Editor for CustomGlEditor {
@@ -300,28 +306,26 @@ impl Editor for CustomGlEditor {
         &self,
         parent: ParentWindowHandle,
         context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any + Send> {
-        let (unscaled_width, unscaled_height) = self.params.editor_state.size();
-        let scaling_factor = self.scaling_factor.load();
+    ) -> Box<dyn std::any::Any> {
+        let size = self.params.editor_state.size();
+        let host_scale_factor = self.params.editor_state.host_scale_factor();
 
         let gui_context = Arc::clone(&context);
 
         let params = Arc::clone(&self.params);
         let peak_meter = Arc::clone(&self.peak_meter);
 
-        let window = baseview::Window::open_parented(
-            &ParentWindowHandleAdapter(parent),
-            WindowOpenOptions {
-                title: String::from("OpenGL Window"),
-                // Baseview should be doing the DPI scaling for us
-                size: baseview::Size::new(unscaled_width as f64, unscaled_height as f64),
-                // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-                //       not the mouse events.
-                scale: scaling_factor
-                    .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                    .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+        let scale_policy = host_scale_factor
+            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
 
-                gl_config: Some(GlConfig {
+        let window = baseview::Window::open_parented(
+            &parent,
+            WindowOpenOptions::new()
+                .with_title("OpenGL Window")
+                .with_size(size)
+                .with_scale_policy(scale_policy)
+                .with_gl_config(Some(GlConfig {
                     version: (3, 2),
                     red_bits: 8,
                     blue_bits: 8,
@@ -334,16 +338,9 @@ impl Editor for CustomGlEditor {
                     double_buffer: true,
                     vsync: false,
                     ..Default::default()
-                }),
-            },
-            move |window: &mut baseview::Window<'_>| -> CustomGlWindow {
-                CustomGlWindow::new(
-                    window,
-                    gui_context,
-                    params,
-                    peak_meter,
-                    scaling_factor.unwrap_or(1.0),
-                )
+                })),
+            move |window: WindowContext| -> CustomGlWindow {
+                CustomGlWindow::new(window, gui_context, params, peak_meter)
             },
         );
 
@@ -354,18 +351,21 @@ impl Editor for CustomGlEditor {
         })
     }
 
-    fn size(&self) -> (u32, u32) {
+    fn size(&self) -> Size {
         self.params.editor_state.size()
     }
 
-    fn set_scale_factor(&self, factor: f32) -> bool {
+    fn set_scale_factor(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.params.editor_state.is_open() {
             return false;
         }
 
-        self.scaling_factor.store(Some(factor));
+        self.params
+            .editor_state
+            .host_scale_factor
+            .store(Some(factor as f32));
         true
     }
 
@@ -388,41 +388,11 @@ struct CustomGlEditorHandle {
     window: WindowHandle,
 }
 
-/// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
-/// having this requirement?
-unsafe impl Send for CustomGlEditorHandle {}
-
 impl Drop for CustomGlEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
         // XXX: This should automatically happen when the handle gets dropped, but apparently not
         self.window.close();
-    }
-}
-
-/// This version of `baseview` uses a different version of `raw_window_handle than nice-plug, so we
-/// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(nice_plug::editor::ParentWindowHandle);
-
-unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match self.0 {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
-            }
-            ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
-            }
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
-            }
-        }
     }
 }
 
@@ -468,7 +438,7 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomGlEditorState::from_size((400, 300)),
+            editor_state: CustomGlEditorState::from_size(LogicalSize::new(400.0, 300.0)),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -523,14 +493,6 @@ impl Plugin for MyPlugin {
         Some(Box::new(CustomGlEditor {
             params: Arc::clone(&self.params),
             peak_meter: Arc::clone(&self.peak_meter),
-
-            // TODO: We can't get the size of the window when baseview does its own scaling, so if the
-            //       host does not set a scale factor on Windows or Linux we should just use a factor of
-            //       1. That may make the GUI tiny but it also prevents it from getting cut off.
-            #[cfg(target_os = "macos")]
-            scaling_factor: AtomicCell::new(None),
-            #[cfg(not(target_os = "macos"))]
-            scaling_factor: AtomicCell::new(Some(1.0)),
         }))
     }
 

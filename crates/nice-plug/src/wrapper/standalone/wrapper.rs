@@ -1,5 +1,5 @@
 use atomic_refcell::AtomicRefCell;
-use baseview::{EventStatus, Window, WindowHandler, WindowOpenOptions};
+use baseview::{EventStatus, Window, WindowContext, WindowOpenOptions, WindowSize};
 use crossbeam::channel::{self, Sender};
 use crossbeam::queue::ArrayQueue;
 use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
@@ -11,9 +11,10 @@ use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
 use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::HasWindowHandle;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
+use std::ffi::c_ulong;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
@@ -125,34 +126,35 @@ struct WrapperWindowHandler {
     /// This is used to communicate with the wrapper from the audio thread and from within the
     /// baseview window handler on the GUI thread.
     gui_task_receiver: channel::Receiver<GuiTask>,
+
+    window: WindowContext,
 }
 
 /// A message sent to the GUI thread.
 pub enum GuiTask {
-    /// Resize the window to the following physical size.
-    Resize(u32, u32),
+    /// Resize the window to the following size.
+    Resize(baseview::dpi::Size),
     /// The close window. This will cause the application to terminate.
     Close,
 }
 
-impl WindowHandler for WrapperWindowHandler {
-    fn on_frame(&mut self, window: &mut Window) {
+impl baseview::WindowHandler for WrapperWindowHandler {
+    fn on_frame(&self) {
         while let Ok(task) = self.gui_task_receiver.try_recv() {
             match task {
-                GuiTask::Resize(new_width, new_height) => {
-                    window.resize(baseview::Size {
-                        width: new_width as f64,
-                        height: new_height as f64,
-                    });
+                GuiTask::Resize(new_size) => {
+                    self.window.resize(new_size);
                 }
-                GuiTask::Close => window.close(),
+                GuiTask::Close => self.window.request_close(),
             }
         }
     }
 
-    fn on_event(&mut self, _window: &mut Window, _event: baseview::Event) -> EventStatus {
+    fn on_event(&self, _event: baseview::Event) -> EventStatus {
         EventStatus::Ignored
     }
+
+    fn resized(&self, _new_size: WindowSize) {}
 }
 
 impl<P: Plugin, B: Backend<P>> MainThreadExecutor<Task<P>> for Wrapper<P, B> {
@@ -334,35 +336,19 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             Some(editor) => {
                 let context = self.clone().make_gui_context();
 
-                // DPI scaling should not be used on macOS since the OS handles it there
-                #[cfg(target_os = "macos")]
-                let scaling_policy = baseview::WindowScalePolicy::SystemScaleFactor;
-                #[cfg(not(target_os = "macos"))]
-                let scaling_policy = {
-                    editor.lock().set_scale_factor(self.config.dpi_scale);
-                    baseview::WindowScalePolicy::ScaleFactor(self.config.dpi_scale as f64)
-                };
+                let size = editor.lock().size();
 
-                let (width, height) = editor.lock().size();
                 Window::open_blocking(
-                    WindowOpenOptions {
-                        title: String::from(P::NAME),
-                        size: baseview::Size {
-                            width: width as f64,
-                            height: height as f64,
-                        },
-                        scale: scaling_policy,
-                        ..Default::default()
-                    },
+                    WindowOpenOptions::new().with_title(P::NAME).with_size(size),
                     move |window| {
-                        let parent_handle = match window.raw_window_handle() {
-                            raw_window_handle::RawWindowHandle::Xlib(handle) => {
+                        let parent_handle = match window.window_handle().unwrap().as_raw() {
+                            raw_window_handle::RawWindowHandle::Xlib(handle) =>
+                            {
                                 #[allow(clippy::unnecessary_cast)]
-                                let w = handle.window as u32;
-                                ParentWindowHandle::X11Window(w)
+                                ParentWindowHandle::XlibWindow(handle.window as c_ulong)
                             }
                             raw_window_handle::RawWindowHandle::Xcb(handle) => {
-                                ParentWindowHandle::X11Window(handle.window)
+                                ParentWindowHandle::XcbWindow(handle.window)
                             }
                             raw_window_handle::RawWindowHandle::AppKit(handle) => {
                                 ParentWindowHandle::AppKitNsView(handle.ns_view)
@@ -382,6 +368,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                         WrapperWindowHandler {
                             _editor_handle: editor_handle,
                             gui_task_receiver,
+                            window,
                         }
                     },
                 )
@@ -490,13 +477,10 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     /// Request the outer window to be resized to the editor's current size.
     pub fn request_resize(&self) {
         if let Some(gui_tasks_sender) = self.gui_tasks_sender.borrow().as_ref() {
-            let (unscaled_width, unscaled_height) =
-                self.editor.borrow().as_ref().unwrap().lock().size();
+            let size = self.editor.borrow().as_ref().unwrap().lock().size();
 
             // This will cause the editor to be resized at the start of the next frame
-            let push_successful = gui_tasks_sender
-                .send(GuiTask::Resize(unscaled_width, unscaled_height))
-                .is_ok();
+            let push_successful = gui_tasks_sender.send(GuiTask::Resize(size)).is_ok();
             crate::nice_debug_assert!(push_successful, "Could not queue window resize");
         }
     }

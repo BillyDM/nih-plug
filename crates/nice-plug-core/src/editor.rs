@@ -1,12 +1,17 @@
 //! Traits for working with plugin editors.
 
 use bitflags::bitflags;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use dpi::{PhysicalSize, Size};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::any::Any;
-use std::ffi::c_void;
+use std::ffi::{c_ulong, c_void};
+use std::num::{NonZeroIsize, NonZeroU32};
+use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::context::gui::GuiContext;
+
+pub use dpi;
 
 /// An editor for a [`Plugin`][crate::plugin::Plugin].
 pub trait Editor: Send {
@@ -35,25 +40,10 @@ pub trait Editor: Send {
     //       instance.
     // TODO: This function should return an `Option` instead. Right now window opening failures are
     //       always fatal. This would need to be fixed in baseview first.
-    fn spawn(
-        &self,
-        parent: ParentWindowHandle,
-        context: Arc<dyn GuiContext>,
-    ) -> Box<dyn Any + Send>;
+    fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any>;
 
-    /// Returns the (current) size of the editor in pixels as a `(width, height)` pair. This size
-    /// must be reported in _logical pixels_, i.e. the size before being multiplied by the DPI
-    /// scaling factor to get the actual physical screen pixels.
-    fn size(&self) -> (u32, u32);
-
-    /// Set the DPI scaling factor, if supported. The plugin APIs don't make any guarantees on when
-    /// this is called, but for now just assume it will be the first function that gets called
-    /// before creating the editor. If this is set, then any windows created by this editor should
-    /// have their sizes multiplied by this scaling factor on Windows and Linux.
-    ///
-    /// Right now this is never called on macOS since DPI scaling is built into the operating system
-    /// there.
-    fn set_scale_factor(&self, factor: f32) -> bool;
+    /// Returns the (current) size of the editor.
+    fn size(&self) -> Size;
 
     /// Called whenever a specific parameter's value has changed while the editor is open. You don't
     /// need to do anything with this, but this can be used to force a redraw when the host sends a
@@ -112,8 +102,7 @@ pub trait Editor: Send {
     /// Called by the wrapper when the host has resized the plugin's view (either
     /// because the host accepted an earlier [`GuiContext::request_resize()`], or
     /// because the user dragged a host-provided resize handle). The editor should
-    /// resize its own window and contents to match these _logical_ dimensions
-    /// (i.e. before DPI scaling).
+    /// resize its own window and contents to match these dimensions.
     ///
     /// Return `true` if the editor applied the new size, `false` if it rejected
     /// it (e.g. the size is outside what the GUI supports). The default
@@ -123,9 +112,19 @@ pub trait Editor: Send {
     ///
     /// This is the counterpart to [`size()`][Self::size()]: after a successful
     /// `set_size`, `size()` should report the new dimensions.
-    fn set_size(&self, _width: u32, _height: u32) -> bool {
+    fn set_size(&self, physical_size: PhysicalSize<u32>) -> bool {
+        let _ = physical_size;
         false
     }
+
+    /// Set the DPI scaling factor, if supported. The plugin APIs don't make any guarantees on when
+    /// this is called, but for now just assume it will be the first function that gets called
+    /// before creating the editor. If this is set, then any windows created by this editor should
+    /// have their sizes multiplied by this scaling factor on Windows and Linux.
+    ///
+    /// Right now this is never called on macOS since DPI scaling is built into the operating system
+    /// there.
+    fn set_scale_factor(&self, factor: f64) -> bool;
 
     /// Describes whether and how the host may resize this editor. The wrapper
     /// reads this to answer the host's resize-capability queries (CLAP's
@@ -204,32 +203,35 @@ impl ResizeHint {
 #[derive(Debug, Clone, Copy)]
 pub enum ParentWindowHandle {
     /// The ID of the host's parent window. Used with X11.
-    X11Window(u32),
+    XlibWindow(c_ulong),
+    /// The ID of the host's parent window. Used with X11.
+    XcbWindow(NonZeroU32),
     /// A handle to the host's parent window. Used only on macOS.
-    AppKitNsView(*mut c_void),
+    AppKitNsView(NonNull<c_void>),
     /// A handle to the host's parent window. Used only on Windows.
-    Win32Hwnd(*mut c_void),
+    Win32Hwnd(NonZeroIsize),
 }
 
-unsafe impl HasRawWindowHandle for ParentWindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match *self {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
+impl HasWindowHandle for ParentWindowHandle {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        let raw = match *self {
+            ParentWindowHandle::XlibWindow(window) => {
+                RawWindowHandle::Xlib(raw_window_handle::XlibWindowHandle::new(window))
+            }
+            ParentWindowHandle::XcbWindow(window) => {
+                RawWindowHandle::Xcb(raw_window_handle::XcbWindowHandle::new(window))
             }
             ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
+                RawWindowHandle::AppKit(raw_window_handle::AppKitWindowHandle::new(ns_view))
             }
             ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
+                RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(hwnd))
             }
-        }
+        };
+
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(raw) })
     }
 }
 

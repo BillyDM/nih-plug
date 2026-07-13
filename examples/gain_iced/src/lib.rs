@@ -1,4 +1,4 @@
-use nice_plug::prelude::*;
+use nice_plug::{editor::dpi::LogicalSize, prelude::*};
 use nice_plug_iced::iced::{
     self, Center, PollSubNotifier, Theme,
     widget::{Column, ProgressBar, button, column, slider, text},
@@ -66,7 +66,10 @@ impl Default for Gain {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            window_state: WindowState::from_logical_size(WINDOW_WIDTH, WINDOW_HEIGHT),
+            window_state: WindowState::from_size(LogicalSize::new(
+                WINDOW_WIDTH as f32,
+                WINDOW_HEIGHT as f32,
+            )),
 
             // See the main gain example for more details
             gain: FloatParam::new(

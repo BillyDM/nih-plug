@@ -1,14 +1,13 @@
 use crossbeam_utils::atomic::AtomicCell;
-use iced_baseview::baseview::{Size, WindowOpenOptions, WindowScalePolicy};
-use iced_baseview::{
-    IcedBaseviewSettings, PollSubNotifier, Program, message, shell::window::WindowHandle,
-};
+use iced_baseview::baseview::{WindowOpenOptions, WindowScalePolicy};
+use iced_baseview::shell::window::IcedWindowHandle;
+use iced_baseview::{IcedBaseviewSettings, PollSubNotifier, Program, message};
 use nice_plug_core::context::gui::{GuiContext, ParamSetter};
+use nice_plug_core::editor::dpi::LogicalSize;
 use nice_plug_core::{
     editor::{Editor, ParentWindowHandle},
     params::persist::PersistentField,
 };
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     Arc, Mutex,
@@ -29,10 +28,6 @@ where
     pub(crate) notifier: PollSubNotifier,
 
     pub(crate) settings: Arc<EditorSettings>,
-
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    pub(crate) scaling_factor: AtomicCell<Option<f32>>,
 }
 
 impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State> {
@@ -40,7 +35,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
         &self,
         parent: ParentWindowHandle,
         context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any + Send> {
+    ) -> Box<dyn std::any::Any> {
         let nice_ctx = NiceGuiContext {
             context: context.clone(),
             window_state: self.window_state.clone(),
@@ -48,25 +43,20 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
 
         let build = self.build.clone();
         let editor_state = EditorState::from_shared(&self.editor_state);
+        let host_scale_factor = self.window_state.host_scale_factor();
+        let logical_size = self.window_state.size();
 
-        let (unscaled_width, unscaled_height) = self.window_state.logical_size();
-        let scaling_factor = self.scaling_factor.load();
+        let scale_policy = host_scale_factor
+            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
 
-        #[allow(clippy::needless_update)]
         let window = iced_baseview::open_parented(
-            &ParentWindowHandleAdapter(parent),
+            &parent,
             IcedBaseviewSettings {
-                window: WindowOpenOptions {
-                    title: String::from("iced window"),
-                    // Baseview should be doing the DPI scaling for us
-                    size: Size::new(unscaled_width as f64, unscaled_height as f64),
-                    // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-                    //       not the mouse events.
-                    scale: scaling_factor
-                        .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                        .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-                    ..Default::default()
-                },
+                window: WindowOpenOptions::new()
+                    .with_title(self.settings.window_title.clone())
+                    .with_size(logical_size)
+                    .with_scale_policy(scale_policy),
                 ignore_non_modifier_keys: self.settings.ignore_non_modifier_keys,
                 always_redraw: self.settings.always_redraw,
             },
@@ -83,25 +73,21 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
     }
 
     /// Size of the editor window
-    fn size(&self) -> (u32, u32) {
-        let new_size = self.window_state.requested_logical_size.load();
-        // This method will be used to ask the host for new size.
-        // If the editor is currently being resized and new size hasn't been consumed and set yet, return new requested size.
-        if let Some(new_size) = new_size {
-            new_size
-        } else {
-            self.window_state.logical_size()
-        }
+    fn size(&self) -> nice_plug_core::editor::dpi::Size {
+        self.window_state.size().into()
     }
 
-    fn set_scale_factor(&self, factor: f32) -> bool {
+    fn set_scale_factor(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.window_state.is_open() {
             return false;
         }
 
-        self.scaling_factor.store(Some(factor));
+        self.window_state
+            .host_scale_factor
+            .store(Some(factor as f32));
+
         true
     }
 
@@ -121,12 +107,8 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
 /// The window handle used for [`IcedEditor`].
 struct IcedEditorHandle<Message: 'static + Send> {
     iced_state: Arc<WindowState>,
-    _window: WindowHandle<Message>,
+    _window: IcedWindowHandle<Message>,
 }
-
-/// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
-/// having this requirement?
-unsafe impl<Message: 'static + Send> Send for IcedEditorHandle<Message> {}
 
 impl<Message: 'static + Send> Drop for IcedEditorHandle<Message> {
     fn drop(&mut self) {
@@ -139,11 +121,14 @@ impl<Message: 'static + Send> Drop for IcedEditorHandle<Message> {
 pub struct WindowState {
     /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug_core::params::persist::serialize_atomic_cell")]
-    pub(crate) logical_size: AtomicCell<(u32, u32)>,
+    pub(crate) size: AtomicCell<LogicalSize<f32>>,
 
-    /// The new size of the window, if it was requested to resize by the GUI.
     #[serde(skip)]
-    pub(crate) requested_logical_size: AtomicCell<Option<(u32, u32)>>,
+    pub(crate) window_scale_factor: AtomicCell<f32>,
+    #[serde(skip)]
+    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
+    /// should use the system scaling factor instead.
+    pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     #[serde(skip)]
@@ -152,7 +137,7 @@ pub struct WindowState {
 
 impl<'a> PersistentField<'a, WindowState> for Arc<WindowState> {
     fn set(&self, new_value: WindowState) {
-        self.logical_size.store(new_value.logical_size.load());
+        self.size.store(new_value.size.load());
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -167,28 +152,32 @@ impl WindowState {
     /// Initialize the GUI's state. This value can be passed to
     /// [`create_iced_editor()`](crate::create_iced_editor). The window size is in logical
     /// pixels, so before it is multiplied by the DPI scaling factor.
-    pub fn from_logical_size(width: u32, height: u32) -> Arc<WindowState> {
+    pub fn from_size(size: LogicalSize<f32>) -> Arc<WindowState> {
         Arc::new(WindowState {
-            logical_size: AtomicCell::new((width, height)),
-            requested_logical_size: Default::default(),
+            size: AtomicCell::new(size),
+            window_scale_factor: AtomicCell::new(1.0),
+            host_scale_factor: AtomicCell::new(None),
             open: AtomicBool::new(false),
         })
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn logical_size(&self) -> (u32, u32) {
-        self.logical_size.load()
+    pub fn size(&self) -> LogicalSize<f32> {
+        self.size.load()
+    }
+
+    pub fn window_scale_factor(&self) -> f32 {
+        self.window_scale_factor.load()
+    }
+
+    pub fn host_scale_factor(&self) -> Option<f32> {
+        self.host_scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
     // Called `is_open()` instead of `open()` to avoid the ambiguity.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
-    }
-
-    /// Set the new size that will be used to resize the window if the host allows.
-    pub fn set_requested_logical_size(&self, new_size: (u32, u32)) {
-        self.requested_logical_size.store(Some(new_size));
     }
 }
 
@@ -200,8 +189,8 @@ pub struct NiceGuiContext {
 
 impl NiceGuiContext {
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn logical_size(&self) -> (u32, u32) {
-        self.window_state.logical_size()
+    pub fn size(&self) -> LogicalSize<f32> {
+        self.window_state.size()
     }
 
     /// Whether the GUI is currently visible.
@@ -211,46 +200,26 @@ impl NiceGuiContext {
     }
 
     /// Set the new size that will be used to resize the window if the host allows.
-    pub fn set_requested_logical_size(&self, new_size: (u32, u32)) {
-        self.window_state.set_requested_logical_size(new_size);
+    pub fn request_resize(&self, new_size: LogicalSize<f32>) {
+        assert_ne!(new_size, LogicalSize::new(0.0, 0.0));
+
+        let old_size = self.window_state.size();
+
+        if new_size == old_size {
+            return;
+        }
+
+        self.window_state.size.store(new_size);
 
         // Ask the plugin host to resize to self.size()
-        if self.context.request_resize() {
-            self.window_state.logical_size.store(new_size);
-
-            // TODO: Resize Iced content?
+        if !self.context.request_resize() {
+            self.window_state.size.store(old_size);
         }
     }
 
     pub fn param_setter<'a>(&'a self) -> ParamSetter<'a> {
         ParamSetter {
             raw_context: &*self.context,
-        }
-    }
-}
-
-/// This version of `baseview` uses a different version of `raw_window_handle than nice-plug, so we
-/// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(ParentWindowHandle);
-
-unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match self.0 {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
-            }
-            ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
-            }
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
-            }
         }
     }
 }

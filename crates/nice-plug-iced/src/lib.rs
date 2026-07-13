@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use crossbeam_utils::atomic::AtomicCell;
 use iced_baseview::{PollSubNotifier, Program};
 use nice_plug_core::editor::Editor;
 use serde::{Deserialize, Serialize};
@@ -44,20 +43,16 @@ where
         settings: Arc::new(settings),
         build: Arc::new(build),
         notifier,
-
-        // TODO: We can't get the size of the window when baseview does its own scaling, so if the
-        //       host does not set a scale factor on Windows or Linux we should just use a factor of
-        //       1. That may make the GUI tiny but it also prevents it from getting cut off.
-        #[cfg(target_os = "macos")]
-        scaling_factor: AtomicCell::new(None),
-        #[cfg(not(target_os = "macos"))]
-        scaling_factor: AtomicCell::new(Some(1.0)),
     }))
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EditorSettings {
+    pub window_title: String,
+
     /// Ignore key inputs, except for modifier keys such as SHIFT and ALT
+    ///
+    /// By default this is set to `false`.
     pub ignore_non_modifier_keys: bool,
 
     /// Always redraw whenever the baseview window updates instead of only when iced wants to update
@@ -65,5 +60,7 @@ pub struct EditorSettings {
     /// trigger a redraw on window visibility change (which may cause blank windows when opening or
     /// reopening the editor) and an iced limitation where it's not possible to have animations
     /// without using an asynchronous timer stream to send redraw messages to the application.
+    ///
+    /// By default this is set to `false`.
     pub always_redraw: bool,
 }

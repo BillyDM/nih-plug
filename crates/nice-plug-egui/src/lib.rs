@@ -9,6 +9,7 @@ use crossbeam::atomic::AtomicCell;
 use egui::{Context, Ui};
 use nice_plug_core::context::gui::ParamSetter;
 use nice_plug_core::editor::Editor;
+use nice_plug_core::editor::dpi::LogicalSize;
 use nice_plug_core::params::persist::PersistentField;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -24,19 +25,11 @@ pub use egui_baseview::*;
 #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
 pub use baseview::gl::{GlConfig, Profile};
 
+use crate::editor::EguiNiceSettings;
+
 mod editor;
 pub mod resizable_window;
 pub mod widgets;
-
-#[derive(Default, Debug, Clone)]
-pub struct EguiSettings {
-    pub graphics_config: GraphicsConfig,
-
-    /// Only has effect on the opengl backend.
-    ///
-    /// By default this is set to `false`.
-    pub enable_vsync_on_x11: bool,
-}
 
 /// Create an [`Editor`] instance using an [`egui`] GUI. Using the user state parameter is
 /// optional, but it can be useful for keeping track of some temporary GUI-only settings. See the
@@ -51,14 +44,14 @@ pub struct EguiSettings {
 pub fn create_egui_editor<T, B, U>(
     egui_state: Arc<EguiState>,
     user_state: T,
-    settings: EguiSettings,
+    settings: EguiNiceSettings,
     build: B,
     update: U,
 ) -> Option<Box<dyn Editor>>
 where
     T: 'static + Send,
-    B: Fn(&Context, &mut Queue, &mut T) + 'static + Send + Sync,
-    U: Fn(&mut Ui, &ParamSetter, &mut Queue, &mut T) + 'static + Send + Sync,
+    B: Fn(&Context, &mut ExtraOutputCommands, &mut T) + 'static + Send + Sync,
+    U: Fn(&mut Ui, &ParamSetter, &mut ExtraOutputCommands, &mut T) + 'static + Send + Sync,
 {
     Some(Box::new(editor::EguiEditor {
         egui_state,
@@ -66,14 +59,6 @@ where
         settings: Arc::new(settings),
         build: Arc::new(build),
         update: Arc::new(update),
-
-        // TODO: We can't get the size of the window when baseview does its own scaling, so if the
-        //       host does not set a scale factor on Windows or Linux we should just use a factor of
-        //       1. That may make the GUI tiny but it also prevents it from getting cut off.
-        #[cfg(target_os = "macos")]
-        scaling_factor: AtomicCell::new(None),
-        #[cfg(not(target_os = "macos"))]
-        scaling_factor: AtomicCell::new(Some(1.0)),
     }))
 }
 
@@ -82,11 +67,14 @@ where
 pub struct EguiState {
     /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug_core::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<(u32, u32)>,
+    size: AtomicCell<LogicalSize<f32>>,
 
-    /// The new size of the window, if it was requested to resize by the GUI.
     #[serde(skip)]
-    requested_size: AtomicCell<Option<(u32, u32)>>,
+    window_scale_factor: AtomicCell<f32>,
+    #[serde(skip)]
+    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
+    /// should use the system scaling factor instead.
+    host_scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     #[serde(skip)]
@@ -109,27 +97,30 @@ impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
 impl EguiState {
     /// Initialize the GUI's state. This value can be passed to [`create_egui_editor()`]. The window
     /// size is in logical pixels, so before it is multiplied by the DPI scaling factor.
-    pub fn from_size(width: u32, height: u32) -> Arc<EguiState> {
+    pub fn from_size(size: LogicalSize<f32>) -> Arc<EguiState> {
         Arc::new(EguiState {
-            size: AtomicCell::new((width, height)),
-            requested_size: Default::default(),
+            size: AtomicCell::new(size),
+            window_scale_factor: AtomicCell::new(1.0),
+            host_scale_factor: AtomicCell::new(None),
             open: AtomicBool::new(false),
         })
     }
 
-    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> (u32, u32) {
+    pub fn size(&self) -> LogicalSize<f32> {
         self.size.load()
+    }
+
+    pub fn window_scale_factor(&self) -> f32 {
+        self.window_scale_factor.load()
+    }
+
+    pub fn host_scale_factor(&self) -> Option<f32> {
+        self.host_scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
     // Called `is_open()` instead of `open()` to avoid the ambiguity.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
-    }
-
-    /// Set the new size (in logical pixels) that will be used to resize the window if the host allows.
-    pub fn set_requested_size(&self, new_size: (u32, u32)) {
-        self.requested_size.store(Some(new_size));
     }
 }

@@ -13,12 +13,12 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", version = "0.1.0", features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { version = "0.1.1", features = ["opengl"] }
-wgpu = "29"
+baseview = { version = "0.2.0", features = ["opengl"] }
+wgpu = "30"
 # Reduce wgpu log spam
 log = { version = "0.4", features = [
     "max_level_debug",
@@ -28,9 +28,7 @@ tracing = { version = "0.1", features = [
     "max_level_info",
     "release_max_level_info",
 ] }
-raw-window-handle = "0.5"
-raw-window-handle-06 = { package = "raw-window-handle", version = "0.6" }
-pollster = "0.4.0"
+pollster = "1.0"
 crossbeam = "0.8"
 atomic_float = "1.1"
 # To make the state persistable

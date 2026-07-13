@@ -1,5 +1,5 @@
 use egui::{Margin, Vec2};
-use nice_plug::prelude::*;
+use nice_plug::{editor::dpi::LogicalSize, prelude::*};
 use nice_plug_egui::{EguiState, create_egui_editor, resizable_window::ResizableWindow, widgets};
 use std::sync::{Arc, Mutex};
 
@@ -105,7 +105,10 @@ impl Default for Gain {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            editor_state: EguiState::from_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
+            editor_state: EguiState::from_size(LogicalSize::new(
+                MIN_WINDOW_WIDTH as f32,
+                MIN_WINDOW_HEIGHT as f32,
+            )),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -227,7 +230,6 @@ impl Plugin for Gain {
         let params = self.params.clone();
         let peak_meter = self.peak_meter.clone();
         let track_info = self.track_info.clone();
-        let egui_state = params.editor_state.clone();
 
         create_egui_editor(
             self.params.editor_state.clone(),
@@ -237,7 +239,7 @@ impl Plugin for Gain {
             move |ui, setter, _queue, gui_state| {
                 ResizableWindow::new("res-wind")
                     .min_size(Vec2::new(MIN_WINDOW_WIDTH as f32, MIN_WINDOW_HEIGHT as f32))
-                    .show(ui, egui_state.as_ref(), |ui| {
+                    .show(ui, |ui| {
                         egui::Frame::new()
                             .inner_margin(Margin::same(5))
                             .show(ui, |ui| {

@@ -1,5 +1,6 @@
-use atomic_float::AtomicF32;
+use atomic_float::AtomicF64;
 use atomic_refcell::{AtomicRefCell, AtomicRefMut};
+use baseview::dpi::PhysicalSize;
 use clap_sys::events::{
     CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_IS_LIVE, CLAP_EVENT_MIDI, CLAP_EVENT_MIDI_SYSEX,
     CLAP_EVENT_NOTE_CHOKE, CLAP_EVENT_NOTE_END, CLAP_EVENT_NOTE_EXPRESSION, CLAP_EVENT_NOTE_OFF,
@@ -82,9 +83,9 @@ use parking_lot::Mutex;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::{CStr, c_void};
+use std::ffi::{CStr, c_ulong, c_void};
 use std::mem;
-use std::num::NonZeroU32;
+use std::num::{NonZeroIsize, NonZeroU32};
 use std::os::raw::c_char;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -129,12 +130,12 @@ pub struct Wrapper<P: ClapPlugin> {
     editor: AtomicRefCell<Option<Mutex<Box<dyn Editor>>>>,
     /// A handle for the currently active editor instance. The plugin should implement `Drop` on
     /// this handle for its closing behavior.
-    editor_handle: Mutex<Option<Box<dyn Any + Send>>>,
+    editor_handle: Mutex<Option<EditorHandleWrapper>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
-    editor_scaling_factor: AtomicF32,
+    scale_factor: AtomicF64,
 
     is_activated: AtomicBool,
     is_processing: AtomicBool,
@@ -574,7 +575,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             // Initialized later as it needs a reference to the wrapper for the async executor
             editor: AtomicRefCell::new(None),
             editor_handle: Mutex::new(None),
-            editor_scaling_factor: AtomicF32::new(1.0),
+            scale_factor: AtomicF64::new(1.0),
 
             is_activated: AtomicBool::new(false),
             is_processing: AtomicBool::new(false),
@@ -852,14 +853,14 @@ impl<P: ClapPlugin> Wrapper<P> {
             self.editor.borrow().as_ref(),
         ) {
             (Some(host_gui), Some(editor)) => {
-                let (unscaled_width, unscaled_height) = editor.lock().size();
-                let scaling_factor = self.editor_scaling_factor.load(Ordering::Relaxed);
+                let scale_factor = self.scale_factor.load(Ordering::Relaxed);
+                let size: PhysicalSize<u32> = editor.lock().size().to_physical(scale_factor);
 
                 unsafe_clap_call! {
                     host_gui=>request_resize(
                         &*self.host_callback,
-                        (unscaled_width as f32 * scaling_factor).round() as u32,
-                        (unscaled_height as f32 * scaling_factor).round() as u32,
+                        size.width,
+                        size.height,
                     )
                 }
             }
@@ -2878,11 +2879,11 @@ impl<P: ClapPlugin> Wrapper<P> {
             .as_ref()
             .unwrap()
             .lock()
-            .set_scale_factor(scale as f32)
+            .set_scale_factor(scale)
         {
             wrapper
-                .editor_scaling_factor
-                .store(scale as f32, std::sync::atomic::Ordering::Relaxed);
+                .scale_factor
+                .store(scale, std::sync::atomic::Ordering::Relaxed);
             true
         } else {
             false
@@ -2904,14 +2905,19 @@ impl<P: ClapPlugin> Wrapper<P> {
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
         // For macOS the scaling factor is always 1
-        let (unscaled_width, unscaled_height) =
-            wrapper.editor.borrow().as_ref().unwrap().lock().size();
-        let scaling_factor = wrapper.editor_scaling_factor.load(Ordering::Relaxed);
+        let scale_factor = wrapper.scale_factor.load(Ordering::Relaxed);
+        let size: PhysicalSize<u32> = wrapper
+            .editor
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .lock()
+            .size()
+            .to_physical(scale_factor);
+
         unsafe {
-            (*width, *height) = (
-                (unscaled_width as f32 * scaling_factor).round() as u32,
-                (unscaled_height as f32 * scaling_factor).round() as u32,
-            );
+            *width = size.width;
+            *height = size.height;
         }
 
         true
@@ -2975,15 +2981,10 @@ impl<P: ClapPlugin> Wrapper<P> {
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        let scaling_factor = wrapper.editor_scaling_factor.load(Ordering::Relaxed);
-        // The host works in physical pixels; the editor works in logical pixels.
-        let logical_width = (width as f32 / scaling_factor).round() as u32;
-        let logical_height = (height as f32 / scaling_factor).round() as u32;
-
         // Hand the new size to the editor. If there is no editor open, or the
         // editor doesn't support being resized, this fails and we tell the host so.
         match wrapper.editor.borrow().as_ref() {
-            Some(editor) => editor.lock().set_size(logical_width, logical_height),
+            Some(editor) => editor.lock().set_size(PhysicalSize { width, height }),
             None => false,
         }
     }
@@ -3005,12 +3006,16 @@ impl<P: ClapPlugin> Wrapper<P> {
                 let parent_handle = unsafe {
                     if api == CLAP_WINDOW_API_X11 {
                         #[allow(clippy::unnecessary_cast)]
-                        let w = window.specific.x11 as u32;
-                        ParentWindowHandle::X11Window(w)
+                        let w = window.specific.x11 as c_ulong;
+                        ParentWindowHandle::XlibWindow(w)
                     } else if api == CLAP_WINDOW_API_COCOA {
-                        ParentWindowHandle::AppKitNsView(window.specific.cocoa)
+                        check_null_ptr!(false, window.specific.cocoa);
+                        let w = NonNull::new(window.specific.cocoa).unwrap();
+                        ParentWindowHandle::AppKitNsView(w)
                     } else if api == CLAP_WINDOW_API_WIN32 {
-                        ParentWindowHandle::Win32Hwnd(window.specific.win32)
+                        check_null_ptr!(false, window.specific.win32);
+                        let w = NonZeroIsize::new(window.specific.win32 as isize).unwrap();
+                        ParentWindowHandle::Win32Hwnd(w)
                     } else {
                         crate::nice_debug_assert_failure!("Host passed an invalid API");
                         return false;
@@ -3018,15 +3023,15 @@ impl<P: ClapPlugin> Wrapper<P> {
                 };
 
                 // This extension is only exposed when we have an editor
-                *editor_handle = Some(
-                    wrapper
+                *editor_handle = Some(EditorHandleWrapper {
+                    _handle: wrapper
                         .editor
                         .borrow()
                         .as_ref()
                         .unwrap()
                         .lock()
                         .spawn(parent_handle, wrapper.clone().make_gui_context()),
-                );
+                });
 
                 true
             } else {
@@ -3514,3 +3519,12 @@ unsafe fn query_host_extension<T>(
         None
     }
 }
+
+/// We need to store the !Send editor handle in the wrapper.
+struct EditorHandleWrapper {
+    _handle: Box<dyn Any>,
+}
+
+/// # Safety: This is safe because it is only ever used to drop the editor handle in
+/// `ext_gui_destroy()`, which the host only calls from the main thread.
+unsafe impl Send for EditorHandleWrapper {}

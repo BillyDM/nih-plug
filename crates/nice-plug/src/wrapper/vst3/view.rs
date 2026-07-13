@@ -1,9 +1,11 @@
-use atomic_float::AtomicF32;
+use atomic_float::AtomicF64;
+use baseview::dpi::PhysicalSize;
 use nice_plug_core::editor::{Editor, ParentWindowHandle};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
-use std::ffi::{CStr, c_void};
-use std::mem;
+use std::ffi::{CStr, c_ulong, c_void};
+use std::num::NonZeroIsize;
+use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use vst3::Steinberg::{
@@ -147,7 +149,7 @@ use {
 pub(crate) struct WrapperView<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
     editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: Mutex<Option<Box<dyn Any + Send>>>,
+    editor_handle: Mutex<Option<EditorHandleWrapper>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -160,7 +162,7 @@ pub(crate) struct WrapperView<P: Vst3Plugin> {
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
-    scaling_factor: AtomicF32,
+    scale_factor: AtomicF64,
 }
 
 impl<P: Vst3Plugin> Class for WrapperView<P> {
@@ -226,7 +228,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
             plug_frame: RwLock::new(None),
             #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             run_loop_event_handler: RwLock::new(None),
-            scaling_factor: AtomicF32::new(1.0),
+            scale_factor: AtomicF64::new(1.0),
         }
     }
 
@@ -245,13 +247,16 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let (unscaled_width, unscaled_height) = this.editor.lock().size();
-                let scaling_factor = this.scaling_factor.load(Ordering::Relaxed);
+                let size = this.editor.lock().size();
+                let scale_factor = this.scale_factor.load(Ordering::Relaxed);
+
+                let physical_size: PhysicalSize<i32> = size.to_physical(scale_factor);
+
                 let mut size = ViewRect {
                     left: 0,
                     top: 0,
-                    right: (unscaled_width as f32 * scaling_factor).round() as i32,
-                    bottom: (unscaled_height as f32 * scaling_factor).round() as i32,
+                    right: physical_size.width,
+                    bottom: physical_size.height,
                 };
 
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
@@ -430,14 +435,20 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn attached(&self, parent: *mut c_void, type_: FIDString) -> tresult {
+        check_null_ptr!(parent);
+
         let mut editor_handle = self.editor_handle.lock();
         if editor_handle.is_none() {
             let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
-                ParentWindowHandle::X11Window(parent as usize as u32)
+                #[allow(clippy::unnecessary_cast)]
+                let w = parent as usize as c_ulong;
+                ParentWindowHandle::XlibWindow(w)
             } else if unsafe { fid_matches(type_, kPlatformTypeNSView) } {
-                ParentWindowHandle::AppKitNsView(parent)
+                let w = NonNull::new(parent).unwrap();
+                ParentWindowHandle::AppKitNsView(w)
             } else if unsafe { fid_matches(type_, kPlatformTypeHWND) } {
-                ParentWindowHandle::Win32Hwnd(parent)
+                let w = NonZeroIsize::new(parent as isize).unwrap();
+                ParentWindowHandle::Win32Hwnd(w)
             } else {
                 crate::nice_debug_assert_failure!("Unknown window handle type: {:?}", unsafe {
                     CStr::from_ptr(type_)
@@ -445,11 +456,13 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 return kInvalidArgument;
             };
 
-            *editor_handle = Some(
-                self.editor
+            *editor_handle = Some(EditorHandleWrapper {
+                _handle: self
+                    .editor
                     .lock()
                     .spawn(parent_handle, self.inner.clone().make_gui_context()),
-            );
+            });
+
             self.inner.is_editor_open.store(true, Ordering::SeqCst);
 
             kResultOk
@@ -495,18 +508,18 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn getSize(&self, size: *mut ViewRect) -> tresult {
         check_null_ptr!(size);
 
-        unsafe { *size = mem::zeroed() };
+        let size = unsafe { &mut *size };
 
         // TODO: This is technically incorrect during resizing, this should still report the old
         //       size until `.on_size()` has been called. We should probably only bother fixing this
         //       if it turns out to be an issue.
-        let (unscaled_width, unscaled_height) = self.editor.lock().size();
-        let scaling_factor = self.scaling_factor.load(Ordering::Relaxed);
-        let size = unsafe { &mut *size };
+        let scale_factor = self.scale_factor.load(Ordering::Relaxed);
+        let editor_size: PhysicalSize<i32> = self.editor.lock().size().to_physical(scale_factor);
+
         size.left = 0;
-        size.right = (unscaled_width as f32 * scaling_factor).round() as i32;
+        size.right = editor_size.width;
         size.top = 0;
-        size.bottom = (unscaled_height as f32 * scaling_factor).round() as i32;
+        size.bottom = editor_size.height;
 
         kResultOk
     }
@@ -516,21 +529,19 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
         // The host is telling us the view's new frame (after honoring an earlier
         // `request_resize()`, or because the user dragged a host resize handle).
-        let scaling_factor = self.scaling_factor.load(Ordering::Relaxed);
         let phys_width = unsafe { (*new_size).right - (*new_size).left };
         let phys_height = unsafe { (*new_size).bottom - (*new_size).top };
         if phys_width <= 0 || phys_height <= 0 {
             return kResultFalse;
         }
 
-        // The host works in physical pixels; the editor works in logical pixels.
-        let logical_width = (phys_width as f32 / scaling_factor).round() as u32;
-        let logical_height = (phys_height as f32 / scaling_factor).round() as u32;
-
         // Apply the new size to the editor. Editors that don't support being
         // resized return `false` from `set_size()`, in which case we tell the
         // host we couldn't honor it.
-        if self.editor.lock().set_size(logical_width, logical_height) {
+        if self.editor.lock().set_size(PhysicalSize {
+            width: phys_width as u32,
+            height: phys_height as u32,
+        }) {
             kResultOk
         } else {
             kResultFalse
@@ -606,8 +617,8 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
             return kResultFalse;
         }
 
-        if self.editor.lock().set_scale_factor(factor) {
-            self.scaling_factor.store(factor, Ordering::Relaxed);
+        if self.editor.lock().set_scale_factor(factor as f64) {
+            self.scale_factor.store(factor as f64, Ordering::Relaxed);
             kResultOk
         } else {
             kResultFalse
@@ -686,3 +697,12 @@ impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
         }
     }
 }
+
+/// We need to store the !Send editor handle in the wrapper.
+struct EditorHandleWrapper {
+    _handle: Box<dyn Any>,
+}
+
+/// # Safety: This is safe because it is only ever used to drop the editor handle in
+/// `removed()`, which the host only calls from the main thread.
+unsafe impl Send for EditorHandleWrapper {}

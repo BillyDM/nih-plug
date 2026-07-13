@@ -4,8 +4,6 @@ use egui::emath::GuiRounding;
 use egui::{CentralPanel, Id, Rect, Response, Sense, Ui, Vec2, pos2};
 use egui::{InnerResponse, UiBuilder};
 
-use crate::EguiState;
-
 /// Adds a corner to the plugin window that can be dragged in order to resize it.
 /// Resizing happens through plugin API, hence a custom implementation is needed.
 pub struct ResizableWindow {
@@ -28,12 +26,7 @@ impl ResizableWindow {
         self
     }
 
-    pub fn show<R>(
-        self,
-        ui: &mut Ui,
-        egui_state: &EguiState,
-        add_contents: impl FnOnce(&mut Ui) -> R,
-    ) -> InnerResponse<R> {
+    pub fn show<R>(self, ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         CentralPanel::default().show(ui, move |ui| {
             let ui_rect = ui.clip_rect();
             let mut content_ui =
@@ -51,10 +44,7 @@ impl ResizableWindow {
                     .max(self.min_size);
 
                 if corner_response.dragged() {
-                    egui_state.set_requested_size((
-                        desired_size.x.round() as u32,
-                        desired_size.y.round() as u32,
-                    ));
+                    ui.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
                 }
             }
 

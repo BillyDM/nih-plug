@@ -113,7 +113,7 @@ pub struct WrapperConfig {
     ///
     /// The default value is `1.0`.
     #[clap(value_parser, long, default_value = "1.0")]
-    pub dpi_scale: f32,
+    pub dpi_scale: f64,
 
     /// The transport's tempo.
     ///
