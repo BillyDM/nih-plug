@@ -1,5 +1,6 @@
 use atomic_float::AtomicF64;
 use baseview::dpi::PhysicalSize;
+use fragile::Fragile;
 use nice_plug_core::editor::{Editor, ParentWindowHandle};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
@@ -149,7 +150,7 @@ use {
 pub(crate) struct WrapperView<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
     editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: Mutex<Option<EditorHandleWrapper>>,
+    editor_handle: Mutex<Option<Fragile<Box<dyn Any>>>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -456,12 +457,11 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 return kInvalidArgument;
             };
 
-            *editor_handle = Some(EditorHandleWrapper {
-                _handle: self
-                    .editor
+            *editor_handle = Some(Fragile::new(
+                self.editor
                     .lock()
                     .spawn(parent_handle, self.inner.clone().make_gui_context()),
-            });
+            ));
 
             self.inner.is_editor_open.store(true, Ordering::SeqCst);
 
@@ -697,12 +697,3 @@ impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
         }
     }
 }
-
-/// We need to store the !Send editor handle in the wrapper.
-struct EditorHandleWrapper {
-    _handle: Box<dyn Any>,
-}
-
-/// # Safety: This is safe because it is only ever used to drop the editor handle in
-/// `removed()`, which the host only calls from the main thread.
-unsafe impl Send for EditorHandleWrapper {}

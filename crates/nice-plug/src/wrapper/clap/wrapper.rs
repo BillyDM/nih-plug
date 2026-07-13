@@ -68,6 +68,7 @@ use clap_sys::stream::{clap_istream, clap_ostream};
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::{self, SendTimeoutError};
 use crossbeam::queue::ArrayQueue;
+use fragile::Fragile;
 use nice_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig, ProcessMode};
 use nice_plug_core::context::gui::AsyncExecutor;
 use nice_plug_core::context::process::Transport;
@@ -130,7 +131,7 @@ pub struct Wrapper<P: ClapPlugin> {
     editor: AtomicRefCell<Option<Mutex<Box<dyn Editor>>>>,
     /// A handle for the currently active editor instance. The plugin should implement `Drop` on
     /// this handle for its closing behavior.
-    editor_handle: Mutex<Option<EditorHandleWrapper>>,
+    editor_handle: Mutex<Option<Fragile<Box<dyn Any>>>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
@@ -3023,15 +3024,15 @@ impl<P: ClapPlugin> Wrapper<P> {
                 };
 
                 // This extension is only exposed when we have an editor
-                *editor_handle = Some(EditorHandleWrapper {
-                    _handle: wrapper
+                *editor_handle = Some(Fragile::new(
+                    wrapper
                         .editor
                         .borrow()
                         .as_ref()
                         .unwrap()
                         .lock()
                         .spawn(parent_handle, wrapper.clone().make_gui_context()),
-                });
+                ));
 
                 true
             } else {
@@ -3519,12 +3520,3 @@ unsafe fn query_host_extension<T>(
         None
     }
 }
-
-/// We need to store the !Send editor handle in the wrapper.
-struct EditorHandleWrapper {
-    _handle: Box<dyn Any>,
-}
-
-/// # Safety: This is safe because it is only ever used to drop the editor handle in
-/// `ext_gui_destroy()`, which the host only calls from the main thread.
-unsafe impl Send for EditorHandleWrapper {}
