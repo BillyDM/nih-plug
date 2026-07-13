@@ -197,7 +197,7 @@ impl ResizeHint {
 }
 
 /// A raw window handle for platform and GUI framework agnostic editors. This implements
-/// [`HasRawWindowHandle`] so it can be used directly with GUI libraries that use the same
+/// [`HasWindowHandle`] so it can be used directly with GUI libraries that use the same
 /// [`raw_window_handle`] version. If the library links against a different version of
 /// `raw_window_handle`, then you'll need to wrap around this type and implement the trait yourself.
 #[derive(Debug, Clone, Copy)]
