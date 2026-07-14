@@ -1,4 +1,4 @@
-use nice_plug::{editor::dpi::LogicalSize, prelude::*};
+use nice_plug::{editor::dpi::LogicalSize, log::LevelFilter, prelude::*};
 use nice_plug_iced::iced::{
     self, Center, PollSubNotifier, Theme,
     widget::{Column, ProgressBar, button, column, slider, text},
@@ -202,6 +202,18 @@ impl Plugin for Gain {
         }
 
         ProcessStatus::Normal
+    }
+
+    fn setup_logger() -> bool {
+        nice_plug::log::LoggerBuilder::new()
+            // Reduce log spam
+            .filter_crate("iced_wgpu", LevelFilter::Warn)
+            .filter_crate("cosmic_text", LevelFilter::Error)
+            .filter_crate("naga", LevelFilter::Warn)
+            .filter_crate("wgpu_core", LevelFilter::Warn)
+            .filter_crate("wgpu_hal", LevelFilter::Error)
+            .build_global()
+            .is_ok()
     }
 }
 

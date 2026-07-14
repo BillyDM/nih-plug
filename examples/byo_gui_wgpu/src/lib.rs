@@ -3,6 +3,7 @@
 use baseview::dpi::Size;
 use baseview::{WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy};
 use crossbeam::atomic::AtomicCell;
+use nice_plug::log::LevelFilter;
 use nice_plug::prelude::*;
 use nice_plug::{editor::dpi::LogicalSize, params::persist::PersistentField};
 use serde::{Deserialize, Serialize};
@@ -579,6 +580,16 @@ impl Plugin for MyPlugin {
         }
 
         ProcessStatus::Normal
+    }
+
+    fn setup_logger() -> bool {
+        nice_plug::log::LoggerBuilder::new()
+            // WGPU is quite spammy with its logs
+            .filter_crate("naga", LevelFilter::Warn)
+            .filter_crate("wgpu_core", LevelFilter::Warn)
+            .filter_crate("wgpu_hal", LevelFilter::Error)
+            .build_global()
+            .is_ok()
     }
 }
 

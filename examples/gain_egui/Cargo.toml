@@ -22,7 +22,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "standalone",
 ] }
 nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.3.0" }
-baseview = { version = "0.1.1", features = ["opengl"] }
+baseview = { version = "0.2.0", features = ["opengl"] }
 atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the
 # GUI and the audio thread.
@@ -30,12 +30,3 @@ rtrb = "0.3.3"
 # Optional, only include if you want to sync complex state between
 # the GUI and the audio thread.
 triple_buffer = "9.0.0"
-# If using wgpu, use the following to reduce log spam:
-log = { version = "0.4", features = [
-    "max_level_debug",
-    "release_max_level_info",
-] }
-tracing = { version = "0.1", features = [
-    "max_level_info",
-    "release_max_level_info",
-] }

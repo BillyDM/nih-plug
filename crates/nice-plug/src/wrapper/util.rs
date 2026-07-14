@@ -1,7 +1,10 @@
 use backtrace::Backtrace;
+use nice_log::LoggerBuilder;
+use nice_plug_core::plugin::Plugin;
 use std::cmp;
 use std::marker::PhantomData;
 use std::os::raw::c_char;
+use std::sync::atomic::AtomicBool;
 
 use crate::util::permit_alloc;
 
@@ -112,31 +115,19 @@ pub fn clamp_output_event_timing(timing: u32, total_buffer_len: u32) -> u32 {
 ///   `OutputDebugString()`.
 /// - A file path, in which case the output gets appended to the end of that file which will be
 ///   created if necessary.
-pub fn setup_logger() {
-    let log_level = if cfg!(debug_assertions) {
-        log::LevelFilter::Trace
-    } else {
-        log::LevelFilter::Info
-    };
+pub fn setup_logger<P: Plugin>() {
+    static DID_SETUP: AtomicBool = AtomicBool::new(false);
 
-    let logger_builder = nice_log::LoggerBuilder::new(log_level)
-        .filter_module("cosmic_text::buffer")
-        .filter_module("cosmic_text::shape")
-        .filter_module("selectors::matching");
+    let did_setup = DID_SETUP.swap(true, std::sync::atomic::Ordering::Relaxed);
+    if !did_setup {
+        if P::setup_logger() {
+            log_panics();
+            return;
+        }
 
-    // Always show the module in debug builds, makes it clearer where messages are coming from and
-    // it helps set up filters
-    #[cfg(debug_assertions)]
-    let logger_builder = logger_builder.always_show_module_path();
-
-    // In release builds there are some more logging messages from libraries that are not relevant
-    // to the end user that can be filtered out
-    #[cfg(not(debug_assertions))]
-    let logger_builder = logger_builder.filter_module("cosmic_text::font::system::std");
-
-    let logger_set = logger_builder.build_global().is_ok();
-    if logger_set {
-        log_panics();
+        if LoggerBuilder::new().build_global().is_ok() {
+            log_panics();
+        }
     }
 }
 

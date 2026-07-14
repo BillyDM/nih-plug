@@ -156,7 +156,7 @@ macro_rules! nice_export_clap {
             }
 
             pub extern "C" fn init(_plugin_path: *const c_char) -> bool {
-                setup_logger();
+                $({setup_logger::<$plugin_ty>;})+
                 true
             }
 

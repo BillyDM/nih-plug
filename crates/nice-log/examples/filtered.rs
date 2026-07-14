@@ -1,10 +1,10 @@
 use log::LevelFilter;
 
 fn main() {
-    nice_log::LoggerBuilder::new(LevelFilter::Trace)
+    nice_log::LoggerBuilder::new()
         // Filtering only works with exact matches, so the log messages from
         // `some_module::some_sub_module` will still show up
-        .filter_module("filtered::some_module")
+        .filter_module("filtered::some_module", LevelFilter::Info)
         .build_global()
         .expect("A logger has already been set up");
 

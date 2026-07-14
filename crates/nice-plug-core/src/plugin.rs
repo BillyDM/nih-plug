@@ -261,6 +261,20 @@ pub trait Plugin: Default + Send + 'static {
 
     /// Called when the host provides track information after [`initialize()`][Self::initialize()] and after changes are made to the track that the plugin is on.
     fn track_info_updated(&mut self, info: TrackInfo) {}
+
+    /// Configure the global logger here.
+    ///
+    /// Return `true` if the setting up the logger was successful, or return `false` to have nice-plug
+    /// automatically set up a logger with the default settings.
+    ///
+    /// Called once when the program starts (or when the shared library is loaded). If this plugin is
+    /// part of a bundle, then only the first plugin that appears in the export macro will have its
+    /// `setup_logger` method called.
+    ///
+    /// By default this returns `false`.
+    fn setup_logger() -> bool {
+        false
+    }
 }
 
 /// Indicates the current situation after the plugin has processed audio.

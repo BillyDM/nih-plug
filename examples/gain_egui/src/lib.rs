@@ -1,5 +1,5 @@
 use egui::{Margin, Vec2};
-use nice_plug::{editor::dpi::LogicalSize, prelude::*};
+use nice_plug::{editor::dpi::LogicalSize, log::LevelFilter, prelude::*};
 use nice_plug_egui::{EguiState, create_egui_editor, resizable_window::ResizableWindow, widgets};
 use std::sync::{Arc, Mutex};
 
@@ -458,6 +458,16 @@ impl Plugin for Gain {
         if let Ok(mut track_info) = self.track_info.lock() {
             *track_info = info;
         }
+    }
+
+    fn setup_logger() -> bool {
+        nice_plug::log::LoggerBuilder::new()
+            // If using the wgpu backend, reduce wgpu log spam
+            .filter_crate("naga", LevelFilter::Warn)
+            .filter_crate("wgpu_core", LevelFilter::Warn)
+            .filter_crate("wgpu_hal", LevelFilter::Error)
+            .build_global()
+            .is_ok()
     }
 }
 

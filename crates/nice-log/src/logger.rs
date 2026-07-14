@@ -2,9 +2,8 @@
 //! API.
 
 use log::{Level, LevelFilter, Log};
-use std::cell::Cell;
-use std::collections::HashSet;
 use std::sync::Mutex;
+use std::{cell::Cell, collections::HashMap};
 use termcolor::Color;
 use time::UtcOffset;
 
@@ -23,10 +22,10 @@ thread_local! {
 pub struct Logger {
     /// The maximum log level filter. This is already set globally using [`log::set_max_level()`]
     /// but it's probably a good idea to check it again regardless.
-    pub max_log_level: LevelFilter,
+    pub max_level: LevelFilter,
     /// If set to `true`, then the module path is always shown. Useful for debug builds and to
     /// configure the module blacklist.
-    pub always_show_module_path: bool,
+    pub show_module_path: bool,
     /// The local time offset. Queried once at startup to avoid having to do this over and over
     /// again.
     pub local_time_offset: UtcOffset,
@@ -35,22 +34,33 @@ pub struct Logger {
     /// Names of crates module paths that should be excluded from the log. Case sensitive, and only
     /// matches whole crate names and paths. Both the crate name and module path are checked
     /// separately to allow for a little bit of flexibility.
-    pub module_blacklist: HashSet<String>,
+    pub module_denylist: HashMap<String, LevelFilter>,
 }
 
 impl Logger {
-    /// Check if a target is enabled by comparing it to `self.module_blacklist`. If it contains a
+    /// Check if a target is enabled by comparing it to `self.module_denylist`. If it contains a
     /// colon, also check if the first part (assumed to be a crate name) matches the blacklist.
-    pub fn target_enabled(&self, target: &str) -> bool {
+    pub fn target_enabled(&self, metadata: &log::Metadata) -> bool {
+        let target = metadata.target();
+        let level = metadata.level();
+
         // The filtering happens by both the crate and module name. We don't have very sophisticated
         // filtering needs, so let's keep this simple and performant.
         if let Some((crate_name, _)) = target.split_once(':') {
-            if self.module_blacklist.contains(crate_name) {
+            if let Some(module_level) = self.module_denylist.get(crate_name)
+                && level > *module_level
+            {
                 return false;
             }
         }
 
-        !self.module_blacklist.contains(target)
+        if let Some(module_level) = self.module_denylist.get(target)
+            && level > *module_level
+        {
+            return false;
+        }
+
+        true
     }
 
     fn do_log(&self, mut writer: &mut dyn WriteExt, record: &log::Record) {
@@ -117,7 +127,7 @@ impl Logger {
             }
 
             let _ = write!(writer, ": ");
-        } else if self.always_show_module_path {
+        } else if self.show_module_path {
             // The spacing is a bit different without a thread name, hence the else if here
             if let Some(module_path) = record.module_path() {
                 let _ = write!(writer, "{}: ", module_path);
@@ -141,15 +151,11 @@ impl Logger {
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= self.max_log_level && !self.target_enabled(metadata.target())
+        metadata.level() <= self.max_level && !self.target_enabled(metadata)
     }
 
     fn log(&self, record: &log::Record) {
-        if !self.target_enabled(
-            record
-                .module_path()
-                .unwrap_or_else(|| record.metadata().target()),
-        ) {
+        if !self.target_enabled(record.metadata()) {
             return;
         }
 

@@ -3,7 +3,9 @@ use log::LevelFilter;
 fn main() {
     // The log output is determined by the `NICE_LOG` environment variable as dedicated by the rules
     // outlined in the repository's readme
-    nice_log::LoggerBuilder::new(LevelFilter::Trace)
+    nice_log::LoggerBuilder::new()
+        .max_level_release(LevelFilter::Trace)
+        .max_level_debug(LevelFilter::Debug)
         .build_global()
         // In this example something would be have gone very wrong if we cannot set up the logger.
         // If there however is a possibility that the logger is configured multiple times then this
