@@ -25,7 +25,7 @@ pub use egui_baseview::*;
 #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
 pub use baseview::gl::{GlConfig, Profile};
 
-use crate::editor::EguiNiceSettings;
+pub use crate::editor::EguiNiceSettings;
 
 mod editor;
 pub mod resizable_window;
