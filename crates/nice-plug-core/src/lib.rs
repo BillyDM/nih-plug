@@ -16,5 +16,5 @@ pub mod util;
 #[macro_use]
 pub mod debug;
 
-/// A re-export of the `log` crate for use in the debug macros. This should not be used directly.
-pub use log;
+/// A re-export of the `tracing` crate for use in the debug macros. This should not be used directly.
+pub use tracing;

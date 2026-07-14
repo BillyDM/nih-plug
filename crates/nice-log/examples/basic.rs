@@ -1,23 +1,20 @@
-use log::LevelFilter;
+use tracing::level_filters::LevelFilter;
 
 fn main() {
-    // The log output is determined by the `NICE_LOG` environment variable as dedicated by the rules
-    // outlined in the repository's readme
-    nice_log::LoggerBuilder::new()
-        .max_level_release(LevelFilter::Trace)
-        .max_level_debug(LevelFilter::Debug)
-        .build_global()
-        // In this example something would be have gone very wrong if we cannot set up the logger.
-        // If there however is a possibility that the logger is configured multiple times then this
-        // error should be handled appropriately.
-        .expect("A logger has already been set up");
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_writer(nice_log::writer_from_env())
+            .with_max_level(LevelFilter::DEBUG)
+            .finish(),
+    )
+    .unwrap();
 
     // When changing some of the level filter above some of these messages may no longer be printed
-    log::error!("This is an error");
-    log::warn!("This is a warning");
-    log::info!("This is a regular log message");
-    log::debug!("This is a debug message, usually only made visible during debug builds");
-    log::trace!("This is a trace message, usually hidden unless explicitly opted into");
+    tracing::error!("This is an error");
+    tracing::warn!("This is a warning");
+    tracing::info!("This is a regular log message");
+    tracing::debug!("This is a debug message, usually only made visible during debug builds");
+    tracing::trace!("This is a trace message, usually hidden unless explicitly opted into");
 
     // Debug and trace messages contain the module path
     some_module::log_from_module();
@@ -25,6 +22,6 @@ fn main() {
 
 mod some_module {
     pub fn log_from_module() {
-        log::debug!("This is a debug message printed from another module");
+        tracing::debug!("This is a debug message printed from another module");
     }
 }

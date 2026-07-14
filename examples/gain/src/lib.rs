@@ -1,6 +1,7 @@
 use nice_plug::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
+use tracing::level_filters::LevelFilter;
 
 struct Gain {
     params: Arc<GainParams>,
@@ -200,14 +201,44 @@ impl Plugin for Gain {
 
     // (Optional) Configure the global logger here.
     //
-    // Return `true` if the setting up the logger was successful, or return `false` to have nice-plug
-    // automatically set up a logger with the default settings.
+    // If setting up the logger was successful, return `Some(true)`. If it failed return `Some(false)`.
+    //
+    // Otherwise, returning `None` will do one of the following:
+    // * If the `tracing-subscriber` feature is enabled, then nice-plug will automatically set up a
+    //   logger with the default settings (uses LevelFilter::DEBUG when compiled in debug mode, and
+    //   LevelFilter::INFO when compiled in release mode).
+    // * If the `tracing-subscriber` feature is not enabled, then no logging will occur.
     //
     // Called once when the program starts (or when the shared library is loaded). If this plugin is
     // part of a bundle, then only the first plugin that appears in the export macro will have its
     // `setup_logger` method called.
-    fn setup_logger() -> bool {
-        nice_plug::log::LoggerBuilder::new().build_global().is_ok()
+    //
+    // By default this returns `None`.
+    fn setup_logger() -> Option<bool> {
+        Some(
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::FmtSubscriber::builder()
+                    .with_max_level(if cfg!(debug_assertions) {
+                        LevelFilter::DEBUG
+                    } else {
+                        LevelFilter::INFO
+                    })
+                    // This custom writer reads from the `NICE_LOG` environment variable to set the
+                    // output target.
+                    //
+                    // - A value of `stderr` causes the log to be printed to STDERR.
+                    // - A value of `windbg` causes the log to be output to the Windows debugger.
+                    // - Anything else is interpreted as a file name, which causes the log to be
+                    //   written to that file instead.
+                    //
+                    // If `NICE_LOG` is not set, then a dynamic logging output target is used instead.
+                    // On Windows this causes log messages to be sent to the Windows debugger when
+                    // one is attached, then falls back to STDERR. All other platforms use STDERR.
+                    .with_writer(nice_plug::log::writer_from_env())
+                    .finish(),
+            )
+            .is_ok(),
+        )
     }
 }
 

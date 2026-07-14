@@ -28,7 +28,7 @@ simd = []
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.2" }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
-log = "0.4"
+tracing.workspace = true
 atomic_float.workspace = true
 bitflags.workspace = true
 serde.workspace = true

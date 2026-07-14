@@ -15,3 +15,6 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "assert_process_allocs",
 ] }
 parking_lot = "0.12"
+# tracing dependencies are only needed if you want to set up your own logging filters
+tracing = "0.1"
+tracing-subscriber = "0.3.23"

@@ -1,5 +1,4 @@
 use backtrace::Backtrace;
-use nice_log::LoggerBuilder;
 use nice_plug_core::plugin::Plugin;
 use std::cmp;
 use std::marker::PhantomData;
@@ -120,12 +119,27 @@ pub fn setup_logger<P: Plugin>() {
 
     let did_setup = DID_SETUP.swap(true, std::sync::atomic::Ordering::SeqCst);
     if !did_setup {
-        if P::setup_logger() {
-            log_panics();
+        if let Some(is_ok) = P::setup_logger() {
+            if is_ok {
+                log_panics();
+            }
+
             return;
         }
 
-        if LoggerBuilder::new().build_global().is_ok() {
+        #[cfg(feature = "tracing-subscriber")]
+        if tracing::subscriber::set_global_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_max_level(if cfg!(debug_assertions) {
+                    tracing::level_filters::LevelFilter::DEBUG
+                } else {
+                    tracing::level_filters::LevelFilter::INFO
+                })
+                .with_writer(nice_log::writer_from_env())
+                .finish(),
+        )
+        .is_ok()
+        {
             log_panics();
         }
     }
