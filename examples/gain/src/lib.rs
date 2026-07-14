@@ -235,6 +235,9 @@ impl Plugin for Gain {
                     // On Windows this causes log messages to be sent to the Windows debugger when
                     // one is attached, then falls back to STDERR. All other platforms use STDERR.
                     .with_writer(nice_plug::log::writer_from_env())
+                    // It is recommended to disable ansi color support so that logging to a file is
+                    // more readable.
+                    .with_ansi(false)
                     .finish(),
             )
             .is_ok(),

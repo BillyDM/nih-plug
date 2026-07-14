@@ -10,6 +10,7 @@ description = "An opinionated yet flexible logger catering to the needs of the n
 keywords = ["log", "logging", "nice-plug"]
 
 [dependencies]
+tracing-appender = "0.2.5"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 workspace = true

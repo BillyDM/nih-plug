@@ -128,19 +128,27 @@ pub fn setup_logger<P: Plugin>() {
         }
 
         #[cfg(feature = "tracing-subscriber")]
-        if tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_max_level(if cfg!(debug_assertions) {
-                    tracing::level_filters::LevelFilter::DEBUG
-                } else {
-                    tracing::level_filters::LevelFilter::INFO
-                })
-                .with_writer(nice_log::writer_from_env())
-                .finish(),
-        )
-        .is_ok()
         {
-            log_panics();
+            #[cfg(debug_assertions)]
+            let sub = tracing_subscriber::FmtSubscriber::builder()
+                .with_max_level(tracing::level_filters::LevelFilter::DEBUG)
+                .with_target(true)
+                .with_ansi(false)
+                .with_writer(nice_log::writer_from_env())
+                .finish();
+
+            #[cfg(not(debug_assertions))]
+            let sub = tracing_subscriber::FmtSubscriber::builder()
+                .with_max_level(tracing::level_filters::LevelFilter::INFO)
+                .with_target(false)
+                .without_time()
+                .with_ansi(false)
+                .with_writer(nice_log::writer_from_env())
+                .finish();
+
+            if tracing::subscriber::set_global_default(sub).is_ok() {
+                log_panics();
+            }
         }
     }
 }

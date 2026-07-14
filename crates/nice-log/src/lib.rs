@@ -2,9 +2,10 @@
 
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, BufWriter, Stderr, Write};
+use std::io::{self, Stderr, Write};
 use std::path::Path;
 use std::sync::Mutex;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 
 #[cfg(windows)]
 mod windbg;
@@ -45,7 +46,7 @@ pub enum NiceLogWriter {
     #[cfg(windows)]
     WinDbg(windbg::WinDbgWriter),
     /// Writes to the file.
-    File(BufWriter<File>),
+    File(NonBlocking, WorkerGuard),
 }
 
 impl Debug for NiceLogWriter {
@@ -60,7 +61,7 @@ impl Debug for NiceLogWriter {
             NiceLogWriter::Stderr(_) => f.debug_tuple("Stderr").field(&"<stderr stream>").finish(),
             #[cfg(windows)]
             NiceLogWriter::WinDbg(windbg) => f.debug_tuple("WinDbg").field(windbg).finish(),
-            NiceLogWriter::File(file) => f.debug_tuple("File").field(file).finish(),
+            NiceLogWriter::File(file, _) => f.debug_tuple("File").field(file).finish(),
         }
     }
 }
@@ -130,8 +131,9 @@ impl NiceLogWriter {
     /// Construct an [`NiceLogWriter`] for doing buffered writes to a file.
     pub fn new_file_path<P: AsRef<Path>>(path: P) -> Result<Self, std::io::Error> {
         let file = File::options().create(true).append(true).open(path)?;
+        let (writer, guard) = NonBlocking::new(file);
 
-        Ok(Self::File(BufWriter::new(file)))
+        Ok(Self::File(writer, guard))
     }
 
     /// Returns a writer that can be written to using the [`write!()`] and [`writeln!()`] macros.
@@ -149,29 +151,74 @@ impl NiceLogWriter {
             NiceLogWriter::Stderr(stderr) => stderr,
             #[cfg(windows)]
             NiceLogWriter::WinDbg(windbg) => windbg,
-            NiceLogWriter::File(file) => file,
+            NiceLogWriter::File(file, _) => file,
         }
     }
 }
 
 impl Write for NiceLogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.writer().write(buf)
+        match self {
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::Stderr(stderr) => stderr.write(buf),
+            #[cfg(windows)]
+            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::File(file, _) => file.write(buf),
+        }
     }
 
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        self.writer().write_vectored(bufs)
+        match self {
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::Stderr(stderr) => stderr.write_vectored(bufs),
+            #[cfg(windows)]
+            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::File(file, _) => file.write_vectored(bufs),
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.writer().flush()
+        match self {
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::Stderr(stderr) => stderr.flush(),
+            #[cfg(windows)]
+            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::File(file, _) => file.flush(),
+        }
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.writer().write_all(buf)
+        match self {
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::Stderr(stderr) => stderr.write_all(buf),
+            #[cfg(windows)]
+            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::File(file, _) => file.write_all(buf),
+        }
     }
 
     fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> io::Result<()> {
-        self.writer().write_fmt(args)
+        match self {
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            #[cfg(windows)]
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::Stderr(stderr) => stderr.write_fmt(args),
+            #[cfg(windows)]
+            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::File(file, _) => file.write_fmt(args),
+        }
     }
 }
