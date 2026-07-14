@@ -84,8 +84,8 @@ nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.2.0" }
 iced_futures = "0.14"
 iced_debug = "0.14"
 iced_program = "0.14"
-iced_baseview = { version = "0.3.0", default-features = false, features = [
-    "nice-log",
+iced_baseview = { version = "0.4.0", default-features = false, features = [
+    "tracing",
 ] }
 crossbeam-utils = "0.8"
 # To make the state persistable
