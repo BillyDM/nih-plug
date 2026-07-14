@@ -118,7 +118,7 @@ pub fn clamp_output_event_timing(timing: u32, total_buffer_len: u32) -> u32 {
 pub fn setup_logger<P: Plugin>() {
     static DID_SETUP: AtomicBool = AtomicBool::new(false);
 
-    let did_setup = DID_SETUP.swap(true, std::sync::atomic::Ordering::Relaxed);
+    let did_setup = DID_SETUP.swap(true, std::sync::atomic::Ordering::SeqCst);
     if !did_setup {
         if P::setup_logger() {
             log_panics();
