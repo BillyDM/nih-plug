@@ -197,6 +197,18 @@ impl Plugin for Gain {
     // This can be used for cleaning up special resources like socket connections whenever the
     // plugin is deactivated. Most plugins won't need to do anything here.
     fn deactivate(&mut self) {}
+
+    // (Optional) Configure the global logger here.
+    //
+    // Return `true` if the setting up the logger was successful, or return `false` to have nice-plug
+    // automatically set up a logger with the default settings.
+    //
+    // Called once when the program starts (or when the shared library is loaded). If this plugin is
+    // part of a bundle, then only the first plugin that appears in the export macro will have its
+    // `setup_logger` method called.
+    fn setup_logger() -> bool {
+        nice_plug::log::LoggerBuilder::new().build_global().is_ok()
+    }
 }
 
 impl ClapPlugin for Gain {
