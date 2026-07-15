@@ -132,7 +132,7 @@ impl Plugin for Gain {
 
             // Individual ports and the layout as a whole can be named here. By default these names
             // are generated as needed. This layout will be called 'Stereo', while the other one is
-            // given the name 'Mono' based no the number of input and output channels.
+            // given the name 'Mono' based on the number of input and output channels.
             names: PortNames::const_default(),
         },
         AudioIOLayout {
