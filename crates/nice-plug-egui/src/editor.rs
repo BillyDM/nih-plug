@@ -1,64 +1,64 @@
 //! An [`Editor`] implementation for egui.
 
-use crate::EguiSettings;
 use crate::EguiState;
-use crossbeam::atomic::AtomicCell;
 use egui::Context;
-use egui::{Vec2, ViewportCommand};
+use egui::ViewportCommand;
 use egui_baseview::EguiWindowSettings;
-use egui_baseview::baseview::{PhySize, Size, WindowHandle, WindowScalePolicy};
-use egui_baseview::{EguiWindow, Queue};
+use egui_baseview::ExtraOutputCommands;
+use egui_baseview::baseview::{WindowHandle, WindowScalePolicy};
+use egui_baseview::{EguiWindow, GraphicsConfig};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::gui::ParamSetter;
 use nice_plug_core::editor::Editor;
 use nice_plug_core::editor::ParentWindowHandle;
+use nice_plug_core::editor::dpi::LogicalSize;
+use nice_plug_core::editor::dpi::Size;
 use parking_lot::Mutex;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+
+#[derive(Default)]
+pub struct EguiNiceSettings {
+    pub title: String,
+    pub graphics: GraphicsConfig,
+}
+
+impl EguiNiceSettings {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn with_tile(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    #[inline]
+    pub fn with_graphics_config(mut self, config: GraphicsConfig) -> Self {
+        self.graphics = config;
+        self
+    }
+}
 
 /// An [`Editor`] implementation that calls an egui draw loop.
 pub(crate) struct EguiEditor<T> {
     pub(crate) egui_state: Arc<EguiState>,
     pub(crate) user_state: Arc<Mutex<T>>,
 
-    pub(crate) settings: Arc<EguiSettings>,
+    pub(crate) settings: Arc<EguiNiceSettings>,
 
     /// The user's build function. Applied once at the start of the application.
-    pub(crate) build: Arc<dyn Fn(&Context, &mut Queue, &mut T) + 'static + Send + Sync>,
+    pub(crate) build:
+        Arc<dyn Fn(&Context, &mut ExtraOutputCommands, &mut T) + 'static + Send + Sync>,
     /// The user's update function.
-    pub(crate) update:
-        Arc<dyn Fn(&mut egui::Ui, &ParamSetter, &mut Queue, &mut T) + 'static + Send + Sync>,
-
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    pub(crate) scaling_factor: AtomicCell<Option<f32>>,
-}
-
-/// This version of `baseview` uses a different version of `raw_window_handle than nice-plug, so we
-/// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(ParentWindowHandle);
-
-unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match self.0 {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
-            }
-            ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
-            }
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
-            }
-        }
-    }
+    pub(crate) update: Arc<
+        dyn Fn(&mut egui::Ui, &ParamSetter, &mut ExtraOutputCommands, &mut T)
+            + 'static
+            + Send
+            + Sync,
+    >,
 }
 
 impl<T> Editor for EguiEditor<T>
@@ -69,71 +69,45 @@ where
         &self,
         parent: ParentWindowHandle,
         context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any + Send> {
+    ) -> Box<dyn std::any::Any> {
         let build = self.build.clone();
         let update = self.update.clone();
         let state = self.user_state.clone();
         let egui_state = self.egui_state.clone();
-        let (unscaled_width, unscaled_height) = self.egui_state.size();
-        let scaling_factor = self.scaling_factor.load();
+        let logical_size = self.egui_state.size();
+        let host_scale_factor = self.egui_state.host_scale_factor();
+        let context_1 = context.clone();
 
-        #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
-        let graphics_config = {
-            let mut config = self.settings.graphics_config.clone();
-
-            let is_x11 = matches!(&parent, ParentWindowHandle::X11Window(_));
-            if is_x11 && self.settings.enable_vsync_on_x11 {
-                config.gl_config.vsync = true;
-            }
-
-            config
-        };
-        #[cfg(all(feature = "wgpu", not(feature = "opengl")))]
-        let graphics_config = self.settings.graphics_config.clone();
+        let scale_policy = host_scale_factor
+            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
 
         let window = EguiWindow::open_parented(
-            &ParentWindowHandleAdapter(parent),
-            EguiWindowSettings::new()
-                .with_logical_size(Size::new(unscaled_width as f64, unscaled_height as f64))
-                .with_scale_policy(
-                    scaling_factor
-                        .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                        .unwrap_or(WindowScalePolicy::SystemScaleFactor),
-                )
-                .with_graphics_config(graphics_config),
+            &parent,
+            EguiWindowSettings {
+                title: self.settings.title.clone(),
+                size: logical_size.into(),
+                scale_policy,
+                graphics: self.settings.graphics.clone(),
+            },
             state,
-            move |egui_ctx, queue, state| build(egui_ctx, queue, &mut state.lock()),
-            move |egui_ctx, queue, state| {
-                let setter = ParamSetter::new(context.as_ref());
-
-                // If the window was requested to resize
-                if let Some(new_size) = egui_state.requested_size.swap(None) {
-                    // Ask the plugin host to resize to self.size()
-                    if context.request_resize() {
-                        // Resize the content of egui window
-                        let scale = egui_ctx.pixels_per_point();
-                        queue.resize(PhySize::new(
-                            (new_size.0 as f32 * scale).round() as u32,
-                            (new_size.1 as f32 * scale).round() as u32,
-                        ));
-
-                        egui_ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(
-                            new_size.0 as f32,
-                            new_size.1 as f32,
-                        )));
-
-                        // Update the state
-                        egui_state.size.store(new_size);
+            move |egui_ctx, extra_commands, state| {
+                build(egui_ctx, extra_commands, &mut state.lock());
+            },
+            move |_output, viewport_output, _state| {
+                for command in viewport_output.commands.iter() {
+                    if let ViewportCommand::InnerSize(size) = command {
+                        let old_size = egui_state.size();
+                        egui_state.size.store(LogicalSize::new(size.x, size.y));
+                        if !context.request_resize() {
+                            egui_state.size.store(old_size);
+                        }
                     }
                 }
-
-                // For now, just always redraw. Most plugin GUIs have meters, and those almost always
-                // need a redraw. Later we can try to be a bit more sophisticated about this. Without
-                // this we would also have a blank GUI when it gets first opened because most DAWs open
-                // their GUI while the window is still unmapped.
-                egui_ctx.request_repaint();
-
-                (update)(egui_ctx, &setter, queue, &mut state.lock());
+            },
+            move |egui_ctx, extra_commands, state| {
+                let setter = ParamSetter::new(context_1.as_ref());
+                (update)(egui_ctx, &setter, extra_commands, &mut state.lock());
             },
         );
 
@@ -145,25 +119,19 @@ where
     }
 
     /// Size of the editor window
-    fn size(&self) -> (u32, u32) {
-        let new_size = self.egui_state.requested_size.load();
-        // This method will be used to ask the host for new size.
-        // If the editor is currently being resized and new size hasn't been consumed and set yet, return new requested size.
-        if let Some(new_size) = new_size {
-            new_size
-        } else {
-            self.egui_state.size()
-        }
+    fn size(&self) -> Size {
+        self.egui_state.size().into()
     }
 
-    fn set_scale_factor(&self, factor: f32) -> bool {
+    fn set_scale_factor(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.egui_state.is_open() {
             return false;
         }
 
-        self.scaling_factor.store(Some(factor));
+        self.egui_state.host_scale_factor.store(Some(factor as f32));
+
         true
     }
 
@@ -185,10 +153,6 @@ struct EguiEditorHandle {
     egui_state: Arc<EguiState>,
     window: WindowHandle,
 }
-
-/// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
-/// having this requirement?
-unsafe impl Send for EguiEditorHandle {}
 
 impl Drop for EguiEditorHandle {
     fn drop(&mut self) {

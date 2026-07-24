@@ -1,6 +1,6 @@
 [package]
 name = "nice-log"
-version = "0.2.4"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -10,10 +10,7 @@ description = "An opinionated yet flexible logger catering to the needs of the n
 keywords = ["log", "logging", "nice-plug"]
 
 [dependencies]
-log = "0.4.29"
-once_cell = "1.21"
-termcolor = "1.4"
-time = { version = "0.3.47", features = ["formatting", "local-offset", "macros"] }
+tracing-appender = "0.2.5"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 workspace = true
@@ -21,3 +18,7 @@ features = [
   "Win32_Foundation",
   "Win32_System_Diagnostics_Debug",
 ]
+
+[dev-dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true

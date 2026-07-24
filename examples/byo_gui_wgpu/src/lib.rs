@@ -1,33 +1,28 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw WGPU context.
 
-use baseview::{WindowHandle, WindowOpenOptions, WindowScalePolicy};
+use baseview::dpi::Size;
+use baseview::{WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy};
 use crossbeam::atomic::AtomicCell;
-use nice_plug::params::persist::PersistentField;
 use nice_plug::prelude::*;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use nice_plug::{editor::dpi::LogicalSize, params::persist::PersistentField};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::{
     borrow::Cow,
-    num::NonZeroIsize,
-    ptr::NonNull,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
-use wgpu::SurfaceTargetUnsafe;
 
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
 
 pub struct CustomWgpuWindow {
     gui_context: Arc<dyn GuiContext>,
+    window: WindowContext,
 
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    pipeline: wgpu::RenderPipeline,
-    surface: wgpu::Surface<'static>,
-    surface_config: wgpu::SurfaceConfiguration,
+    surface: RefCell<Surface>,
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
@@ -35,43 +30,35 @@ pub struct CustomWgpuWindow {
     peak_meter: Arc<AtomicF32>,
 }
 
+struct Surface {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pipeline: wgpu::RenderPipeline,
+    surface: wgpu::Surface<'static>,
+    surface_config: wgpu::SurfaceConfiguration,
+}
+
 impl CustomWgpuWindow {
     fn new(
-        window: &mut baseview::Window<'_>,
+        window: WindowContext,
         gui_context: Arc<dyn GuiContext>,
         params: Arc<MyPluginParams>,
         peak_meter: Arc<AtomicF32>,
-        scaling_factor: f32,
     ) -> Self {
-        let target = baseview_window_to_surface_target(window);
-
-        pollster::block_on(Self::create(
-            target,
-            gui_context,
-            params,
-            peak_meter,
-            scaling_factor,
-        ))
-    }
-
-    fn configure_surface(&mut self) {
-        self.surface.configure(&self.device, &self.surface_config);
+        pollster::block_on(Self::create(window, gui_context, params, peak_meter))
     }
 
     async fn create(
-        target: SurfaceTargetUnsafe,
+        window: WindowContext,
         gui_context: Arc<dyn GuiContext>,
         params: Arc<MyPluginParams>,
         peak_meter: Arc<AtomicF32>,
-        scaling_factor: f32,
     ) -> Self {
-        let (unscaled_width, unscaled_height) = params.editor_state.size();
-        let width = (unscaled_width as f64 * scaling_factor as f64).round() as u32;
-        let height = (unscaled_height as f64 * scaling_factor as f64).round() as u32;
+        let size = window.size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-        let surface = unsafe { instance.create_surface_unsafe(target) }.unwrap();
+        let surface = instance.create_surface(window.platform_handle()).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -79,6 +66,7 @@ impl CustomWgpuWindow {
                 force_fallback_adapter: false,
                 // Request an adapter which can render to our surface
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .expect("Failed to find an appropriate adapter");
@@ -160,16 +148,21 @@ impl CustomWgpuWindow {
             cache: None,
         });
 
-        let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
+        let surface_config = surface
+            .get_default_config(&adapter, size.physical.width, size.physical.height)
+            .unwrap();
         surface.configure(&device, &surface_config);
 
         Self {
             gui_context,
-            device,
-            queue,
-            pipeline,
-            surface,
-            surface_config,
+            window,
+            surface: RefCell::new(Surface {
+                device,
+                queue,
+                pipeline,
+                surface,
+                surface_config,
+            }),
             params,
             peak_meter,
         }
@@ -177,11 +170,19 @@ impl CustomWgpuWindow {
 }
 
 impl baseview::WindowHandler for CustomWgpuWindow {
-    fn on_frame(&mut self, window: &mut baseview::Window) {
+    fn on_frame(&self) {
         // Do rendering here.
+        let mut surface = self.surface.borrow_mut();
+        let Surface {
+            device,
+            queue,
+            pipeline,
+            surface,
+            surface_config,
+        } = &mut *surface;
 
         let mut recreate_surface = false;
-        let frame = match self.surface.get_current_texture() {
+        let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => Some(texture),
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -198,13 +199,15 @@ impl baseview::WindowHandler for CustomWgpuWindow {
 
         let Some(frame) = frame else {
             if recreate_surface {
-                let target = baseview_window_to_surface_target(window);
                 let instance =
                     wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-                self.surface = unsafe { instance.create_surface_unsafe(target) }.unwrap();
+
+                *surface = instance
+                    .create_surface(self.window.platform_handle())
+                    .unwrap();
             }
 
-            self.configure_surface();
+            surface.configure(device, surface_config);
             return;
         };
 
@@ -212,9 +215,8 @@ impl baseview::WindowHandler for CustomWgpuWindow {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -234,47 +236,49 @@ impl baseview::WindowHandler for CustomWgpuWindow {
                 multiview_mask: None,
             });
 
-            rpass.set_pipeline(&self.pipeline);
+            rpass.set_pipeline(pipeline);
             rpass.draw(0..3, 0..1);
         }
 
-        self.queue.submit(Some(encoder.finish()));
-        frame.present();
+        queue.submit(Some(encoder.finish()));
+        queue.present(frame);
     }
 
-    fn on_event(
-        &mut self,
-        _window: &mut baseview::Window,
-        event: baseview::Event,
-    ) -> baseview::EventStatus {
+    fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
         // Use this to set parameter values.
         let _param_setter = ParamSetter::new(self.gui_context.as_ref());
 
-        // Suppress clippy warnings here because the user is likely to want to
-        // use more events.
-        #[allow(clippy::single_match)]
-        #[allow(clippy::collapsible_match)]
+        // Do event processing here.
+        #[allow(clippy::match_single_binding)]
         match &event {
-            // Do event processing here.
-            #[allow(clippy::single_match)]
-            baseview::Event::Window(event) => match event {
-                baseview::WindowEvent::Resized(window_info) => {
-                    self.params.editor_state.size.store((
-                        window_info.logical_size().width.round() as u32,
-                        window_info.logical_size().height.round() as u32,
-                    ));
-
-                    self.surface_config.width = window_info.physical_size().width;
-                    self.surface_config.height = window_info.physical_size().height;
-
-                    //self.configure_surface();
-                }
-                _ => {}
-            },
             _ => {}
         }
 
         baseview::EventStatus::Captured
+    }
+
+    fn resized(&self, new_size: baseview::WindowSize) {
+        self.params
+            .editor_state
+            .window_scale_factor
+            .store(new_size.scale_factor as f32);
+        self.params.editor_state.size.store(new_size.logical.cast());
+
+        {
+            let mut surface = self.surface.borrow_mut();
+            let Surface {
+                device,
+                queue: _,
+                pipeline: _,
+                surface,
+                surface_config,
+            } = &mut *surface;
+
+            surface_config.width = new_size.physical.width;
+            surface_config.height = new_size.physical.height;
+
+            surface.configure(device, surface_config);
+        }
     }
 }
 
@@ -282,23 +286,39 @@ impl baseview::WindowHandler for CustomWgpuWindow {
 pub struct CustomWgpuEditorState {
     /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<(u32, u32)>,
+    size: AtomicCell<LogicalSize<f32>>,
+    #[serde(skip)]
+    window_scale_factor: AtomicCell<f32>,
+    #[serde(skip)]
+    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
+    /// should use the system scaling factor instead.
+    host_scale_factor: AtomicCell<Option<f32>>,
     /// Whether the editor's window is currently open.
     #[serde(skip)]
     open: AtomicBool,
 }
 
 impl CustomWgpuEditorState {
-    pub fn from_size(size: (u32, u32)) -> Arc<Self> {
+    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
         Arc::new(Self {
             size: AtomicCell::new(size),
+            window_scale_factor: AtomicCell::new(1.0),
+            host_scale_factor: AtomicCell::new(None),
             open: AtomicBool::new(false),
         })
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> (u32, u32) {
-        self.size.load()
+    pub fn size(&self) -> Size {
+        self.size.load().into()
+    }
+
+    pub fn window_scale_factor(&self) -> f32 {
+        self.window_scale_factor.load()
+    }
+
+    pub fn host_scale_factor(&self) -> Option<f32> {
+        self.host_scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
@@ -324,10 +344,6 @@ impl<'a> PersistentField<'a, CustomWgpuEditorState> for Arc<CustomWgpuEditorStat
 pub struct CustomWgpuEditor {
     params: Arc<MyPluginParams>,
     peak_meter: Arc<AtomicF32>,
-
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    scaling_factor: AtomicCell<Option<f32>>,
 }
 
 impl Editor for CustomWgpuEditor {
@@ -335,37 +351,27 @@ impl Editor for CustomWgpuEditor {
         &self,
         parent: ParentWindowHandle,
         context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any + Send> {
-        let (unscaled_width, unscaled_height) = self.params.editor_state.size();
-        let scaling_factor = self.scaling_factor.load();
+    ) -> Box<dyn std::any::Any> {
+        let host_scale_factor = self.params.editor_state.host_scale_factor();
+        let size = self.params.editor_state.size();
 
         let gui_context = Arc::clone(&context);
 
         let params = Arc::clone(&self.params);
         let peak_meter = Arc::clone(&self.peak_meter);
 
-        let window = baseview::Window::open_parented(
-            &ParentWindowHandleAdapter(parent),
-            WindowOpenOptions {
-                title: String::from("WGPU Window"),
-                // Baseview should be doing the DPI scaling for us
-                size: baseview::Size::new(unscaled_width as f64, unscaled_height as f64),
-                // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-                //       not the mouse events.
-                scale: scaling_factor
-                    .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                    .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+        let scale_policy = host_scale_factor
+            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
 
-                ..Default::default()
-            },
-            move |window: &mut baseview::Window<'_>| -> CustomWgpuWindow {
-                CustomWgpuWindow::new(
-                    window,
-                    gui_context,
-                    params,
-                    peak_meter,
-                    scaling_factor.unwrap_or(1.0),
-                )
+        let window = baseview::Window::open_parented(
+            &parent,
+            WindowOpenOptions::new()
+                .with_title("WGPU Window")
+                .with_size(size)
+                .with_scale_policy(scale_policy),
+            move |window: WindowContext| -> CustomWgpuWindow {
+                CustomWgpuWindow::new(window, gui_context, params, peak_meter)
             },
         );
 
@@ -376,18 +382,22 @@ impl Editor for CustomWgpuEditor {
         })
     }
 
-    fn size(&self) -> (u32, u32) {
+    fn size(&self) -> Size {
         self.params.editor_state.size()
     }
 
-    fn set_scale_factor(&self, factor: f32) -> bool {
+    fn set_scale_factor(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.params.editor_state.is_open() {
             return false;
         }
 
-        self.scaling_factor.store(Some(factor));
+        self.params
+            .editor_state
+            .host_scale_factor
+            .store(Some(factor as f32));
+
         true
     }
 
@@ -410,112 +420,11 @@ struct CustomWgpuEditorHandle {
     window: WindowHandle,
 }
 
-/// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
-/// having this requirement?
-unsafe impl Send for CustomWgpuEditorHandle {}
-
 impl Drop for CustomWgpuEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
         // XXX: This should automatically happen when the handle gets dropped, but apparently not
         self.window.close();
-    }
-}
-
-/// This version of `baseview` uses a different version of `raw_window_handle than nice-plug, so we
-/// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(nice_plug::editor::ParentWindowHandle);
-
-unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match self.0 {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
-            }
-            ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
-            }
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
-            }
-        }
-    }
-}
-
-/// WGPU uses raw_window_handle v6, but baseview uses raw_window_handle v5, so manually convert it.
-fn baseview_window_to_surface_target(window: &baseview::Window<'_>) -> wgpu::SurfaceTargetUnsafe {
-    use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-
-    let raw_display_handle = window.raw_display_handle();
-    let raw_window_handle = window.raw_window_handle();
-
-    wgpu::SurfaceTargetUnsafe::RawHandle {
-        raw_display_handle: match raw_display_handle {
-            raw_window_handle::RawDisplayHandle::AppKit(_) => {
-                Some(raw_window_handle_06::RawDisplayHandle::AppKit(
-                    raw_window_handle_06::AppKitDisplayHandle::new(),
-                ))
-            }
-            raw_window_handle::RawDisplayHandle::Xlib(handle) => {
-                Some(raw_window_handle_06::RawDisplayHandle::Xlib(
-                    raw_window_handle_06::XlibDisplayHandle::new(
-                        NonNull::new(handle.display),
-                        handle.screen,
-                    ),
-                ))
-            }
-            raw_window_handle::RawDisplayHandle::Xcb(handle) => {
-                Some(raw_window_handle_06::RawDisplayHandle::Xcb(
-                    raw_window_handle_06::XcbDisplayHandle::new(
-                        NonNull::new(handle.connection),
-                        handle.screen,
-                    ),
-                ))
-            }
-            raw_window_handle::RawDisplayHandle::Windows(_) => {
-                Some(raw_window_handle_06::RawDisplayHandle::Windows(
-                    raw_window_handle_06::WindowsDisplayHandle::new(),
-                ))
-            }
-            _ => todo!(),
-        },
-        raw_window_handle: match raw_window_handle {
-            raw_window_handle::RawWindowHandle::AppKit(handle) => {
-                raw_window_handle_06::RawWindowHandle::AppKit(
-                    raw_window_handle_06::AppKitWindowHandle::new(
-                        NonNull::new(handle.ns_view).unwrap(),
-                    ),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Xlib(handle) => {
-                raw_window_handle_06::RawWindowHandle::Xlib(
-                    raw_window_handle_06::XlibWindowHandle::new(handle.window),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Xcb(handle) => {
-                raw_window_handle_06::RawWindowHandle::Xcb(
-                    raw_window_handle_06::XcbWindowHandle::new(
-                        NonZeroU32::new(handle.window).unwrap(),
-                    ),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Win32(handle) => {
-                let mut raw_handle = raw_window_handle_06::Win32WindowHandle::new(
-                    NonZeroIsize::new(handle.hwnd as isize).unwrap(),
-                );
-
-                raw_handle.hinstance = NonZeroIsize::new(handle.hinstance as isize);
-
-                raw_window_handle_06::RawWindowHandle::Win32(raw_handle)
-            }
-            _ => todo!(),
-        },
     }
 }
 
@@ -561,7 +470,7 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomWgpuEditorState::from_size((400, 300)),
+            editor_state: CustomWgpuEditorState::from_size(LogicalSize::new(400.0, 300.0)),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -616,14 +525,6 @@ impl Plugin for MyPlugin {
         Some(Box::new(CustomWgpuEditor {
             params: Arc::clone(&self.params),
             peak_meter: Arc::clone(&self.peak_meter),
-
-            // TODO: We can't get the size of the window when baseview does its own scaling, so if the
-            //       host does not set a scale factor on Windows or Linux we should just use a factor of
-            //       1. That may make the GUI tiny but it also prevents it from getting cut off.
-            #[cfg(target_os = "macos")]
-            scaling_factor: AtomicCell::new(None),
-            #[cfg(not(target_os = "macos"))]
-            scaling_factor: AtomicCell::new(Some(1.0)),
         }))
     }
 

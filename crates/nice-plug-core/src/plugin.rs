@@ -261,6 +261,25 @@ pub trait Plugin: Default + Send + 'static {
 
     /// Called when the host provides track information after [`initialize()`][Self::initialize()] and after changes are made to the track that the plugin is on.
     fn track_info_updated(&mut self, info: TrackInfo) {}
+
+    /// Configure the global logger here.
+    ///
+    /// If setting up the logger was successful, return `Some(true)`. If it failed return `Some(false)`.
+    ///
+    /// Otherwise, returning `None` will do one of the following:
+    /// * If the `tracing-subscriber` feature is enabled, then nice-plug will automatically set up a
+    ///   logger with the default settings (uses LevelFilter::DEBUG when compiled in debug mode, and
+    ///   LevelFilter::INFO when compiled in release mode).
+    /// * If the `tracing-subscriber` feature is not enabled, then no logging will occur.
+    ///
+    /// Called once when the program starts (or when the shared library is loaded). If this plugin is
+    /// part of a bundle, then only the first plugin that appears in the export macro will have its
+    /// `setup_logger` method called.
+    ///
+    /// By default this returns `None`.
+    fn setup_logger() -> Option<bool> {
+        None
+    }
 }
 
 /// Indicates the current situation after the plugin has processed audio.

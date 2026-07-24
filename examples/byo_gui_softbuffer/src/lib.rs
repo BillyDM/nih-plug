@@ -1,14 +1,15 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw Softbuffer rendering context.
 
-use baseview::{WindowHandle, WindowOpenOptions, WindowScalePolicy};
+use baseview::{
+    WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy,
+    dpi::{LogicalSize, Size},
+};
 use crossbeam::atomic::AtomicCell;
 use nice_plug::params::persist::PersistentField;
 use nice_plug::prelude::*;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use std::{
-    num::NonZeroIsize,
-    ptr::NonNull,
+    cell::RefCell,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -20,12 +21,9 @@ const PEAK_METER_DECAY_MS: f64 = 150.0;
 
 pub struct CustomSoftbufferWindow {
     gui_context: Arc<dyn GuiContext>,
+    _window: WindowContext,
 
-    _sb_context: softbuffer::Context<SoftbufferWindowHandleAdapter>,
-    sb_surface: softbuffer::Surface<SoftbufferWindowHandleAdapter, SoftbufferWindowHandleAdapter>,
-
-    physical_width: u32,
-    physical_height: u32,
+    surface: RefCell<Surface>,
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
@@ -33,38 +31,39 @@ pub struct CustomSoftbufferWindow {
     peak_meter: Arc<AtomicF32>,
 }
 
+struct Surface {
+    _sb_context: softbuffer::Context<WindowContext>,
+    sb_surface: softbuffer::Surface<WindowContext, WindowContext>,
+}
+
 impl CustomSoftbufferWindow {
     fn new(
-        window: &mut baseview::Window<'_>,
+        window: WindowContext,
         gui_context: Arc<dyn GuiContext>,
         params: Arc<MyPluginParams>,
         peak_meter: Arc<AtomicF32>,
-        scaling_factor: f32,
     ) -> Self {
-        let (unscaled_width, unscaled_height) = params.editor_state.size();
-        let physical_width = (unscaled_width as f64 * scaling_factor as f64).round() as u32;
-        let physical_height = (unscaled_height as f64 * scaling_factor as f64).round() as u32;
-
-        let target = baseview_window_to_surface_target(window);
+        let size = window.size();
 
         let sb_context =
-            softbuffer::Context::new(target.clone()).expect("could not get softbuffer context");
-        let mut sb_surface = softbuffer::Surface::new(&sb_context, target)
+            softbuffer::Context::new(window.clone()).expect("could not get softbuffer context");
+        let mut sb_surface = softbuffer::Surface::new(&sb_context, window.clone())
             .expect("could not create softbuffer surface");
 
         sb_surface
             .resize(
-                NonZeroU32::new(physical_width).unwrap(),
-                NonZeroU32::new(physical_height).unwrap(),
+                NonZeroU32::new(size.physical.width).unwrap(),
+                NonZeroU32::new(size.physical.height).unwrap(),
             )
             .unwrap();
 
         Self {
             gui_context,
-            _sb_context: sb_context,
-            sb_surface,
-            physical_width,
-            physical_height,
+            _window: window,
+            surface: RefCell::new(Surface {
+                _sb_context: sb_context,
+                sb_surface,
+            }),
             params,
             peak_meter,
         }
@@ -72,18 +71,28 @@ impl CustomSoftbufferWindow {
 }
 
 impl baseview::WindowHandler for CustomSoftbufferWindow {
-    fn on_frame(&mut self, _window: &mut baseview::Window) {
+    fn on_frame(&self) {
         // Do rendering here.
 
-        let mut buffer = self.sb_surface.buffer_mut().unwrap();
-        for y in 0..self.physical_height {
-            for x in 0..self.physical_width {
+        let mut surface = self.surface.borrow_mut();
+        let Surface {
+            _sb_context,
+            sb_surface,
+        } = &mut *surface;
+
+        let mut buffer = sb_surface.buffer_mut().unwrap();
+
+        let width = buffer.width().get();
+        let height = buffer.height().get();
+
+        for y in 0..height {
+            for x in 0..width {
                 let red = x % 255;
                 let green = y % 255;
                 let blue = (x * y) % 255;
                 let alpha = 255;
 
-                let index = y as usize * self.physical_width as usize + x as usize;
+                let index = (y as usize * width as usize) + x as usize;
                 buffer[index] = blue | (green << 8) | (red << 16) | (alpha << 24);
             }
         }
@@ -91,44 +100,34 @@ impl baseview::WindowHandler for CustomSoftbufferWindow {
         buffer.present().unwrap();
     }
 
-    fn on_event(
-        &mut self,
-        _window: &mut baseview::Window,
-        event: baseview::Event,
-    ) -> baseview::EventStatus {
+    fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
         // Use this to set parameter values.
         let _param_setter = ParamSetter::new(self.gui_context.as_ref());
 
-        // Suppress clippy warnings here because the user is likely to want to
-        // use more events.
-        #[allow(clippy::single_match)]
-        #[allow(clippy::collapsible_match)]
+        // Do event processing here.
+        #[allow(clippy::match_single_binding)]
         match &event {
-            // Do event processing here.
-            #[allow(clippy::single_match)]
-            baseview::Event::Window(event) => match event {
-                baseview::WindowEvent::Resized(window_info) => {
-                    self.params.editor_state.size.store((
-                        window_info.logical_size().width.round() as u32,
-                        window_info.logical_size().height.round() as u32,
-                    ));
-
-                    self.physical_width = window_info.physical_size().width;
-                    self.physical_height = window_info.physical_size().height;
-
-                    self.sb_surface
-                        .resize(
-                            NonZeroU32::new(self.physical_width).unwrap(),
-                            NonZeroU32::new(self.physical_height).unwrap(),
-                        )
-                        .unwrap();
-                }
-                _ => {}
-            },
             _ => {}
         }
 
         baseview::EventStatus::Captured
+    }
+
+    fn resized(&self, new_size: baseview::WindowSize) {
+        self.params
+            .editor_state
+            .window_scale_factor
+            .store(new_size.scale_factor as f32);
+        self.params.editor_state.size.store(new_size.logical.cast());
+
+        self.surface
+            .borrow_mut()
+            .sb_surface
+            .resize(
+                NonZeroU32::new(new_size.physical.width).unwrap(),
+                NonZeroU32::new(new_size.physical.height).unwrap(),
+            )
+            .unwrap();
     }
 }
 
@@ -136,23 +135,38 @@ impl baseview::WindowHandler for CustomSoftbufferWindow {
 pub struct CustomSoftbufferEditorState {
     /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<(u32, u32)>,
+    size: AtomicCell<LogicalSize<f32>>,
+    #[serde(skip)]
+    window_scale_factor: AtomicCell<f32>,
+    #[serde(skip)]
+    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
+    /// should use the system scaling factor instead.
+    host_scale_factor: AtomicCell<Option<f32>>,
     /// Whether the editor's window is currently open.
     #[serde(skip)]
     open: AtomicBool,
 }
 
 impl CustomSoftbufferEditorState {
-    pub fn from_size(size: (u32, u32)) -> Arc<Self> {
+    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
         Arc::new(Self {
             size: AtomicCell::new(size),
+            window_scale_factor: AtomicCell::new(1.0),
+            host_scale_factor: AtomicCell::new(None),
             open: AtomicBool::new(false),
         })
     }
 
-    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> (u32, u32) {
+    pub fn size(&self) -> LogicalSize<f32> {
         self.size.load()
+    }
+
+    pub fn window_scale_factor(&self) -> f32 {
+        self.window_scale_factor.load()
+    }
+
+    pub fn host_scale_factor(&self) -> Option<f32> {
+        self.host_scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
@@ -178,10 +192,6 @@ impl<'a> PersistentField<'a, CustomSoftbufferEditorState> for Arc<CustomSoftbuff
 pub struct CustomSoftbufferEditor {
     params: Arc<MyPluginParams>,
     peak_meter: Arc<AtomicF32>,
-
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    scaling_factor: AtomicCell<Option<f32>>,
 }
 
 impl Editor for CustomSoftbufferEditor {
@@ -189,37 +199,27 @@ impl Editor for CustomSoftbufferEditor {
         &self,
         parent: ParentWindowHandle,
         context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any + Send> {
-        let (unscaled_width, unscaled_height) = self.params.editor_state.size();
-        let scaling_factor = self.scaling_factor.load();
+    ) -> Box<dyn std::any::Any> {
+        let host_scale_factor = self.params.editor_state.host_scale_factor();
+        let size = self.params.editor_state.size();
 
         let gui_context = Arc::clone(&context);
 
         let params = Arc::clone(&self.params);
         let peak_meter = Arc::clone(&self.peak_meter);
 
-        let window = baseview::Window::open_parented(
-            &ParentWindowHandleAdapter(parent),
-            WindowOpenOptions {
-                title: String::from("Softbuffer Window"),
-                // Baseview should be doing the DPI scaling for us
-                size: baseview::Size::new(unscaled_width as f64, unscaled_height as f64),
-                // NOTE: For some reason passing 1.0 here causes the UI to be scaled on macOS but
-                //       not the mouse events.
-                scale: scaling_factor
-                    .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-                    .unwrap_or(WindowScalePolicy::SystemScaleFactor),
+        let scale_policy = host_scale_factor
+            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
+            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
 
-                ..Default::default()
-            },
-            move |window: &mut baseview::Window<'_>| -> CustomSoftbufferWindow {
-                CustomSoftbufferWindow::new(
-                    window,
-                    gui_context,
-                    params,
-                    peak_meter,
-                    scaling_factor.unwrap_or(1.0),
-                )
+        let window = baseview::Window::open_parented(
+            &parent,
+            WindowOpenOptions::new()
+                .with_title("Softbuffer Window")
+                .with_size(size)
+                .with_scale_policy(scale_policy),
+            move |window: WindowContext| -> CustomSoftbufferWindow {
+                CustomSoftbufferWindow::new(window, gui_context, params, peak_meter)
             },
         );
 
@@ -230,18 +230,22 @@ impl Editor for CustomSoftbufferEditor {
         })
     }
 
-    fn size(&self) -> (u32, u32) {
-        self.params.editor_state.size()
+    fn size(&self) -> Size {
+        self.params.editor_state.size().into()
     }
 
-    fn set_scale_factor(&self, factor: f32) -> bool {
+    fn set_scale_factor(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.params.editor_state.is_open() {
             return false;
         }
 
-        self.scaling_factor.store(Some(factor));
+        self.params
+            .editor_state
+            .host_scale_factor
+            .store(Some(factor as f32));
+
         true
     }
 
@@ -264,145 +268,11 @@ struct CustomSoftbufferEditorHandle {
     window: WindowHandle,
 }
 
-/// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
-/// having this requirement?
-unsafe impl Send for CustomSoftbufferEditorHandle {}
-
 impl Drop for CustomSoftbufferEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
         // XXX: This should automatically happen when the handle gets dropped, but apparently not
         self.window.close();
-    }
-}
-
-/// This version of `baseview` uses a different version of `raw_window_handle than nice-plug, so we
-/// need to adapt it ourselves.
-struct ParentWindowHandleAdapter(nice_plug::editor::ParentWindowHandle);
-
-unsafe impl HasRawWindowHandle for ParentWindowHandleAdapter {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        match self.0 {
-            ParentWindowHandle::X11Window(window) => {
-                let mut handle = raw_window_handle::XcbWindowHandle::empty();
-                handle.window = window;
-                RawWindowHandle::Xcb(handle)
-            }
-            ParentWindowHandle::AppKitNsView(ns_view) => {
-                let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-                handle.ns_view = ns_view;
-                RawWindowHandle::AppKit(handle)
-            }
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                let mut handle = raw_window_handle::Win32WindowHandle::empty();
-                handle.hwnd = hwnd;
-                RawWindowHandle::Win32(handle)
-            }
-        }
-    }
-}
-
-/// Softbuffer uses raw_window_handle v6, but baseview uses raw_window_handle v5, so we need to
-/// adapt it ourselves.
-#[derive(Clone)]
-struct SoftbufferWindowHandleAdapter {
-    raw_display_handle: raw_window_handle_06::RawDisplayHandle,
-    raw_window_handle: raw_window_handle_06::RawWindowHandle,
-}
-
-impl raw_window_handle_06::HasDisplayHandle for SoftbufferWindowHandleAdapter {
-    fn display_handle(
-        &self,
-    ) -> Result<raw_window_handle_06::DisplayHandle<'_>, raw_window_handle_06::HandleError> {
-        unsafe {
-            Ok(raw_window_handle_06::DisplayHandle::borrow_raw(
-                self.raw_display_handle,
-            ))
-        }
-    }
-}
-
-impl raw_window_handle_06::HasWindowHandle for SoftbufferWindowHandleAdapter {
-    fn window_handle(
-        &self,
-    ) -> Result<raw_window_handle_06::WindowHandle<'_>, raw_window_handle_06::HandleError> {
-        unsafe {
-            Ok(raw_window_handle_06::WindowHandle::borrow_raw(
-                self.raw_window_handle,
-            ))
-        }
-    }
-}
-
-fn baseview_window_to_surface_target(
-    window: &baseview::Window<'_>,
-) -> SoftbufferWindowHandleAdapter {
-    use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-
-    let raw_display_handle = window.raw_display_handle();
-    let raw_window_handle = window.raw_window_handle();
-
-    SoftbufferWindowHandleAdapter {
-        raw_display_handle: match raw_display_handle {
-            raw_window_handle::RawDisplayHandle::AppKit(_) => {
-                raw_window_handle_06::RawDisplayHandle::AppKit(
-                    raw_window_handle_06::AppKitDisplayHandle::new(),
-                )
-            }
-            raw_window_handle::RawDisplayHandle::Xlib(handle) => {
-                raw_window_handle_06::RawDisplayHandle::Xlib(
-                    raw_window_handle_06::XlibDisplayHandle::new(
-                        NonNull::new(handle.display),
-                        handle.screen,
-                    ),
-                )
-            }
-            raw_window_handle::RawDisplayHandle::Xcb(handle) => {
-                raw_window_handle_06::RawDisplayHandle::Xcb(
-                    raw_window_handle_06::XcbDisplayHandle::new(
-                        NonNull::new(handle.connection),
-                        handle.screen,
-                    ),
-                )
-            }
-            raw_window_handle::RawDisplayHandle::Windows(_) => {
-                raw_window_handle_06::RawDisplayHandle::Windows(
-                    raw_window_handle_06::WindowsDisplayHandle::new(),
-                )
-            }
-            _ => todo!(),
-        },
-        raw_window_handle: match raw_window_handle {
-            raw_window_handle::RawWindowHandle::AppKit(handle) => {
-                raw_window_handle_06::RawWindowHandle::AppKit(
-                    raw_window_handle_06::AppKitWindowHandle::new(
-                        NonNull::new(handle.ns_view).unwrap(),
-                    ),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Xlib(handle) => {
-                raw_window_handle_06::RawWindowHandle::Xlib(
-                    raw_window_handle_06::XlibWindowHandle::new(handle.window),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Xcb(handle) => {
-                raw_window_handle_06::RawWindowHandle::Xcb(
-                    raw_window_handle_06::XcbWindowHandle::new(
-                        NonZeroU32::new(handle.window).unwrap(),
-                    ),
-                )
-            }
-            raw_window_handle::RawWindowHandle::Win32(handle) => {
-                let mut raw_handle = raw_window_handle_06::Win32WindowHandle::new(
-                    NonZeroIsize::new(handle.hwnd as isize).unwrap(),
-                );
-
-                raw_handle.hinstance = NonZeroIsize::new(handle.hinstance as isize);
-
-                raw_window_handle_06::RawWindowHandle::Win32(raw_handle)
-            }
-            _ => todo!(),
-        },
     }
 }
 
@@ -448,7 +318,7 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomSoftbufferEditorState::from_size((200, 150)),
+            editor_state: CustomSoftbufferEditorState::from_size(LogicalSize::new(200.0, 150.0)),
 
             // See the main gain example for more details
             gain: FloatParam::new(
@@ -503,14 +373,6 @@ impl Plugin for MyPlugin {
         Some(Box::new(CustomSoftbufferEditor {
             params: Arc::clone(&self.params),
             peak_meter: Arc::clone(&self.peak_meter),
-
-            // TODO: We can't get the size of the window when baseview does its own scaling, so if the
-            //       host does not set a scale factor on Windows or Linux we should just use a factor of
-            //       1. That may make the GUI tiny but it also prevents it from getting cut off.
-            #[cfg(target_os = "macos")]
-            scaling_factor: AtomicCell::new(None),
-            #[cfg(not(target_os = "macos"))]
-            scaling_factor: AtomicCell::new(Some(1.0)),
         }))
     }
 

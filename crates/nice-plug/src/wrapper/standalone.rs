@@ -58,7 +58,7 @@ pub fn nice_export_standalone<P: Plugin>() -> bool {
 pub fn nice_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = String>>(
     args: Args,
 ) -> bool {
-    setup_logger();
+    setup_logger::<P>();
 
     // Instead of parsing this directly, we need to take a bit of a roundabout approach to get the
     // plugin's name and vendor in here since they'd otherwise be taken from nice-plug's own

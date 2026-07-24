@@ -95,3 +95,5 @@ mod event_loop;
 // symmetry and also export this function in the same places
 #[cfg(feature = "standalone")]
 pub use wrapper::standalone::nice_export_standalone;
+
+pub use nice_log as log;

@@ -23,7 +23,7 @@
 #[macro_export]
 macro_rules! nice_log {
     ($($args:tt)*) => (
-        $crate::log::info!($($args)*)
+        $crate::tracing::info!($($args)*)
     );
 }
 #[doc(inline)]
@@ -33,7 +33,7 @@ pub use nice_log;
 #[macro_export]
 macro_rules! nice_warn {
     ($($args:tt)*) => (
-        $crate::log::warn!($($args)*)
+        $crate::tracing::warn!($($args)*)
     );
 }
 #[doc(inline)]
@@ -43,7 +43,7 @@ pub use nice_warn;
 #[macro_export]
 macro_rules! nice_error {
     ($($args:tt)*) => (
-        $crate::log::error!($($args)*)
+        $crate::tracing::error!($($args)*)
     );
 }
 #[doc(inline)]
@@ -54,7 +54,7 @@ pub use nice_error;
 #[macro_export]
 macro_rules! nice_trace {
     ($($args:tt)*) => (
-        $crate::util::permit_alloc(|| $crate::log::trace!($($args)*))
+        $crate::util::permit_alloc(|| $crate::tracing::trace!($($args)*))
     );
 }
 #[doc(inline)]
@@ -67,13 +67,13 @@ pub use nice_trace;
 #[macro_export]
 macro_rules! nice_dbg {
     () => {
-        $crate::util::permit_alloc(|| $crate::log::debug!(""));
+        $crate::util::permit_alloc(|| $crate::tracing::debug!(""));
     };
     ($val:expr $(,)?) => {
         // Match here acts as a let-binding: https://stackoverflow.com/questions/48732263/why-is-rusts-assert-eq-implemented-using-a-match/48732525#48732525
         match $val {
             tmp => {
-                $crate::util::permit_alloc(|| $crate::log::debug!("{} = {:#?}", stringify!($val), &tmp));
+                $crate::util::permit_alloc(|| $crate::tracing::debug!("{} = {:#?}", stringify!($val), &tmp));
                 tmp
             }
         }
@@ -94,7 +94,7 @@ macro_rules! nice_debug_assert {
         if cfg!(test) {
            debug_assert!($cond);
         } else if cfg!(debug_assertions) && !$cond {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($cond))));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($cond))));
         }
     );
     ($cond:expr, $format:expr $(, $($args:tt)*)?) => (
@@ -102,7 +102,7 @@ macro_rules! nice_debug_assert {
         if cfg!(test) {
            debug_assert!($cond, $format, $($($args)*)?);
         } else if cfg!(debug_assertions) && !$cond {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($cond), ", ", $format), $($($args)*)?));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($cond), ", ", $format), $($($args)*)?));
         }
     );
 }
@@ -117,14 +117,14 @@ macro_rules! nice_debug_assert_failure {
         if cfg!(test) {
            debug_assert!(false, "Debug assertion failed");
         } else if cfg!(debug_assertions) {
-            $crate::util::permit_alloc(|| $crate::log::warn!("Debug assertion failed"));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!("Debug assertion failed"));
         }
     );
     ($format:expr $(, $($args:tt)*)?) => (
         if cfg!(test) {
            debug_assert!(false, concat!("Debug assertion failed: ", $format), $($($args)*)?);
         } else if cfg!(debug_assertions) {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", $format), $($($args)*)?));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", $format), $($($args)*)?));
         }
     );
 }
@@ -140,7 +140,7 @@ macro_rules! nice_debug_assert_eq {
         if cfg!(test) {
            debug_assert_eq!($left, $right);
         } else if cfg!(debug_assertions) && $left != $right {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($left), " != ", stringify!($right))));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($left), " != ", stringify!($right))));
         }
     );
     ($left:expr, $right:expr, $format:expr $(, $($args:tt)*)?) => (
@@ -148,7 +148,7 @@ macro_rules! nice_debug_assert_eq {
         if cfg!(test) {
            debug_assert_eq!($left, $right, $format, $($($args)*)?);
         } else if cfg!(debug_assertions) && $left != $right {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($left), " != ", stringify!($right), ", ", $format), $($($args)*)?));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($left), " != ", stringify!($right), ", ", $format), $($($args)*)?));
         }
     );
 }
@@ -164,7 +164,7 @@ macro_rules! nice_debug_assert_ne {
         if cfg!(test) {
            debug_assert_ne!($left, $right);
         } else if cfg!(debug_assertions) && $left == $right {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($left), " == ", stringify!($right))));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($left), " == ", stringify!($right))));
         }
     );
     ($left:expr, $right:expr, $format:expr $(, $($args:tt)*)?) => (
@@ -172,7 +172,7 @@ macro_rules! nice_debug_assert_ne {
         if cfg!(test) {
            debug_assert_ne!($left, $right, $format, $($($args)*)?);
         } else if cfg!(debug_assertions) && $left == $right  {
-            $crate::util::permit_alloc(|| $crate::log::warn!(concat!("Debug assertion failed: ", stringify!($left), " == ", stringify!($right), ", ", $format), $($($args)*)?));
+            $crate::util::permit_alloc(|| $crate::tracing::warn!(concat!("Debug assertion failed: ", stringify!($left), " == ", stringify!($right), ", ", $format), $($($args)*)?));
         }
     );
 }

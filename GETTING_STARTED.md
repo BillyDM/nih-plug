@@ -18,7 +18,7 @@ crate-type = ["cdylib"]
 Add the nice-plug dependency to your `Cargo.toml`:
 ```toml
 [dependencies]
-nice-plug = "0.1"
+nice-plug = "0.2"
 ```
 
 > For a list of available crate flags, see
@@ -33,7 +33,7 @@ If you wish to also export your plugin as a standalone application, add "lib" to
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { version = "0.1", features = ["standalone"] }
+nice-plug = { version = "0.2", features = ["standalone"] }
 ```
 
 And add a `main.rs` file next to the `lib.rs` file with the following contents:
@@ -85,7 +85,7 @@ Additionally, you can enable the `unsafe_flush_denormals` feature flag, which ca
 
 ```toml
 [dependencies]
-nice-plug = { version = "0.1", features = ["unsafe_flush_denormals"] }
+nice-plug = { version = "0.2", features = ["unsafe_flush_denormals"] }
 ```
 
 ## 4. Build system setup
