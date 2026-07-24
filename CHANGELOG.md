@@ -16,6 +16,7 @@ state is to list breaking changes.
 # nice-plug 0.2.0
 
 ## Breaking Changes
+* all crates updated to use baseview version `0.2`
 * `nice-plug-core` and `nice-plug` bumped to version 0.2
 * `nice-log` bumped to version 0.3
 * `nice-plug-egui` bumped to version 0.4
