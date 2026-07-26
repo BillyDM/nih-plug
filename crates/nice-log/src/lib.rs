@@ -94,7 +94,7 @@ impl NiceLogWriter {
                 // TODO: Print this using the actual logger
                 Err(err) => eprintln!(
                     "Could not open '{nice_log_env_str}' from NICE_LOG for logging, falling back \
-                         to STDERR: {err}"
+                     to STDERR: {err}"
                 ),
             }
         }
