@@ -263,7 +263,7 @@ macro_rules! nice_export_vst3 {
         #[unsafe(no_mangle)]
         #[cfg(target_os = "windows")]
         pub extern "system" fn InitDll() -> bool {
-            $crate::wrapper::setup_logger();
+            $({$crate::wrapper::setup_logger::<$plugin_ty>;})+
             true
         }
 
