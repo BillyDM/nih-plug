@@ -13,6 +13,14 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.2.2
+
+## Fixed
+* Fixed compiling on Windows
+
+## Changed
+* There is no longer a compiler error when using the `assert_process_allocs` feature on the x86_64-pc-windows-gnu target.
+
 # nice-plug 0.2.0
 
 ## Breaking Changes
