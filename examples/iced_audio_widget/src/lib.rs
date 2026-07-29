@@ -1,5 +1,5 @@
 use iced_audio::Gesture;
-use nice_plug::prelude::*;
+use nice_plug::{editor::dpi::LogicalSize, prelude::*};
 use nice_plug_iced::iced::{
     self, Center, PollSubNotifier, Theme,
     widget::{Column, ProgressBar, column, text},
@@ -10,8 +10,7 @@ use std::sync::{Arc, atomic::Ordering};
 const MIN_GAIN_DB: f32 = -30.0;
 const MAX_GAIN_DB: f32 = 30.0;
 
-const WINDOW_WIDTH: u32 = 300;
-const WINDOW_HEIGHT: u32 = 300;
+const WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 300.0);
 
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -63,7 +62,7 @@ impl Default for Gain {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            window_state: WindowState::from_logical_size(WINDOW_WIDTH, WINDOW_HEIGHT),
+            window_state: WindowState::from_size(WINDOW_SIZE),
 
             // See the main gain example for more details
             gain: FloatParam::new(
