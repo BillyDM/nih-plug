@@ -13,6 +13,11 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.2.3
+
+## Fixed
+* Actually invoke logging setup in CLAP and VST3 targets ([#66](https://codeberg.org/RustAudio/nice-plug/pulls/66))
+
 # nice-plug 0.2.2
 
 ## Fixed
