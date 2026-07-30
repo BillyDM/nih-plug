@@ -18,13 +18,14 @@ pub use crate::audio_setup::{
 };
 pub use crate::buffer::Buffer;
 pub use crate::context::PluginApi;
-pub use crate::context::gui::{AsyncExecutor, GuiContext, ParamSetter};
-pub use crate::context::init::InitContext;
+pub use crate::context::activate::ActivateContext;
+#[cfg(feature = "editor")]
+pub use crate::context::gui::{AsyncExecutor, GuiContextInner, ParamSetter};
 pub use crate::context::process::{ProcessContext, Transport};
 pub use crate::context::remote_controls::{
     RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
 };
-// This also includes the derive macro
+#[cfg(feature = "editor")]
 pub use crate::editor::{Editor, Modifiers, ParentWindowHandle, ResizeHint, VirtualKeyCode};
 pub use crate::midi::sysex::SysExMessage;
 pub use crate::midi::{MidiConfig, NoteEvent, PluginNoteEvent, control_change};

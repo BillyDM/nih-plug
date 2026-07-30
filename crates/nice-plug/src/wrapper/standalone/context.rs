@@ -1,18 +1,19 @@
-use std::sync::Arc;
-
 use nice_plug_core::context::PluginApi;
-use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::context::init::InitContext;
+use nice_plug_core::context::activate::ActivateContext;
 use nice_plug_core::context::process::{ProcessContext, Transport};
 use nice_plug_core::midi::PluginNoteEvent;
-use nice_plug_core::params::internals::ParamPtr;
-use nice_plug_core::plugin::{Plugin, PluginState};
+use nice_plug_core::plugin::Plugin;
+
+#[cfg(feature = "editor")]
+use nice_plug_core::{
+    context::gui::GuiContextInner, params::internals::ParamPtr, plugin::PluginState,
+};
 
 use super::backend::Backend;
 use super::wrapper::{Task, Wrapper};
 
-/// An [`InitContext`] implementation for the standalone wrapper.
-pub(crate) struct WrapperInitContext<'a, P: Plugin, B: Backend<P>> {
+/// An [`ActivateContext`] implementation for the standalone wrapper.
+pub(crate) struct WrapperActivateContext<'a, P: Plugin, B: Backend<P>> {
     pub(super) wrapper: &'a Wrapper<P, B>,
 }
 
@@ -30,17 +31,7 @@ pub(crate) struct WrapperProcessContext<'a, P: Plugin, B: Backend<P>> {
     pub(super) transport: Transport,
 }
 
-/// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
-/// [`Editor::spawn()`][crate::prelude::Editor::spawn()] so it can interact with the rest of the plugin and
-/// with the host for things like setting parameters.
-pub(crate) struct WrapperGuiContext<P: Plugin, B: Backend<P>> {
-    pub(super) wrapper: Arc<Wrapper<P, B>>,
-    #[cfg(debug_assertions)]
-    pub(super) param_gesture_checker:
-        atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
-}
-
-impl<P: Plugin, B: Backend<P>> InitContext<P> for WrapperInitContext<'_, P, B> {
+impl<P: Plugin, B: Backend<P>> ActivateContext<P> for WrapperActivateContext<'_, P, B> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Standalone
     }
@@ -103,21 +94,30 @@ impl<P: Plugin, B: Backend<P>> ProcessContext<P> for WrapperProcessContext<'_, P
     }
 }
 
-impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
+/// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
+/// [`Editor::spawn()`][crate::prelude::Editor::spawn()] so it can interact with the rest of the plugin and
+/// with the host for things like setting parameters.
+#[cfg(feature = "editor")]
+pub(crate) struct WrapperGuiContext<P: Plugin, B: Backend<P>> {
+    pub(super) wrapper: std::sync::Weak<Wrapper<P, B>>,
+    #[cfg(debug_assertions)]
+    pub(super) param_gesture_checker:
+        atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
+}
+
+#[cfg(feature = "editor")]
+impl<P: Plugin, B: Backend<P>> GuiContextInner for WrapperGuiContext<P, B> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Standalone
     }
 
-    fn request_resize(&self) -> bool {
-        self.wrapper.request_resize();
-        true
-    }
-
     unsafe fn raw_begin_set_parameter(&self, _param: ParamPtr) {
+        let wrapper = self.wrapper.upgrade().unwrap();
+
         // Since there's no automation being recorded here, gestures don't mean anything
 
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(_param) {
+        match wrapper.param_id_from_ptr(_param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -129,10 +129,12 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
     }
 
     unsafe fn raw_set_parameter_normalized(&self, param: ParamPtr, normalized: f32) {
-        self.wrapper.set_parameter(param, normalized);
+        let wrapper = self.wrapper.upgrade().unwrap();
+
+        wrapper.set_parameter(param, normalized);
 
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(param) {
+        match wrapper.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -146,8 +148,10 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
     }
 
     unsafe fn raw_end_set_parameter(&self, _param: ParamPtr) {
+        let wrapper = self.wrapper.upgrade().unwrap();
+
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(_param) {
+        match wrapper.param_id_from_ptr(_param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -161,10 +165,13 @@ impl<P: Plugin, B: Backend<P>> GuiContext for WrapperGuiContext<P, B> {
     }
 
     fn get_state(&self) -> PluginState {
-        self.wrapper.get_state_object()
+        self.wrapper.upgrade().unwrap().get_state_object()
     }
 
     fn set_state(&self, state: PluginState) {
-        self.wrapper.set_state_object_from_gui(state)
+        self.wrapper
+            .upgrade()
+            .unwrap()
+            .set_state_object_from_gui(state)
     }
 }

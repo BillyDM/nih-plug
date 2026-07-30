@@ -1,8 +1,10 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw WGPU context.
 
-use baseview::dpi::Size;
-use baseview::{WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy};
+use baseview::dpi::PhysicalSize;
+use baseview::{HandlerError, Window, WindowContext, WindowSettings};
 use crossbeam::atomic::AtomicCell;
+use nice_plug::context::gui::GuiContext;
+use nice_plug::editor::{EditorInstance, EditorWindow};
 use nice_plug::prelude::*;
 use nice_plug::{editor::dpi::LogicalSize, params::persist::PersistentField};
 use serde::{Deserialize, Serialize};
@@ -15,19 +17,18 @@ use std::{
     },
 };
 
-/// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
-const PEAK_METER_DECAY_MS: f64 = 150.0;
+const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(200.0, 150.0);
+const RESIZE_HINT: ResizeHint = ResizeHint::with_min_size(MIN_SIZE);
 
 pub struct CustomWgpuWindow {
-    gui_context: Arc<dyn GuiContext>,
+    _gui_context: GuiContext,
     window: WindowContext,
 
     surface: RefCell<Surface>,
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
-    #[allow(unused)]
-    peak_meter: Arc<AtomicF32>,
+    redraw_requested: Arc<AtomicBool>,
 }
 
 struct Surface {
@@ -41,24 +42,24 @@ struct Surface {
 impl CustomWgpuWindow {
     fn new(
         window: WindowContext,
-        gui_context: Arc<dyn GuiContext>,
+        gui_context: GuiContext,
         params: Arc<MyPluginParams>,
-        peak_meter: Arc<AtomicF32>,
-    ) -> Self {
-        pollster::block_on(Self::create(window, gui_context, params, peak_meter))
+        redraw: Arc<AtomicBool>,
+    ) -> Result<Self, HandlerError> {
+        pollster::block_on(Self::create(window, gui_context, params, redraw))
     }
 
     async fn create(
         window: WindowContext,
-        gui_context: Arc<dyn GuiContext>,
+        gui_context: GuiContext,
         params: Arc<MyPluginParams>,
-        peak_meter: Arc<AtomicF32>,
-    ) -> Self {
+        redraw: Arc<AtomicBool>,
+    ) -> Result<Self, HandlerError> {
         let size = window.size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-        let surface = instance.create_surface(window.platform_handle()).unwrap();
+        let surface = instance.create_surface(window.platform_handle())?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -68,8 +69,7 @@ impl CustomWgpuWindow {
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
-            .await
-            .expect("Failed to find an appropriate adapter");
+            .await?;
 
         // Create the logical device and command queue
         let (device, queue) = adapter
@@ -81,8 +81,7 @@ impl CustomWgpuWindow {
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()
             })
-            .await
-            .expect("Failed to create device");
+            .await?;
 
         const SHADER: &str = "
             const VERTS = array(
@@ -150,11 +149,11 @@ impl CustomWgpuWindow {
 
         let surface_config = surface
             .get_default_config(&adapter, size.physical.width, size.physical.height)
-            .unwrap();
+            .unwrap(); // TODO
         surface.configure(&device, &surface_config);
 
-        Self {
-            gui_context,
+        Ok(Self {
+            _gui_context: gui_context,
             window,
             surface: RefCell::new(Surface {
                 device,
@@ -163,14 +162,18 @@ impl CustomWgpuWindow {
                 surface,
                 surface_config,
             }),
+            redraw_requested: redraw,
             params,
-            peak_meter,
-        }
+        })
     }
 }
 
 impl baseview::WindowHandler for CustomWgpuWindow {
-    fn on_frame(&self) {
+    fn on_frame(&self) -> Result<(), HandlerError> {
+        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
+            return Ok(());
+        }
+
         // Do rendering here.
         let mut surface = self.surface.borrow_mut();
         let Surface {
@@ -184,7 +187,9 @@ impl baseview::WindowHandler for CustomWgpuWindow {
         let mut recreate_surface = false;
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => Some(texture),
-            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
+            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
+                return Ok(());
+            }
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 None
             }
@@ -208,7 +213,7 @@ impl baseview::WindowHandler for CustomWgpuWindow {
             }
 
             surface.configure(device, surface_config);
-            return;
+            return Ok(());
         };
 
         let view = frame
@@ -242,12 +247,11 @@ impl baseview::WindowHandler for CustomWgpuWindow {
 
         queue.submit(Some(encoder.finish()));
         queue.present(frame);
+
+        Ok(())
     }
 
     fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
-        // Use this to set parameter values.
-        let _param_setter = ParamSetter::new(self.gui_context.as_ref());
-
         // Do event processing here.
         #[allow(clippy::match_single_binding)]
         match &event {
@@ -257,12 +261,17 @@ impl baseview::WindowHandler for CustomWgpuWindow {
         baseview::EventStatus::Captured
     }
 
-    fn resized(&self, new_size: baseview::WindowSize) {
+    fn resized(&self, new_size: baseview::WindowSize) -> Result<(), HandlerError> {
         self.params
             .editor_state
-            .window_scale_factor
-            .store(new_size.scale_factor as f32);
-        self.params.editor_state.size.store(new_size.logical.cast());
+            .scale_factor
+            .store(new_size.scale_factor);
+
+        let size: LogicalSize<f32> = new_size.logical.cast();
+        self.params
+            .editor_state
+            .logical_size
+            .store((size.width, size.height));
 
         {
             let mut surface = self.surface.borrow_mut();
@@ -279,50 +288,51 @@ impl baseview::WindowHandler for CustomWgpuWindow {
 
             surface.configure(device, surface_config);
         }
+
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CustomWgpuEditorState {
-    /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<LogicalSize<f32>>,
-    #[serde(skip)]
-    window_scale_factor: AtomicCell<f32>,
-    #[serde(skip)]
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    host_scale_factor: AtomicCell<Option<f32>>,
+    logical_size: AtomicCell<(f32, f32)>,
     /// Whether the editor's window is currently open.
     #[serde(skip)]
     open: AtomicBool,
+    #[serde(skip)]
+    scale_factor: AtomicCell<f64>,
 }
 
 impl CustomWgpuEditorState {
     pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
         Arc::new(Self {
-            size: AtomicCell::new(size),
-            window_scale_factor: AtomicCell::new(1.0),
-            host_scale_factor: AtomicCell::new(None),
+            logical_size: AtomicCell::new((size.width, size.height)),
             open: AtomicBool::new(false),
+            scale_factor: AtomicCell::new(1.0),
         })
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> Size {
-        self.size.load().into()
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        let (width, height) = self.logical_size.load();
+        LogicalSize::new(width, height)
     }
 
-    pub fn window_scale_factor(&self) -> f32 {
-        self.window_scale_factor.load()
+    /// Returns a `(width, height)` pair for the current size of the GUI in physical pixels.
+    pub fn physical_size(&self) -> PhysicalSize<u32> {
+        let (width, height) = self.logical_size.load();
+        let scale_factor = self.scale_factor();
+        LogicalSize::new(width, height).to_physical(scale_factor)
     }
 
-    pub fn host_scale_factor(&self) -> Option<f32> {
-        self.host_scale_factor.load()
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor.load()
     }
 
     /// Whether the GUI is currently visible.
-    // Called `is_open()` instead of `open()` to avoid the ambiguity.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
     }
@@ -330,7 +340,7 @@ impl CustomWgpuEditorState {
 
 impl<'a> PersistentField<'a, CustomWgpuEditorState> for Arc<CustomWgpuEditorState> {
     fn set(&self, new_value: CustomWgpuEditorState) {
-        self.size.store(new_value.size.load());
+        self.logical_size.store(new_value.logical_size.load());
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -343,103 +353,136 @@ impl<'a> PersistentField<'a, CustomWgpuEditorState> for Arc<CustomWgpuEditorStat
 
 pub struct CustomWgpuEditor {
     params: Arc<MyPluginParams>,
-    peak_meter: Arc<AtomicF32>,
 }
 
 impl Editor for CustomWgpuEditor {
     fn spawn(
         &self,
-        parent: ParentWindowHandle,
-        context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any> {
-        let host_scale_factor = self.params.editor_state.host_scale_factor();
-        let size = self.params.editor_state.size();
-
-        let gui_context = Arc::clone(&context);
-
+        parent: Option<ParentWindowHandle>,
+        suggested_scale_factor: Option<f64>,
+        gui_context: GuiContext,
+        host: Option<baseview::host::Host>,
+    ) -> Result<EditorWindow, HandlerError> {
         let params = Arc::clone(&self.params);
-        let peak_meter = Arc::clone(&self.peak_meter);
 
-        let scale_policy = host_scale_factor
-            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
+        let redraw_requested = Arc::new(AtomicBool::new(true));
+        let redraw_requested_2 = Arc::clone(&redraw_requested);
 
-        let window = baseview::Window::open_parented(
-            &parent,
-            WindowOpenOptions::new()
-                .with_title("WGPU Window")
-                .with_size(size)
-                .with_scale_policy(scale_policy),
-            move |window: WindowContext| -> CustomWgpuWindow {
-                CustomWgpuWindow::new(window, gui_context, params, peak_meter)
+        let window = baseview::Window::create_with_host(
+            WindowSettings::new()
+                .with_title("Wgpu Window")
+                .with_size(self.params.editor_state.logical_size())
+                .with_parent(parent.as_ref()),
+            move |window: WindowContext| -> Result<CustomWgpuWindow, HandlerError> {
+                CustomWgpuWindow::new(window, gui_context, params, redraw_requested_2)
+                    .map_err(|e| e.into())
             },
-        );
+            host,
+        )?;
 
         self.params.editor_state.open.store(true, Ordering::Release);
-        Box::new(CustomWgpuEditorHandle {
-            state: self.params.editor_state.clone(),
+
+        if let Some(scale_factor) = suggested_scale_factor {
+            let _ = window.suggest_fallback_scale_factor(scale_factor);
+        }
+
+        Ok(EditorWindow {
+            editor: Box::new(CustomWgpuEditorInstance {
+                state: self.params.editor_state.clone(),
+                redraw_requested,
+            }),
             window,
         })
     }
 
-    fn size(&self) -> Size {
-        self.params.editor_state.size()
+    fn size(&self) -> PhysicalSize<u32> {
+        let scale_factor = self.params.editor_state.scale_factor();
+        self.params
+            .editor_state
+            .logical_size()
+            .to_physical(scale_factor)
     }
 
-    fn set_scale_factor(&self, factor: f64) -> bool {
-        // If the editor is currently open then the host must not change the current HiDPI scale as
-        // we don't have a way to handle that. Ableton Live does this.
-        if self.params.editor_state.is_open() {
+    fn resize_hint(&self) -> ResizeHint {
+        RESIZE_HINT
+    }
+}
+
+struct CustomWgpuEditorInstance {
+    state: Arc<CustomWgpuEditorState>,
+    redraw_requested: Arc<AtomicBool>,
+}
+
+impl EditorInstance for CustomWgpuEditorInstance {
+    fn set_size(&mut self, new_size: PhysicalSize<u32>, window: &mut Window) -> bool {
+        let current_size = window.size();
+        if !RESIZE_HINT.is_size_valid(new_size, current_size.physical, current_size.scale_factor) {
             return false;
         }
 
-        self.params
-            .editor_state
-            .host_scale_factor
-            .store(Some(factor as f32));
+        window.resize(new_size.into()).is_ok()
+    }
 
-        true
+    fn set_suggested_scale_factor(&mut self, scale_factor: f64, window: &mut Window) -> bool {
+        window.suggest_fallback_scale_factor(scale_factor).is_ok()
+    }
+
+    /// Return the closest supported size.
+    fn adjust_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Window,
+    ) -> Option<PhysicalSize<u32>> {
+        let current_size = window.size();
+        Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
+    }
+
+    fn on_virtual_key_from_host(
+        &mut self,
+        _key_code: VirtualKeyCode,
+        _is_down: bool,
+        _modifiers: Modifiers,
+    ) -> bool {
+        false
+    }
+
+    fn state_changed(&mut self, window: Option<&mut Window>) {
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        if let Some(window) = window {
+            let scale_factor = self.state.scale_factor();
+            let new_size: PhysicalSize<u32> = self.state.logical_size().to_physical(scale_factor);
+
+            if window.size().physical != new_size {
+                if let Err(e) = window.resize(new_size.into()) {
+                    nice_error!("Failed to resize window after state change: {}", e);
+                }
+            }
+        }
     }
 
     fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
-        // As mentioned above, for now we'll always force a redraw to allow meter widgets to work
-        // correctly. In the future we can use an `Arc<AtomicBool>` and only force a redraw when
-        // that boolean is set.
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
     }
 
-    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {}
-
-    fn param_values_changed(&self) {
-        // Same
+    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
     }
 }
 
-/// The window handle used for [`CustomWgpuEditor`].
-struct CustomWgpuEditorHandle {
-    state: Arc<CustomWgpuEditorState>,
-    window: WindowHandle,
-}
-
-impl Drop for CustomWgpuEditorHandle {
+impl Drop for CustomWgpuEditorInstance {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
-        // XXX: This should automatically happen when the handle gets dropped, but apparently not
-        self.window.close();
     }
 }
+
+// ---------------------------------------------------------------------------------------------------
 
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct MyPlugin {
     params: Arc<MyPluginParams>,
-
-    /// Needed to normalize the peak meter's response based on the sample rate.
-    peak_meter_decay_weight: f32,
-    /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
-    /// the GUI and the audio processing parts. If you have more state to share, then it's a good
-    /// idea to put all of that in a struct behind a single `Arc`.
-    ///
-    /// This is stored as voltage gain.
-    peak_meter: Arc<AtomicF32>,
 }
 
 #[derive(Params)]
@@ -460,9 +503,6 @@ impl Default for MyPlugin {
     fn default() -> Self {
         Self {
             params: Arc::new(MyPluginParams::default()),
-
-            peak_meter_decay_weight: 1.0,
-            peak_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
         }
     }
 }
@@ -524,25 +564,7 @@ impl Plugin for MyPlugin {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         Some(Box::new(CustomWgpuEditor {
             params: Arc::clone(&self.params),
-            peak_meter: Arc::clone(&self.peak_meter),
         }))
-    }
-
-    fn initialize(
-        &mut self,
-        _audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
-    ) -> bool {
-        // TODO: Figure out a way to disable log spam from wgpu.
-
-        // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
-        // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
-
-        true
     }
 
     fn process(
@@ -552,29 +574,15 @@ impl Plugin for MyPlugin {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         for channel_samples in buffer.iter_samples() {
-            let mut amplitude = 0.0;
-            let num_samples = channel_samples.len();
-
             let gain = self.params.gain.smoothed.next();
             for sample in channel_samples {
                 *sample *= gain;
-                amplitude += *sample;
             }
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
             if self.params.editor_state.is_open() {
-                amplitude = (amplitude / num_samples as f32).abs();
-                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
-                let new_peak_meter = if amplitude > current_peak_meter {
-                    amplitude
-                } else {
-                    current_peak_meter * self.peak_meter_decay_weight
-                        + amplitude * (1.0 - self.peak_meter_decay_weight)
-                };
-
-                self.peak_meter
-                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+                // Do stuff
             }
         }
 

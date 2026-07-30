@@ -109,7 +109,7 @@ pub struct Transport {
     pub preroll_active: Option<bool>,
 
     /// The sample rate in Hertz. Also passed in
-    /// [`Plugin::initialize()`][crate::plugin::Plugin::initialize()], so if you need this then you
+    /// [`Plugin::activate()`][crate::plugin::Plugin::activate()], so if you need this then you
     /// can also store that value.
     pub sample_rate: f32,
     /// The project's tempo in beats per minute.

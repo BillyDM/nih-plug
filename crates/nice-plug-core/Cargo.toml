@@ -16,6 +16,9 @@ readme = "README.md"
 all-features = true
 
 [features]
+default = ["editor"]
+# Enables editor (GUI) support.
+editor = ["dep:baseview"]
 # Enabling this feature will cause the plugin to terminate when allocations
 # occur in the processing function during debug builds. Keep in mind that panics
 # may also allocate if they use string formatting, so temporarily disabling this
@@ -38,7 +41,7 @@ atomic_refcell.workspace = true
 crossbeam-utils = "0.8.21"
 midi-consts = "0.1"
 raw-window-handle.workspace = true
-dpi = { version = "0.1.2", features = ["serde"] }
+baseview = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx.workspace = true

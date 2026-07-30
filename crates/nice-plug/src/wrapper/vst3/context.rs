@@ -2,25 +2,27 @@ use atomic_refcell::AtomicRefMut;
 use nice_plug_core::{
     context::{
         PluginApi,
-        gui::GuiContext,
-        init::InitContext,
+        activate::ActivateContext,
         process::{ProcessContext, Transport},
     },
     midi::PluginNoteEvent,
-    params::internals::ParamPtr,
-    plugin::PluginState,
 };
 use std::cell::Cell;
 use std::collections::VecDeque;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+
+#[cfg(feature = "editor")]
 use vst3::Steinberg::Vst::IComponentHandlerTrait;
+
+#[cfg(feature = "editor")]
+use nice_plug_core::{
+    context::gui::GuiContextInner, params::internals::ParamPtr, plugin::PluginState,
+};
 
 use crate::wrapper::vst3::Vst3Plugin;
 
 use super::inner::{Task, WrapperInner};
 
-/// An [`InitContext`] implementation for the wrapper.
+/// An [`ActivateContext`] implementation for the wrapper.
 ///
 /// # Note
 ///
@@ -29,15 +31,15 @@ use super::inner::{Task, WrapperInner};
 /// call. Reentrannt function calls are difficult to handle in Rust without forcing everything to
 /// use interior mutability, so this will have to do for now. This does mean that `Plugin` mutex
 /// lock has to be dropped before this object.
-pub(crate) struct WrapperInitContext<'a, P: Vst3Plugin> {
+pub(crate) struct WrapperActivateContext<'a, P: Vst3Plugin> {
     pub(super) inner: &'a WrapperInner<P>,
-    pub(super) pending_requests: PendingInitContextRequests,
+    pub(super) pending_requests: PendingActivateContextRequests,
 }
 
-/// Any requests that should be sent out when the [`WrapperInitContext`] is dropped. See that
+/// Any requests that should be sent out when the [`WrapperActivateContext`] is dropped. See that
 /// struct's docstring for mroe information.
 #[derive(Debug, Default)]
-pub(crate) struct PendingInitContextRequests {
+pub(crate) struct PendingActivateContextRequests {
     /// The value of the last `.set_latency_samples()` call.
     latency_changed: Cell<Option<u32>>,
 }
@@ -55,14 +57,15 @@ pub(crate) struct WrapperProcessContext<'a, P: Vst3Plugin> {
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
 /// [`Editor::spawn()`][crate::prelude::Editor::spawn()] so it can interact with the rest of the plugin and
 /// with the host for things like setting parameters.
+#[cfg(feature = "editor")]
 pub(crate) struct WrapperGuiContext<P: Vst3Plugin> {
-    pub(super) inner: Arc<WrapperInner<P>>,
+    pub(super) inner: std::sync::Weak<WrapperInner<P>>,
     #[cfg(debug_assertions)]
     pub(super) param_gesture_checker:
         atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
 }
 
-impl<P: Vst3Plugin> Drop for WrapperInitContext<'_, P> {
+impl<P: Vst3Plugin> Drop for WrapperActivateContext<'_, P> {
     fn drop(&mut self) {
         if let Some(samples) = self.pending_requests.latency_changed.take() {
             self.inner.set_latency_samples(samples)
@@ -70,7 +73,7 @@ impl<P: Vst3Plugin> Drop for WrapperInitContext<'_, P> {
     }
 }
 
-impl<P: Vst3Plugin> InitContext<P> for WrapperInitContext<'_, P> {
+impl<P: Vst3Plugin> ActivateContext<P> for WrapperActivateContext<'_, P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Vst3
     }
@@ -126,25 +129,19 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     }
 }
 
-impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
+#[cfg(feature = "editor")]
+impl<P: Vst3Plugin + Send> GuiContextInner for WrapperGuiContext<P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Vst3
-    }
-
-    fn request_resize(&self) -> bool {
-        let task_posted = self.inner.schedule_gui(Task::RequestResize);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-
-        // TODO: We don't handle resize request failures right now. In practice this should however
-        //       not happen.
-        true
     }
 
     // All of these functions are supposed to be called from the main thread, so we'll put some
     // trust in the caller and assume that this is indeed the case
     unsafe fn raw_begin_set_parameter(&self, param: ParamPtr) {
-        match &*self.inner.component_handler.borrow() {
-            Some(handler) => match self.inner.param_ptr_to_hash.get(&param) {
+        let inner = self.inner.upgrade().unwrap();
+
+        match &*inner.component_handler.borrow() {
+            Some(handler) => match inner.param_ptr_to_hash.get(&param) {
                 Some(hash) => unsafe {
                     handler.beginEdit(*hash);
                 },
@@ -154,7 +151,7 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.inner.param_id_from_ptr(param) {
+        match inner.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -166,8 +163,10 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
     }
 
     unsafe fn raw_set_parameter_normalized(&self, param: ParamPtr, normalized: f32) {
-        match &*self.inner.component_handler.borrow() {
-            Some(handler) => match self.inner.param_ptr_to_hash.get(&param) {
+        let inner = self.inner.upgrade().unwrap();
+
+        match &*inner.component_handler.borrow() {
+            Some(handler) => match inner.param_ptr_to_hash.get(&param) {
                 Some(hash) => {
                     // Only update the parameters manually if the host is not processing audio. If
                     // the plugin is currently processing audio, the host will pass this change back
@@ -176,14 +175,14 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
                     // FIXME: So this doesn't work for REAPER, because they just silently stop
                     //        processing audio when you bypass the plugin. Great. We can add a time
                     //        based heuristic to work around this in the meantime.
-                    if !self.inner.is_processing.load(Ordering::SeqCst) {
-                        self.inner.set_normalized_value_by_hash(
+                    if !inner
+                        .is_processing
+                        .load(std::sync::atomic::Ordering::SeqCst)
+                    {
+                        inner.set_normalized_value_by_hash(
                             *hash,
                             normalized,
-                            self.inner
-                                .current_buffer_config
-                                .load()
-                                .map(|c| c.sample_rate),
+                            inner.current_buffer_config.load().map(|c| c.sample_rate),
                         );
                     }
 
@@ -195,7 +194,7 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.inner.param_id_from_ptr(param) {
+        match inner.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -209,8 +208,10 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
     }
 
     unsafe fn raw_end_set_parameter(&self, param: ParamPtr) {
-        match &*self.inner.component_handler.borrow() {
-            Some(handler) => match self.inner.param_ptr_to_hash.get(&param) {
+        let inner = self.inner.upgrade().unwrap();
+
+        match &*inner.component_handler.borrow() {
+            Some(handler) => match inner.param_ptr_to_hash.get(&param) {
                 Some(hash) => unsafe {
                     handler.endEdit(*hash);
                 },
@@ -220,7 +221,7 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.inner.param_id_from_ptr(param) {
+        match inner.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -234,10 +235,13 @@ impl<P: Vst3Plugin + Send> GuiContext for WrapperGuiContext<P> {
     }
 
     fn get_state(&self) -> PluginState {
-        self.inner.get_state_object()
+        self.inner.upgrade().unwrap().get_state_object()
     }
 
     fn set_state(&self, state: PluginState) {
-        self.inner.set_state_object_from_gui(state)
+        self.inner
+            .upgrade()
+            .unwrap()
+            .set_state_object_from_gui(state)
     }
 }

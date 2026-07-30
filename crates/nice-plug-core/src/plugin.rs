@@ -11,14 +11,16 @@ pub use track_info::*;
 use crate::{
     audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig},
     buffer::Buffer,
-    context::{gui::AsyncExecutor, init::InitContext, process::ProcessContext},
-    editor::Editor,
+    context::{activate::ActivateContext, process::ProcessContext},
     midi::{MidiConfig, sysex::SysExMessage},
     params::Params,
 };
 
+#[cfg(feature = "editor")]
+use crate::{context::gui::AsyncExecutor, editor::Editor};
+
 /// A function that can execute a plugin's [`BackgroundTask`][Plugin::BackgroundTask]s. A plugin can
-/// dispatch these tasks from the `initialize()` function, the `process()` function, or the GUI, so
+/// dispatch these tasks from the `activate()` function, the `process()` function, or the GUI, so
 /// they can be deferred for later to avoid blocking realtime contexts.
 pub type TaskExecutor<P> = Box<dyn Fn(<P as Plugin>::BackgroundTask) + Send>;
 
@@ -32,7 +34,7 @@ pub type TaskExecutor<P> = Box<dyn Fn(<P as Plugin>::BackgroundTask) + Send>;
 /// resistance. As such, the definitions on this trait fall in one of the following classes:
 ///
 /// - `Plugin` objects are stateful. During their lifetime the plugin API wrappers will call the
-///   various lifecycle methods defined below, with the `initialize()`, `reset()`, and `process()`
+///   various lifecycle methods defined below, with the `activate()`, `reset()`, and `process()`
 ///   functions being the most important ones.
 /// - Most of the rest of the trait statically describes the plugin. You will find this done in
 ///   three different ways:
@@ -168,6 +170,7 @@ pub trait Plugin: Default + Send + 'static {
     ///
     /// Queried only once immediately after the plugin instance is created. This function takes
     /// `&mut self` to make it easier to move data into the `Editor` implementation.
+    #[cfg(feature = "editor")]
     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         None
     }
@@ -188,7 +191,7 @@ pub trait Plugin: Default + Send + 'static {
     // The following functions follow the lifetime of the plugin.
     //
 
-    /// Initialize the plugin for the given audio IO configuration. From this point onwards the
+    /// Activate the plugin for the given audio IO configuration. From this point onwards the
     /// audio IO layouts and the buffer sizes are fixed until this function is called again.
     ///
     /// Before this point, the plugin should not have done any expensive initialization. Please
@@ -206,18 +209,18 @@ pub trait Plugin: Default + Send + 'static {
     /// - Depending on how the host restores plugin state, this function may be called multiple
     ///   times in rapid succession. It may thus be useful to check if the initialization work for
     ///   the current bufffer and audio IO configurations has already been performed first.
-    /// - If the plugin fails to initialize for whatever reason, then this should return `false`.
-    fn initialize(
+    /// - If the plugin fails to activate for whatever reason, then this should return `false`.
+    fn activate(
         &mut self,
         audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        context: &mut impl ActivateContext<Self>,
     ) -> bool {
         true
     }
 
     /// Clear internal state such as filters and envelopes. This is always called after
-    /// [`initialize()`][Self::initialize()], and it may also be called at any other time from the
+    /// [`activate()`][Self::activate()], and it may also be called at any other time from the
     /// audio thread. You should thus not do any allocations in this function.
     fn reset(&mut self) {}
 
@@ -250,16 +253,17 @@ pub trait Plugin: Default + Send + 'static {
     ) -> ProcessStatus;
 
     /// Called when the plugin is deactivated. The host will call
-    /// [`initialize()`][Self::initialize()] again before the plugin resumes processing audio. These
+    /// [`activate()`][Self::activate()] again before the plugin resumes processing audio. These
     /// two functions will not be called when the host only temporarily stops processing audio. You
     /// can clean up or deallocate resources here. In most cases you can safely ignore this.
     ///
-    /// There is no one-to-one relationship between calls to `initialize()` and `deactivate()`.
-    /// `initialize()` may be called more than once before `deactivate()` is called, for instance
+    /// There is no one-to-one relationship between calls to `activate()` and `deactivate()`.
+    /// `activate()` may be called more than once before `deactivate()` is called, for instance
     /// when restoring state while the plugin is still activate.
     fn deactivate(&mut self) {}
 
-    /// Called when the host provides track information after [`initialize()`][Self::initialize()] and after changes are made to the track that the plugin is on.
+    /// Called when the host provides track information after [`activate()`][Self::activate()] and after
+    /// changes are made to the track that the plugin is on.
     fn track_info_updated(&mut self, info: TrackInfo) {}
 
     /// Configure the global logger here.

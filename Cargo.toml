@@ -37,13 +37,13 @@ license = "ISC"
 repository = "https://codeberg.org/RustAudio/nice-plug"
 
 [workspace.dependencies]
-anyhow = "1.0"
+anyhow = "1.0.104"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 atomic_float = "1.1"
 atomic_refcell = "0.1"
 bitflags = "2"
-baseview = "0.2.1"
+baseview = { git = "https://github.com/RustAudio/baseview", rev = "50e26a4f514660bae00434a639ddd60180f1856e" }
 raw-window-handle = "0.6"
 realfft = "3.0"
 approx = "0.5.1"

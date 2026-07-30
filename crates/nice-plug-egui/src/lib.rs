@@ -6,10 +6,9 @@
 #![allow(clippy::type_complexity)]
 
 use crossbeam::atomic::AtomicCell;
-use egui::{Context, Ui};
-use nice_plug_core::context::gui::ParamSetter;
+use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::editor::Editor;
-use nice_plug_core::editor::dpi::LogicalSize;
+use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize};
 use nice_plug_core::params::persist::PersistentField;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -41,25 +40,49 @@ pub mod widgets;
 /// field on your parameters struct.
 ///
 /// See [`EguiState::from_size()`].
-pub fn create_egui_editor<T, B, U>(
+pub fn create_egui_editor<A: NiceEguiApp>(
     egui_state: Arc<EguiState>,
-    user_state: T,
     settings: EguiNiceSettings,
-    build: B,
-    update: U,
-) -> Option<Box<dyn Editor>>
-where
-    T: 'static + Send,
-    B: Fn(&Context, &mut ExtraOutputCommands, &mut T) + 'static + Send + Sync,
-    U: Fn(&mut Ui, &ParamSetter, &mut ExtraOutputCommands, &mut T) + 'static + Send + Sync,
-{
+    app: A,
+) -> Option<Box<dyn Editor>> {
     Some(Box::new(editor::EguiEditor {
         egui_state,
-        user_state: Arc::new(Mutex::new(user_state)),
+        user_app: Arc::new(Mutex::new(app)),
         settings: Arc::new(settings),
-        build: Arc::new(build),
-        update: Arc::new(update),
     }))
+}
+
+/// Implement this trait to run an app with nice-plug-egui.
+pub trait NiceEguiApp: Send + 'static {
+    /// Called when a new editor is opened. Setup code such as `egui_ctx.set_fonts()`
+    /// can be done here.
+    ///
+    /// This may be called again after a call to [`NiceEguiApp::editor_closed()`].
+    ///
+    /// If an error is returned, then the window will be closed.
+    fn build(
+        &mut self,
+        egui_ctx: egui::Context,
+        nice_gui_ctx: GuiContext,
+        frame: &mut Frame,
+    ) -> Result<(), baseview::HandlerError> {
+        let _ = egui_ctx;
+        let _ = nice_gui_ctx;
+        let _ = frame;
+        Ok(())
+    }
+
+    /// Called each time the UI needs repainting, which may be many times per second.
+    ///
+    /// This will only ever be called while an editor window is open.
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut Frame);
+
+    /// Called when the editor is closed. This is needed because the plugin editor window
+    /// can be opened and closed multiple times.
+    ///
+    /// If your app holds onto an `egui::Context` object, then it should be dropped here so that
+    /// egui can probably be cleaned up.
+    fn editor_closed(&mut self) {}
 }
 
 /// State for an `nice-plug-egui` editor.
@@ -67,14 +90,20 @@ where
 pub struct EguiState {
     /// The window's size in logical pixels before applying `scale_factor`.
     #[serde(with = "nice_plug_core::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<LogicalSize<f32>>,
+    logical_size: AtomicCell<(f32, f32)>,
+
+    /// It would be annoying if the zoom factor was saved along with presets. The plugin should
+    /// load this from a config file instead.
+    #[serde(skip)]
+    pub(crate) zoom_factor: AtomicCell<f32>,
 
     #[serde(skip)]
-    window_scale_factor: AtomicCell<f32>,
+    pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
+
     #[serde(skip)]
     /// The scaling factor reported by the host, if any. On macOS this will never be set and we
     /// should use the system scaling factor instead.
-    host_scale_factor: AtomicCell<Option<f32>>,
+    pub(crate) system_scale_factor: AtomicCell<f64>,
 
     /// Whether the editor's window is currently open.
     #[serde(skip)]
@@ -83,7 +112,8 @@ pub struct EguiState {
 
 impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
     fn set(&self, new_value: EguiState) {
-        self.size.store(new_value.size.load());
+        self.logical_size.store(new_value.logical_size.load());
+        self.zoom_factor.store(new_value.zoom_factor.load());
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -95,31 +125,37 @@ impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
 }
 
 impl EguiState {
-    /// Initialize the GUI's state. This value can be passed to [`create_egui_editor()`]. The window
-    /// size is in logical pixels, so before it is multiplied by the DPI scaling factor.
-    pub fn from_size(size: LogicalSize<f32>) -> Arc<EguiState> {
-        Arc::new(EguiState {
-            size: AtomicCell::new(size),
-            window_scale_factor: AtomicCell::new(1.0),
-            host_scale_factor: AtomicCell::new(None),
+    pub fn from_size(size: LogicalSize<f32>, zoom_factor: f32) -> Arc<Self> {
+        Arc::new(Self {
+            logical_size: AtomicCell::new((size.width, size.height)),
+            zoom_factor: AtomicCell::new(zoom_factor),
             open: AtomicBool::new(false),
+            host_scale_factor: AtomicCell::new(None),
+            system_scale_factor: AtomicCell::new(1.0),
         })
     }
 
-    pub fn size(&self) -> LogicalSize<f32> {
-        self.size.load()
+    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        let (width, height) = self.logical_size.load();
+        LogicalSize::new(width, height)
     }
 
-    pub fn window_scale_factor(&self) -> f32 {
-        self.window_scale_factor.load()
-    }
+    pub fn physical_size(&self) -> PhysicalSize<u32> {
+        let logical_size = self.logical_size();
+        let zoom_factor = self.zoom_factor.load();
+        let host_scale_factor = self.host_scale_factor.load();
+        let system_scale_factor = self.system_scale_factor.load();
 
-    pub fn host_scale_factor(&self) -> Option<f32> {
-        self.host_scale_factor.load()
+        let scale_factor = zoom_factor as f64
+            * host_scale_factor
+                .map(|s| s as f64)
+                .unwrap_or(system_scale_factor);
+
+        logical_size.to_physical(scale_factor)
     }
 
     /// Whether the GUI is currently visible.
-    // Called `is_open()` instead of `open()` to avoid the ambiguity.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
     }

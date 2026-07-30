@@ -166,7 +166,7 @@ impl Plugin for PolyModSynth {
     }
 
     // If the synth as a variable number of voices, you will need to call
-    // `context.set_current_voice_capacity()` in `initialize()` and in `process()` (when the
+    // `context.set_current_voice_capacity()` in `activate()` and in `process()` (when the
     // capacity changes) to inform the host about this.
     fn reset(&mut self) {
         // This ensures the output is at least somewhat deterministic when rendering to audio
@@ -602,7 +602,7 @@ impl ClapPlugin for PolyModSynth {
 
     const CLAP_POLY_MODULATION_CONFIG: Option<PolyModulationConfig> = Some(PolyModulationConfig {
         // If the plugin's voice capacity changes at runtime (for instance, when switching to a
-        // monophonic mode), then the plugin should inform the host in the `initialize()` function
+        // monophonic mode), then the plugin should inform the host in the `activate()` function
         // as well as in the `process()` function if it changes at runtime using
         // `context.set_current_voice_capacity()`
         max_voice_capacity: NUM_VOICES,

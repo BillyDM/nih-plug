@@ -126,7 +126,7 @@ pub(crate) unsafe fn serialize_json<'a, P: Plugin>(
 /// This uses a parameter getter function to avoid having to rebuild the parameter map, which may
 /// include expensive user written code. See [`make_params_getter()`].
 ///
-/// Make sure to reinitialize plugin after deserializing the state so it can react to the new
+/// Make sure to reactivate plugin after deserializing the state so it can react to the new
 /// parameter values. The smoothers have already been reset by this function.
 ///
 /// The [`Plugin`] argument is used to call [`Plugin::filter_state()`] just before loading the

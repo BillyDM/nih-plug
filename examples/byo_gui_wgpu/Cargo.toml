@@ -17,7 +17,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { version = "0.2.0", features = ["opengl"] }
+baseview = { git = "https://github.com/RustAudio/baseview", rev = "50e26a4f514660bae00434a639ddd60180f1856e", features = ["tracing"] }
 wgpu = "30"
 pollster = "1.0"
 crossbeam = "0.8"

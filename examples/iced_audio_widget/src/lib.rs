@@ -1,11 +1,12 @@
 use iced_audio::Gesture;
 use nice_plug::prelude::*;
 use nice_plug_iced::iced::{
-    self, Center, PollSubNotifier, Theme,
-    widget::{Column, ProgressBar, column, text},
+    self,
+    widget::{column, text, Column, ProgressBar},
+    Center, PollSubNotifier, Theme,
 };
-use nice_plug_iced::{EditorState, NiceGuiContext, WindowState, application, create_iced_editor};
-use std::sync::{Arc, atomic::Ordering};
+use nice_plug_iced::{application, create_iced_editor, EditorState, NiceGuiContext, WindowState};
+use std::sync::{atomic::Ordering, Arc};
 
 const MIN_GAIN_DB: f32 = -30.0;
 const MAX_GAIN_DB: f32 = 30.0;
@@ -139,11 +140,11 @@ impl Plugin for Gain {
         )
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        _context: &mut impl ActivateContext<Self>,
     ) -> bool {
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB

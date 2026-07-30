@@ -4,12 +4,14 @@
 pub mod audio_setup;
 pub mod buffer;
 pub mod context;
-pub mod editor;
 pub mod formatters;
 pub mod midi;
 pub mod params;
 pub mod plugin;
 pub mod util;
+
+#[cfg(feature = "editor")]
+pub mod editor;
 
 // These macros are also in the crate root and in the prelude, but having the module itself be pub
 // as well makes it easy to import _just_ the macros without using `#[macro_use] extern crate nice-plug-core;`

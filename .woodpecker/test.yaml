@@ -18,6 +18,8 @@ steps:
           libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
       # Run the tests (nice-plug and nice-plug-core are the only crates with tests).
       - cargo test --profile ci -p nice-plug -p nice-plug-core
+      # Test that everything builds with the editor feature disabled
+      - cargo build --package midi_inverter
       # Test that plugin bundling works. This by proxy also checks that the core
       # crates compile: byo_gui_gl bundles both a plugin and a standalone target,
       # and exercises the common OpenGL support.

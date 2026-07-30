@@ -2,7 +2,7 @@ use crossbeam_utils::atomic::AtomicCell;
 use iced_baseview::baseview::{WindowOpenOptions, WindowScalePolicy};
 use iced_baseview::shell::window::IcedWindowHandle;
 use iced_baseview::{IcedBaseviewSettings, PollSubNotifier, Program, message};
-use nice_plug_core::context::gui::{GuiContext, ParamSetter};
+use nice_plug_core::context::gui::{GuiContextInner, ParamSetter};
 use nice_plug_core::editor::dpi::LogicalSize;
 use nice_plug_core::{
     editor::{Editor, ParentWindowHandle},
@@ -34,7 +34,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
     fn spawn(
         &self,
         parent: ParentWindowHandle,
-        context: Arc<dyn GuiContext>,
+        context: Arc<dyn GuiContextInner>,
     ) -> Box<dyn std::any::Any> {
         let nice_ctx = NiceGuiContext {
             context: context.clone(),
@@ -77,7 +77,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditor<P, State
         self.window_state.size().into()
     }
 
-    fn set_scale_factor(&self, factor: f64) -> bool {
+    fn parent_scale_factor_changed(&self, factor: f64) -> bool {
         // If the editor is currently open then the host must not change the current HiDPI scale as
         // we don't have a way to handle that. Ableton Live does this.
         if self.window_state.is_open() {
@@ -183,7 +183,7 @@ impl WindowState {
 
 #[derive(Clone)]
 pub struct NiceGuiContext {
-    pub context: Arc<dyn GuiContext>,
+    pub context: Arc<dyn GuiContextInner>,
     window_state: Arc<WindowState>,
 }
 

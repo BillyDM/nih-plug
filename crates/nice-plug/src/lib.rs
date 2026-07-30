@@ -43,12 +43,12 @@
 //!      [`Plugin::AUDIO_IO_LAYOUTS`][prelude::Plugin::AUDIO_IO_LAYOUTS]. The first layout is always
 //!      used as the default one, and should reflect the plugin's most commonly used configuration.
 //!      Usually this is a stereo layout.
-//!   3. After that, [`Plugin::initialize()`][prelude::Plugin::initialize()] will be called with the
+//!   3. After that, [`Plugin::activate()`][prelude::Plugin::activate()] will be called with the
 //!      the selected IO configuration and the audio buffer settings. Here you should allocate any
 //!      data structures you need or precompute data that depends on the sample rate or maximum
 //!      buffer size. This is the only place where you can safely allocate memory.
 //!   4. The [`Plugin::reset()`][prelude::Plugin::reset()] function is always called immediately
-//!      after `initialize()`. This is where you should clear out coefficients, envelopes, phases,
+//!      after `activate()`. This is where you should clear out coefficients, envelopes, phases,
 //!      and other runtime data. The reason for this split is that this function may be called at
 //!      any time by the host from the audio thread, and it thus needs to be realtime-safe.
 //!

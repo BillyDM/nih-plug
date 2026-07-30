@@ -1,8 +1,7 @@
-use atomic_float::AtomicF64;
+use crossbeam::atomic::AtomicCell;
 use fragile::Fragile;
 use nice_plug_core::editor::{Editor, ParentWindowHandle, dpi::PhysicalSize};
 use parking_lot::{Mutex, RwLock};
-use std::any::Any;
 use std::ffi::{CStr, c_ulong, c_void};
 use std::num::NonZeroIsize;
 use std::ptr::NonNull;
@@ -13,7 +12,7 @@ use vst3::Steinberg::{
     kPlatformTypeNSView, kPlatformTypeX11EmbedWindowID, kResultFalse, kResultOk, tresult,
 };
 use vst3::Steinberg::{
-    IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewContentScaleSupport,
+    IPlugFrame, IPlugView, IPlugViewContentScaleSupport,
     IPlugViewContentScaleSupport_::ScaleFactor, IPlugViewContentScaleSupportTrait, IPlugViewTrait,
     ViewRect,
 };
@@ -149,7 +148,6 @@ use {
 pub(crate) struct WrapperView<P: Vst3Plugin> {
     inner: Arc<WrapperInner<P>>,
     editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: Mutex<Option<Fragile<Box<dyn Any>>>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -162,7 +160,7 @@ pub(crate) struct WrapperView<P: Vst3Plugin> {
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
-    scale_factor: AtomicF64,
+    suggested_scale_factor: AtomicCell<Option<f64>>,
 }
 
 impl<P: Vst3Plugin> Class for WrapperView<P> {
@@ -224,14 +222,14 @@ impl<P: Vst3Plugin> WrapperView<P> {
         Self {
             inner,
             editor,
-            editor_handle: Mutex::new(None),
             plug_frame: RwLock::new(None),
             #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             run_loop_event_handler: RwLock::new(None),
-            scale_factor: AtomicF64::new(1.0),
+            suggested_scale_factor: AtomicCell::new(None),
         }
     }
 
+    /*
     /// Ask the host to resize the view to the size specified by [`Editor::size()`]. Will return false
     /// if the host doesn't like you. This **needs** to be run from the GUI thread.
     ///
@@ -247,10 +245,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let size = this.editor.lock().size();
-                let scale_factor = this.scale_factor.load(Ordering::Relaxed);
-
-                let physical_size: PhysicalSize<i32> = size.to_physical(scale_factor);
+                let physical_size: PhysicalSize<i32> = this.editor.lock().size().cast();
 
                 let mut size = ViewRect {
                     left: 0,
@@ -275,6 +270,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
             None => false,
         }
     }
+    */
 
     /// If the host supports `IRunLoop`, then this will post the task to a task queue that will be
     /// run on the host's UI thread. If not, then this will return an `Err` value containing the
@@ -316,12 +312,17 @@ impl<P: Vst3Plugin> WrapperView<P> {
             return kResultFalse;
         };
         let modifiers = vst3_modifiers(modifiers);
-        if self
-            .editor
-            .lock()
-            .on_virtual_key_from_host(key_code, is_down, modifiers)
-        {
-            kResultOk
+
+        if let Some(window) = self.inner.editor_window.lock().as_mut() {
+            if window
+                .get_mut()
+                .editor
+                .on_virtual_key_from_host(key_code, is_down, modifiers)
+            {
+                kResultOk
+            } else {
+                kResultFalse
+            }
         } else {
             kResultFalse
         }
@@ -437,8 +438,8 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn attached(&self, parent: *mut c_void, type_: FIDString) -> tresult {
         check_null_ptr!(parent);
 
-        let mut editor_handle = self.editor_handle.lock();
-        if editor_handle.is_none() {
+        let mut window = self.inner.editor_window.lock();
+        if window.is_none() {
             let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
                 #[allow(clippy::unnecessary_cast)]
                 let w = parent as usize as c_ulong;
@@ -456,15 +457,27 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 return kInvalidArgument;
             };
 
-            *editor_handle = Some(Fragile::new(
-                self.editor
-                    .lock()
-                    .spawn(parent_handle, self.inner.clone().make_gui_context()),
-            ));
+            // TODO
+            let host = baseview::host::Host::new();
 
-            self.inner.is_editor_open.store(true, Ordering::SeqCst);
+            let suggested_scale_factor = self.suggested_scale_factor.load();
 
-            kResultOk
+            match self.editor.lock().spawn(
+                Some(parent_handle),
+                suggested_scale_factor,
+                self.inner.clone().make_gui_context(),
+                Some(host),
+            ) {
+                Ok(editor_window) => {
+                    *window = Some(Fragile::new(editor_window));
+                    self.inner.is_editor_open.store(true, Ordering::SeqCst);
+                    kResultOk
+                }
+                Err(e) => {
+                    crate::nice_error!("Failed to open editor: {}", e);
+                    kResultFalse
+                }
+            }
         } else {
             crate::nice_debug_assert_failure!(
                 "Host tried to attach editor while the editor is already attached"
@@ -475,7 +488,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn removed(&self) -> tresult {
-        let mut editor_handle = self.editor_handle.lock();
+        let mut editor_handle = self.inner.editor_window.lock();
         if editor_handle.is_some() {
             self.inner.is_editor_open.store(false, Ordering::SeqCst);
             *editor_handle = None;
@@ -512,8 +525,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
         // TODO: This is technically incorrect during resizing, this should still report the old
         //       size until `.on_size()` has been called. We should probably only bother fixing this
         //       if it turns out to be an issue.
-        let scale_factor = self.scale_factor.load(Ordering::Relaxed);
-        let editor_size: PhysicalSize<i32> = self.editor.lock().size().to_physical(scale_factor);
+        let editor_size: PhysicalSize<i32> = self.editor.lock().size().cast();
 
         size.left = 0;
         size.right = editor_size.width;
@@ -534,14 +546,21 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             return kResultFalse;
         }
 
+        let size = PhysicalSize {
+            width: phys_width as u32,
+            height: phys_height as u32,
+        };
+
         // Apply the new size to the editor. Editors that don't support being
         // resized return `false` from `set_size()`, in which case we tell the
         // host we couldn't honor it.
-        if self.editor.lock().set_size(PhysicalSize {
-            width: phys_width as u32,
-            height: phys_height as u32,
-        }) {
-            kResultOk
+        if let Some(window) = self.inner.editor_window.lock().as_mut() {
+            let window = window.get_mut();
+            if window.editor.set_size(size, &mut window.window) {
+                kResultOk
+            } else {
+                kResultFalse
+            }
         } else {
             kResultFalse
         }
@@ -600,7 +619,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 }
 
 impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
-    unsafe fn setContentScaleFactor(&self, factor: ScaleFactor) -> tresult {
+    unsafe fn setContentScaleFactor(&self, scale_factor: ScaleFactor) -> tresult {
         // TODO: So apparently Ableton Live doesn't call this function. Right now we'll hardcode the
         //       default scale to 1.0 on Linux and Windows since we can't easily get the scale from
         //       baseview. A better alternative would be to do the fallback DPI scale detection
@@ -608,17 +627,17 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
         //       on macOS and both the editor implementation and the wrappers would know about the
         //       correct scale.
 
-        // On macOS scaling is done by the OS, and all window sizes are in logical pixels
-        if cfg!(target_os = "macos") {
-            crate::nice_debug_assert_failure!(
-                "Ignoring host request to set explicit DPI scaling factor"
-            );
-            return kResultFalse;
-        }
-
-        if self.editor.lock().set_scale_factor(factor as f64) {
-            self.scale_factor.store(factor as f64, Ordering::Relaxed);
-            kResultOk
+        if let Some(window) = self.inner.editor_window.lock().as_mut() {
+            let window = window.get_mut();
+            if window
+                .editor
+                .set_suggested_scale_factor(scale_factor as f64, &mut window.window)
+            {
+                self.suggested_scale_factor.store(Some(scale_factor as f64));
+                kResultOk
+            } else {
+                kResultFalse
+            }
         } else {
             kResultFalse
         }
