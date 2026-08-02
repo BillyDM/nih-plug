@@ -667,6 +667,10 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
         //       on macOS and both the editor implementation and the wrappers would know about the
         //       correct scale.
 
+        if !scale_factor.is_finite() || !scale_factor.is_sign_positive() {
+            return kResultFalse;
+        }
+
         if let Some(window) = self.inner.editor_window.lock().as_mut() {
             let window = window.get_mut();
             if window

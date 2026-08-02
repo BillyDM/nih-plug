@@ -113,7 +113,6 @@ pub struct EguiState {
 impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
     fn set(&self, new_value: EguiState) {
         self.logical_size.store(new_value.logical_size.load());
-        self.zoom_factor.store(new_value.zoom_factor.load());
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -126,6 +125,8 @@ impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
 
 impl EguiState {
     pub fn from_size(size: LogicalSize<f32>, zoom_factor: f32) -> Arc<Self> {
+        assert!(zoom_factor > 0.0);
+
         Arc::new(Self {
             logical_size: AtomicCell::new((size.width, size.height)),
             zoom_factor: AtomicCell::new(zoom_factor),

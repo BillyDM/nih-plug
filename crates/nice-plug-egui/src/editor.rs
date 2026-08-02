@@ -106,13 +106,17 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
         let zoom_factor = egui_state.zoom_factor.load();
         let logical_size = egui_state.logical_size();
 
-        let settings = EguiWindowSettings::new()
+        let mut settings = EguiWindowSettings::new()
             .with_title(self.settings.title.clone())
             .with_size(logical_size)
             .with_resize_mode(self.settings.resize_mode)
             .with_zoom_factor(zoom_factor)
             .with_graphics_config(self.settings.graphics.clone())
             .with_parent(parent.as_ref());
+
+        if parent.is_some() {
+            settings = settings.parented();
+        }
 
         let egui_ctx = Arc::new(Mutex::new(None));
 
