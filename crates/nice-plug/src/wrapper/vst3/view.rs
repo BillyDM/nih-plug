@@ -5,8 +5,8 @@ use parking_lot::{Mutex, RwLock};
 use std::ffi::{CStr, c_ulong, c_void};
 use std::num::NonZeroIsize;
 use std::ptr::NonNull;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use vst3::Steinberg::{
     FIDString, TBool, char16, int16, kInvalidArgument, kNotImplemented, kPlatformTypeHWND,
     kPlatformTypeNSView, kPlatformTypeX11EmbedWindowID, kResultFalse, kResultOk, tresult,
@@ -229,7 +229,6 @@ impl<P: Vst3Plugin> WrapperView<P> {
         }
     }
 
-    /*
     /// Ask the host to resize the view to the size specified by [`Editor::size()`]. Will return false
     /// if the host doesn't like you. This **needs** to be run from the GUI thread.
     ///
@@ -237,7 +236,9 @@ impl<P: Vst3Plugin> WrapperView<P> {
     ///
     /// May cause memory corruption in Linux REAPER when called from outside of the `IRunLoop`.
     #[must_use]
-    pub unsafe fn request_resize(this: &ComWrapper<Self>) -> bool {
+    pub unsafe fn request_resize(this: &ComWrapper<Self>, new_size: baseview::WindowSize) -> bool {
+        use vst3::Steinberg::IPlugFrameTrait;
+
         // Don't do anything if the editor is not open, because that would be strange
         if !this.inner.is_editor_open.load(Ordering::SeqCst) {
             return false;
@@ -245,13 +246,11 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let physical_size: PhysicalSize<i32> = this.editor.lock().size().cast();
-
                 let mut size = ViewRect {
                     left: 0,
                     top: 0,
-                    right: physical_size.width,
-                    bottom: physical_size.height,
+                    right: new_size.physical.width as i32,
+                    bottom: new_size.physical.height as i32,
                 };
 
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
@@ -260,8 +259,9 @@ impl<P: Vst3Plugin> WrapperView<P> {
                 #[cfg(debug_assertions)]
                 if result != kResultOk {
                     crate::nice_warn!(
-                        "The host denied the resize, we currently don't handle this for VST3 \
-                         plugins"
+                        "The host denied to resize the window to {:?}, we currently don't handle this for VST3 \
+                         plugins",
+                        new_size
                     );
                 }
 
@@ -270,7 +270,6 @@ impl<P: Vst3Plugin> WrapperView<P> {
             None => false,
         }
     }
-    */
 
     /// If the host supports `IRunLoop`, then this will post the task to a task queue that will be
     /// run on the host's UI thread. If not, then this will return an `Err` value containing the
@@ -457,8 +456,49 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 return kInvalidArgument;
             };
 
-            // TODO
-            let host = baseview::host::Host::new();
+            #[derive(Debug, Clone, Copy, thiserror::Error)]
+            enum ResizeError {
+                #[error("Failed to post window resize task")]
+                FailedToPostTask,
+                #[error("Attempted to close window when plugin was closed")]
+                PluginClosed,
+            }
+
+            struct Vst3HostCallbacks<P: Vst3Plugin> {
+                inner: Weak<WrapperInner<P>>,
+            }
+
+            impl<P: Vst3Plugin> baseview::host::HostCallbacks for Vst3HostCallbacks<P> {
+                fn request_resize(
+                    &mut self,
+                    size: baseview::WindowSize,
+                ) -> Result<(), baseview::HandlerError> {
+                    if let Some(inner) = self.inner.upgrade() {
+                        let view = inner.plug_view.read().clone().unwrap();
+
+                        if let Err(task) = view.do_maybe_in_run_loop(Task::RequestResize(size)) {
+                            if !inner.schedule_gui(task) {
+                                return Err(ResizeError::FailedToPostTask.into());
+                            }
+                        }
+
+                        // We currently have no way to handle the host refusing to resize the
+                        // window since resizing must be done in the GUI thread.
+                        Ok(())
+                    } else {
+                        Err(ResizeError::PluginClosed.into())
+                    }
+                }
+
+                fn destroyed(&mut self) {
+                    // TODO: Does VST3 have a way for a plugin to notify the host that its GUI
+                    // has been destroyed?
+                }
+            }
+
+            let host = baseview::host::Host::new().with_callbacks(Vst3HostCallbacks {
+                inner: Arc::downgrade(&self.inner),
+            });
 
             let suggested_scale_factor = self.suggested_scale_factor.load();
 

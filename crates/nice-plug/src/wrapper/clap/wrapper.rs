@@ -3096,8 +3096,57 @@ impl<P: ClapPlugin> Wrapper<P> {
                     }
                 };
 
-                // TODO
-                let host = nice_plug_core::editor::baseview::host::Host::new();
+                #[derive(Debug, Clone, Copy, thiserror::Error)]
+                enum ResizeError {
+                    #[error("Host refused window size: {0:?}")]
+                    HostRefusedSize(baseview::WindowSize),
+                    #[error("Attempted to close window when plugin was closed")]
+                    PluginClosed,
+                }
+
+                struct ClapHostCallbacks<P: ClapPlugin> {
+                    wrapper: Weak<Wrapper<P>>,
+                    host_gui: ClapPtr<clap_host_gui>,
+                }
+
+                impl<P: ClapPlugin> baseview::host::HostCallbacks for ClapHostCallbacks<P> {
+                    fn request_resize(
+                        &mut self,
+                        size: baseview::WindowSize,
+                    ) -> Result<(), baseview::HandlerError> {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            if unsafe_clap_call! {
+                                &*self.host_gui=>request_resize(
+                                    &*wrapper.host_callback,
+                                    size.physical.width as u32,
+                                    size.physical.height as u32,
+                                )
+                            } {
+                                Ok(())
+                            } else {
+                                Err(ResizeError::HostRefusedSize(size).into())
+                            }
+                        } else {
+                            Err(ResizeError::PluginClosed.into())
+                        }
+                    }
+
+                    fn destroyed(&mut self) {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            unsafe_clap_call! {
+                                &*self.host_gui=>closed(
+                                    &*wrapper.host_callback,
+                                    true,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                let host = baseview::host::Host::new().with_callbacks(ClapHostCallbacks {
+                    wrapper: wrapper.this.borrow().clone(),
+                    host_gui: ClapPtr::clone(&wrapper.host_gui.borrow().as_ref().unwrap()),
+                });
 
                 let suggested_scale_factor = wrapper.suggested_scale_factor.load();
 

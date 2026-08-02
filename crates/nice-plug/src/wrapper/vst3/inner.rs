@@ -186,8 +186,8 @@ pub enum Task<P: Plugin> {
     TriggerRestart(i32),
     // Request the editor to be resized according to its current size. Right now there is no way to
     // handle "denied resize" requests yet.
-    //#[cfg(feature = "editor")]
-    //RequestResize,
+    #[cfg(feature = "editor")]
+    RequestResize(baseview::WindowSize),
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -717,6 +717,19 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                 },
                 None => crate::nice_debug_assert_failure!("Component handler not yet set"),
             },
+            Task::RequestResize(new_size) => {
+                if self.is_editor_open.load(Ordering::SeqCst) {
+                    unsafe {
+                        crate::nice_debug_assert!(is_gui_thread);
+                        let _success = WrapperView::request_resize(
+                            &self.plug_view.read().clone().unwrap(),
+                            new_size,
+                        );
+                    }
+                } else {
+                    crate::nice_debug_assert_failure!("Can't resize a closed editor");
+                }
+            }
         }
     }
 }

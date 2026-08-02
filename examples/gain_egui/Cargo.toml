@@ -22,7 +22,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "standalone",
 ] }
 nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.3.0" }
-baseview = { version = "0.2.0", features = ["opengl"] }
+baseview = { git = "https://github.com/RustAudio/baseview", rev = "efb79f3596b661633c85c1c02f1036c0d82336f0", features = ["opengl", "tracing"] }
 atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the
 # GUI and the audio thread.
