@@ -1,14 +1,14 @@
 use egui::{Margin, Vec2};
 use nice_plug::{context::gui::GuiContext, editor::dpi::LogicalSize, prelude::*};
 use nice_plug_egui::{
-    EguiNiceSettings, EguiState, NiceEguiApp, ResizeMode, create_egui_editor,
+    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, ResizeMode, create_egui_editor,
     resizable_window::{ResizableWindow, ResizeWindowMode},
     widgets,
 };
 use std::sync::{Arc, Mutex};
 
 const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 300.0);
-const RESIZE_HINT: ResizeHint = ResizeHint::with_min_size(MIN_WINDOW_SIZE);
+const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
 const ZOOM_FACTOR: f32 = 1.0;
 const RESIZE_MODE: ResizeMode = ResizeMode::ExpandViewport;
 
@@ -25,7 +25,7 @@ const AUDIO_TO_GUI_MSG_CHANNEL_CAPACITY: usize = 128;
 /// Here you can store any state you need for your GUI.
 ///
 /// This state persists across editor openings.
-struct GainEditor {
+pub struct GainEditor {
     open_state: Option<OpenEditorState>,
 
     params: Arc<GainParams>,
@@ -152,8 +152,8 @@ impl NiceEguiApp for GainEditor {
                     ui.add(widgets::ParamSlider::for_param(&self.params.gain, &setter));
 
                     ui.label(
-                        "Also gain, but with a standard widget. Note that it doesn't \
-                             properly take the parameter curve into account!",
+                        "Also gain, but with a standard widget. Note that it doesn't properly \
+                         take the parameter curve into account!",
                     );
 
                     // This is a simple naive version of a parameter slider that's not aware of how
@@ -274,6 +274,8 @@ pub struct TripleBufferState {
 pub struct Gain {
     params: Arc<GainParams>,
 
+    editor_state: Arc<EguiState>,
+
     /// Needed to normalize the peak meter's response based on the sample rate.
     peak_meter_decay_weight: f32,
     /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
@@ -334,6 +336,8 @@ impl Default for Gain {
         Self {
             params,
 
+            editor_state: EguiState::from_size(MIN_WINDOW_SIZE, ZOOM_FACTOR),
+
             peak_meter_decay_weight: 1.0,
             peak_meter,
 
@@ -355,11 +359,6 @@ impl Default for Gain {
 
 #[derive(Params)]
 pub struct GainParams {
-    /// The editor state, saved together with the parameter state so the custom scaling can be
-    /// restored.
-    #[persist = "editor-state"]
-    editor_state: Arc<EguiState>,
-
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -371,8 +370,6 @@ pub struct GainParams {
 impl Default for GainParams {
     fn default() -> Self {
         Self {
-            editor_state: EguiState::from_size(MIN_WINDOW_SIZE, ZOOM_FACTOR),
-
             // See the main gain example for more details
             gain: FloatParam::new(
                 "Gain",
@@ -415,6 +412,7 @@ impl Plugin for Gain {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = EguiEditor<GainEditor>;
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -422,9 +420,9 @@ impl Plugin for Gain {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         create_egui_editor(
-            self.params.editor_state.clone(),
+            self.editor_state.clone(),
             EguiNiceSettings::new()
                 .with_resize_hint(RESIZE_HINT)
                 .with_resize_mode(RESIZE_MODE),
@@ -479,7 +477,7 @@ impl Plugin for Gain {
         }
 
         // Demonstrate sending messages to the GUI thread.
-        if self.params.editor_state.is_open() && !self.msg_channel.msg_sent {
+        if self.editor_state.is_open() && !self.msg_channel.msg_sent {
             if let Err(e) = self.msg_channel.to_gui_tx.push(AudioToGuiMsg::MessageA) {
                 nice_error!("Failed to send message to GUI thread: {}", e);
             }
@@ -507,7 +505,7 @@ impl Plugin for Gain {
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
-            if self.params.editor_state.is_open() {
+            if self.editor_state.is_open() {
                 amplitude = (amplitude / num_samples as f32).abs();
                 let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
                 let new_peak_meter = if amplitude > current_peak_meter {

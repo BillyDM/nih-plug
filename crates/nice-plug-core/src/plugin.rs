@@ -125,6 +125,13 @@ pub trait Plugin: Default + Send + 'static {
     /// to do offline processing.
     const HARD_REALTIME_ONLY: bool = false;
 
+    #[cfg(feature = "editor")]
+    type Editor: Editor;
+
+    // To avoid rust-analyzer from getting confused.
+    #[cfg(not(feature = "editor"))]
+    type Editor;
+
     /// The plugin's SysEx message type if it supports sending or receiving MIDI SysEx messages, or
     /// `()` if it does not. This type can be a struct or enum wrapping around one or more message
     /// types, and the [`SysExMessage`] trait is then used to convert between this type and basic
@@ -141,6 +148,7 @@ pub trait Plugin: Default + Send + 'static {
     // NOTE: Sadly it's not yet possible to default this and the `async_executor()` function to
     //       `()`: https://github.com/rust-lang/rust/issues/29661
     type BackgroundTask: Send;
+
     /// A function that executes the plugin's tasks. When implementing this you will likely want to
     /// pattern match on the task type, and then send any resulting data back over a channel or
     /// triple buffer. See [`BackgroundTask`][Self::BackgroundTask].
@@ -171,7 +179,7 @@ pub trait Plugin: Default + Send + 'static {
     /// Queried only once immediately after the plugin instance is created. This function takes
     /// `&mut self` to make it easier to move data into the `Editor` implementation.
     #[cfg(feature = "editor")]
-    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         None
     }
 

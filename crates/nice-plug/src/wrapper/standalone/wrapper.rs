@@ -5,14 +5,17 @@ use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
 #[cfg(feature = "editor")]
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
+use nice_plug_core::editor::EditorWindow;
 #[cfg(feature = "editor")]
-use nice_plug_core::editor::{Editor, EditorInstance};
+use nice_plug_core::editor::{Editor, EditorHandle};
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
 use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "editor")]
+use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
@@ -48,10 +51,10 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
     #[allow(clippy::type_complexity)]
     #[cfg(feature = "editor")]
-    pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
+    pub editor: AtomicRefCell<Option<Arc<Mutex<P::Editor>>>>,
     #[allow(clippy::type_complexity)]
     #[cfg(feature = "editor")]
-    pub editor_instance: Mutex<Option<Box<dyn EditorInstance>>>,
+    pub editor_handle: Mutex<Option<<P::Editor as Editor>::Handle>>,
     #[cfg(feature = "editor")]
     close_gui_requested: Arc<AtomicBool>,
 
@@ -124,7 +127,7 @@ pub enum WrapperError {
     ActivationFailed,
     #[cfg(feature = "editor")]
     #[error("{0}")]
-    BaseviewError(#[from] baseview::Error),
+    WindowError(#[from] Box<dyn Error>),
 }
 
 impl<P: Plugin, B: Backend<P>> MainThreadExecutor<Task<P>> for Wrapper<P, B> {
@@ -133,15 +136,15 @@ impl<P: Plugin, B: Backend<P>> MainThreadExecutor<Task<P>> for Wrapper<P, B> {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
             #[cfg(feature = "editor")]
             Task::StateChanged => {
-                if let Some(editor_instance) = self.editor_instance.lock().as_mut() {
-                    editor_instance.state_changed(None);
+                if let Some(editor_handle) = self.editor_handle.lock().as_ref() {
+                    editor_handle.state_changed();
                 }
             }
             #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_ptr, normalized_value) => {
-                if let Some(editor_instance) = self.editor_instance.lock().as_mut() {
+                if let Some(editor) = self.editor_handle.lock().as_ref() {
                     let param_id = &self.param_ptr_to_id[&param_ptr];
-                    editor_instance.param_value_changed(param_id, normalized_value);
+                    editor.param_value_changed(param_id, normalized_value);
                 }
             }
         }
@@ -202,7 +205,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
             #[cfg(feature = "editor")]
-            editor_instance: Mutex::new(None),
+            editor_handle: Mutex::new(None),
             // Set in `run()`
             #[cfg(feature = "editor")]
             close_gui_requested: Arc::new(AtomicBool::new(false)),
@@ -324,20 +327,20 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             Some(editor) => {
                 let context = self.clone().make_gui_context();
 
-                match editor.lock().spawn(None, None, context, None) {
+                match editor.lock().spawn(None, false, None, context, None) {
                     Ok(editor_window) => {
-                        use nice_plug_core::editor::EditorWindow;
-
-                        let EditorWindow { editor, window } = editor_window;
+                        let EditorWindow {
+                            handle: instance,
+                            window,
+                        } = editor_window;
 
                         gui_spawned = true;
-                        *self.editor_instance.lock() = Some(editor);
+                        *self.editor_handle.lock() = Some(instance);
 
-                        window
-                            .run_until_closed()
-                            .map_err(|e| WrapperError::BaseviewError(e.into()))
+                        <P::Editor as Editor>::Handle::run_until_closed(window)
+                            .map_err(|e| WrapperError::WindowError(e.into()))
                     }
-                    Err(e) => Err(WrapperError::BaseviewError(e.into())),
+                    Err(e) => Err(WrapperError::WindowError(e.into())),
                 }
             }
             None => Ok(()),

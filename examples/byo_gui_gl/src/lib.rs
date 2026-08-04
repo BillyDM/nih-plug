@@ -1,27 +1,26 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw OpenGL context.
 
 use baseview::{
-    HandlerError, Window, WindowContext, WindowSettings,
+    HandlerError, WindowContext, WindowSettings,
     dpi::{LogicalSize, PhysicalSize},
     gl::{GlConfig, GlContext},
 };
 use crossbeam::atomic::AtomicCell;
 use glow::Context;
+use nice_plug::editor::{EditorHandle, EditorWindow};
 use nice_plug::{context::gui::GuiContext, prelude::*};
-use nice_plug::{
-    editor::{EditorInstance, EditorWindow},
-    params::persist::PersistentField,
-};
-use serde::{Deserialize, Serialize};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    error::Error,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crate::OpenGlError::GlError;
 
 const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(400.0, 300.0);
-const RESIZE_HINT: ResizeHint = ResizeHint::with_min_size(MIN_SIZE);
+const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_SIZE);
 
 /// Helper for parsing and interpreting the OpenGL shader version. This will
 /// help ensure maximum compatibility with systems.
@@ -111,7 +110,7 @@ impl<'a> Drop for ContextGaurd<'a> {
     }
 }
 
-pub struct CustomGlWindow {
+pub struct GlWindow {
     _gui_context: GuiContext,
     gl: Arc<glow::Context>,
     window: WindowContext,
@@ -121,10 +120,11 @@ pub struct CustomGlWindow {
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
+    editor_state: Arc<GlEditorState>,
     redraw_requested: Arc<AtomicBool>,
 }
 
-impl Drop for CustomGlWindow {
+impl Drop for GlWindow {
     fn drop(&mut self) {
         use glow::HasContext as _;
 
@@ -135,11 +135,12 @@ impl Drop for CustomGlWindow {
     }
 }
 
-impl CustomGlWindow {
+impl GlWindow {
     fn new(
         window: WindowContext,
         gui_context: GuiContext,
         params: Arc<MyPluginParams>,
+        editor_state: Arc<GlEditorState>,
         redraw_requested: Arc<AtomicBool>,
     ) -> Result<Self, OpenGlError> {
         use glow::HasContext as _;
@@ -221,13 +222,14 @@ impl CustomGlWindow {
             vertex_array,
             program,
             params,
+            editor_state,
             window,
             redraw_requested,
         })
     }
 }
 
-impl baseview::WindowHandler for CustomGlWindow {
+impl baseview::WindowHandler for GlWindow {
     fn on_frame(&self) -> Result<(), HandlerError> {
         if !self.redraw_requested.swap(false, Ordering::Relaxed) {
             return Ok(());
@@ -269,16 +271,10 @@ impl baseview::WindowHandler for CustomGlWindow {
     fn resized(&self, new_size: baseview::WindowSize) -> Result<(), HandlerError> {
         use glow::HasContext as _;
 
-        self.params
-            .editor_state
-            .scale_factor
-            .store(new_size.scale_factor);
-
-        let size: LogicalSize<f32> = new_size.logical.cast();
-        self.params
-            .editor_state
+        self.editor_state.scale_factor.store(new_size.scale_factor);
+        self.editor_state
             .logical_size
-            .store((size.width, size.height));
+            .store(new_size.logical.cast());
 
         let gl_context = self.window.gl_context().unwrap();
 
@@ -299,28 +295,59 @@ impl baseview::WindowHandler for CustomGlWindow {
     }
 }
 
-pub struct CustomGlEditor {
+pub struct GlEditor {
     params: Arc<MyPluginParams>,
+    editor_state: Arc<GlEditorState>,
 }
 
-impl Editor for CustomGlEditor {
+impl Editor for GlEditor {
+    type Handle = GlEditorHandle;
+
     fn spawn(
         &self,
         parent: Option<ParentWindowHandle>,
+        wait_for_parent: bool,
         suggested_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<baseview::host::Host>,
-    ) -> Result<EditorWindow, HandlerError> {
+        host: Option<Box<dyn nice_plug::editor::HostCallbacks>>,
+    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
         let params = Arc::clone(&self.params);
+        let editor_state = Arc::clone(&self.editor_state);
 
         let redraw_requested = Arc::new(AtomicBool::new(true));
         let redraw_requested_2 = Arc::clone(&redraw_requested);
 
+        // The host is a re-implementation of
+        // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
+        //
+        // Create a small wrapper to adapt it to baseview's HostCallbacks trait.
+        struct HostAdapter {
+            host: Box<dyn nice_plug::editor::HostCallbacks>,
+        }
+        impl baseview::host::HostCallbacks for HostAdapter {
+            fn request_resize(
+                &mut self,
+                new_size: baseview::WindowSize,
+            ) -> Result<(), HandlerError> {
+                self.host
+                    .request_resize(new_size.physical.into(), new_size.scale_factor)
+                    .map_err(|e| HandlerError::from_boxed(e))
+            }
+
+            fn destroyed(&mut self) {
+                self.host.destroyed();
+            }
+        }
+        let host =
+            host.map(|host| baseview::host::Host::new().with_callbacks(HostAdapter { host }));
+
         let window = baseview::Window::create_with_host(
             WindowSettings::new()
                 .with_title("OpenGL Window")
-                .with_size(self.params.editor_state.logical_size())
+                .with_size(self.editor_state.logical_size())
                 .with_parent(parent.as_ref())
+                .with_wait_for_parent(wait_for_parent)
                 .with_gl_config(Some(GlConfig {
                     version: (3, 2),
                     red_bits: 8,
@@ -335,14 +362,17 @@ impl Editor for CustomGlEditor {
                     vsync: false,
                     ..Default::default()
                 })),
-            move |window: WindowContext| -> Result<CustomGlWindow, HandlerError> {
-                params
-                    .editor_state
-                    .scale_factor
-                    .store(window.size().scale_factor);
+            move |window: WindowContext| -> Result<GlWindow, HandlerError> {
+                editor_state.scale_factor.store(window.size().scale_factor);
 
-                CustomGlWindow::new(window, gui_context, params, redraw_requested_2)
-                    .map_err(|e| e.into())
+                GlWindow::new(
+                    window,
+                    gui_context,
+                    params,
+                    editor_state,
+                    redraw_requested_2,
+                )
+                .map_err(|e| e.into())
             },
             host,
         )?;
@@ -351,23 +381,20 @@ impl Editor for CustomGlEditor {
             let _ = window.suggest_fallback_scale_factor(scale_factor);
         }
 
-        self.params.editor_state.open.store(true, Ordering::Release);
+        self.editor_state.open.store(true, Ordering::Release);
 
         Ok(EditorWindow {
-            editor: Box::new(CustomGlEditorInstance {
-                state: self.params.editor_state.clone(),
+            handle: GlEditorHandle {
+                state: Arc::clone(&self.editor_state),
                 redraw_requested,
-            }),
+            },
             window,
         })
     }
 
     fn size(&self) -> PhysicalSize<u32> {
-        let scale_factor = self.params.editor_state.scale_factor();
-        self.params
-            .editor_state
-            .logical_size()
-            .to_physical(scale_factor)
+        let scale_factor = self.editor_state.scale_factor();
+        self.editor_state.logical_size().to_physical(scale_factor)
     }
 
     fn resize_hint(&self) -> ResizeHint {
@@ -375,38 +402,70 @@ impl Editor for CustomGlEditor {
     }
 }
 
-/// The window handle used for [`CustomGlEditor`].
-struct CustomGlEditorInstance {
-    state: Arc<CustomGlEditorState>,
+/// A handle to a spawned instance of our Editor.
+pub struct GlEditorHandle {
+    state: Arc<GlEditorState>,
     redraw_requested: Arc<AtomicBool>,
 }
 
-impl EditorInstance for CustomGlEditorInstance {
-    fn set_size(&mut self, new_size: PhysicalSize<u32>, window: &mut Window) -> bool {
+impl EditorHandle for GlEditorHandle {
+    type Window = baseview::Window;
+    type Error = baseview::Error;
+
+    fn run_until_closed(window: Self::Window) -> Result<(), Self::Error> {
+        window.run_until_closed()
+    }
+
+    fn set_parent(
+        &self,
+        parent: ParentWindowHandle,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.set_parent(&parent)
+    }
+
+    fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.show()
+    }
+
+    fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.hide()
+    }
+
+    fn set_size(&self, new_size: PhysicalSize<u32>, window: &Self::Window) -> bool {
         let current_size = window.size();
         if !RESIZE_HINT.is_size_valid(new_size, current_size.physical, current_size.scale_factor) {
             return false;
         }
 
-        window.resize(new_size.into()).is_ok()
+        if let Err(e) = window.resize(new_size) {
+            nice_error!("Failed to resize window to {:?}: {}", new_size, e);
+            false
+        } else {
+            true
+        }
     }
 
-    fn set_suggested_scale_factor(&mut self, scale_factor: f64, window: &mut Window) -> bool {
-        window.suggest_fallback_scale_factor(scale_factor).is_ok()
+    fn set_suggested_scale_factor(
+        &self,
+        scale_factor: f64,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.suggest_fallback_scale_factor(scale_factor)
     }
 
     /// Return the closest supported size.
     fn adjust_size(
         &self,
         new_size: PhysicalSize<u32>,
-        window: &Window,
+        window: &Self::Window,
     ) -> Option<PhysicalSize<u32>> {
         let current_size = window.size();
         Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
     }
 
     fn on_virtual_key_from_host(
-        &mut self,
+        &self,
         _key_code: VirtualKeyCode,
         _is_down: bool,
         _modifiers: Modifiers,
@@ -414,19 +473,8 @@ impl EditorInstance for CustomGlEditorInstance {
         false
     }
 
-    fn state_changed(&mut self, window: Option<&mut Window>) {
+    fn state_changed(&self) {
         self.redraw_requested.store(true, Ordering::Relaxed);
-
-        if let Some(window) = window {
-            let scale_factor = self.state.scale_factor();
-            let new_size: PhysicalSize<u32> = self.state.logical_size().to_physical(scale_factor);
-
-            if window.size().physical != new_size {
-                if let Err(e) = window.resize(new_size.into()) {
-                    nice_error!("Failed to resize window after state change: {}", e);
-                }
-            }
-        }
     }
 
     fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
@@ -440,47 +488,40 @@ impl EditorInstance for CustomGlEditorInstance {
     }
 }
 
-impl Drop for CustomGlEditorInstance {
+impl Drop for GlEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CustomGlEditorState {
+#[derive(Debug)]
+pub struct GlEditorState {
     /// The window's size in logical pixels before applying `scale_factor`.
-    ///
-    /// If you do not wish to have the window size saved along with a preset,
-    /// then use `#[serde(skip)]`
-    #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    logical_size: AtomicCell<(f32, f32)>,
+    logical_size: AtomicCell<LogicalSize<f32>>,
     /// Whether the editor's window is currently open.
-    #[serde(skip)]
     open: AtomicBool,
-    #[serde(skip)]
     scale_factor: AtomicCell<f64>,
 }
 
-impl CustomGlEditorState {
-    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
-        Arc::new(Self {
-            logical_size: AtomicCell::new((size.width, size.height)),
+impl GlEditorState {
+    pub fn from_size(size: LogicalSize<f32>) -> Self {
+        Self {
+            logical_size: AtomicCell::new(size),
             open: AtomicBool::new(false),
             scale_factor: AtomicCell::new(1.0),
-        })
+        }
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
     pub fn logical_size(&self) -> LogicalSize<f32> {
-        let (width, height) = self.logical_size.load();
-        LogicalSize::new(width, height)
+        self.logical_size.load()
     }
 
     /// Returns a `(width, height)` pair for the current size of the GUI in physical pixels.
     pub fn physical_size(&self) -> PhysicalSize<u32> {
-        let (width, height) = self.logical_size.load();
+        let logical_size = self.logical_size();
         let scale_factor = self.scale_factor();
-        LogicalSize::new(width, height).to_physical(scale_factor)
+        logical_size.to_physical(scale_factor)
     }
 
     pub fn scale_factor(&self) -> f64 {
@@ -493,33 +534,16 @@ impl CustomGlEditorState {
     }
 }
 
-impl<'a> PersistentField<'a, CustomGlEditorState> for Arc<CustomGlEditorState> {
-    fn set(&self, new_value: CustomGlEditorState) {
-        self.logical_size.store(new_value.logical_size.load());
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&CustomGlEditorState) -> R,
-    {
-        f(self)
-    }
-}
-
 // ---------------------------------------------------------------------------------------------------
 
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct MyPlugin {
     params: Arc<MyPluginParams>,
+    editor_state: Arc<GlEditorState>,
 }
 
 #[derive(Params)]
 pub struct MyPluginParams {
-    /// The editor state, saved together with the parameter state so the custom scaling can be
-    /// restored.
-    #[persist = "editor-state"]
-    editor_state: Arc<CustomGlEditorState>,
-
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -531,6 +555,7 @@ impl Default for MyPlugin {
     fn default() -> Self {
         Self {
             params: Arc::new(MyPluginParams::default()),
+            editor_state: Arc::new(GlEditorState::from_size(MIN_SIZE)),
         }
     }
 }
@@ -538,8 +563,6 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomGlEditorState::from_size(MIN_SIZE),
-
             // See the main gain example for more details
             gain: FloatParam::new(
                 "Gain",
@@ -582,6 +605,7 @@ impl Plugin for MyPlugin {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = GlEditor;
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -589,10 +613,11 @@ impl Plugin for MyPlugin {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(CustomGlEditor {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        Some(GlEditor {
             params: Arc::clone(&self.params),
-        }))
+            editor_state: Arc::clone(&self.editor_state),
+        })
     }
 
     fn activate(
@@ -618,7 +643,7 @@ impl Plugin for MyPlugin {
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
-            if self.params.editor_state.is_open() {
+            if self.editor_state.is_open() {
                 // Put stuff here
             }
         }

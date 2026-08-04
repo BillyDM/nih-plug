@@ -184,6 +184,7 @@ impl Plugin for MyPlugin {
     const MIDI_INPUT: MidiConfig = MidiConfig::None;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = ();
     type SysExMessage = ();
     type BackgroundTask = ();
 

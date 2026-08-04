@@ -1,14 +1,14 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw WGPU context.
 
 use baseview::dpi::PhysicalSize;
-use baseview::{HandlerError, Window, WindowContext, WindowSettings};
+use baseview::{HandlerError, WindowContext, WindowSettings};
 use crossbeam::atomic::AtomicCell;
 use nice_plug::context::gui::GuiContext;
-use nice_plug::editor::{EditorInstance, EditorWindow};
+use nice_plug::editor::dpi::LogicalSize;
+use nice_plug::editor::{EditorHandle, EditorWindow};
 use nice_plug::prelude::*;
-use nice_plug::{editor::dpi::LogicalSize, params::persist::PersistentField};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::error::Error;
 use std::{
     borrow::Cow,
     sync::{
@@ -17,10 +17,10 @@ use std::{
     },
 };
 
-const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(200.0, 150.0);
-const RESIZE_HINT: ResizeHint = ResizeHint::with_min_size(MIN_SIZE);
+const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(400.0, 300.0);
+const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_SIZE);
 
-pub struct CustomWgpuWindow {
+pub struct WgpuWindow {
     _gui_context: GuiContext,
     window: WindowContext,
 
@@ -28,6 +28,7 @@ pub struct CustomWgpuWindow {
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
+    editor_state: Arc<WgpuEditorState>,
     redraw_requested: Arc<AtomicBool>,
 }
 
@@ -39,20 +40,28 @@ struct Surface {
     surface_config: wgpu::SurfaceConfiguration,
 }
 
-impl CustomWgpuWindow {
+impl WgpuWindow {
     fn new(
         window: WindowContext,
         gui_context: GuiContext,
         params: Arc<MyPluginParams>,
+        editor_state: Arc<WgpuEditorState>,
         redraw: Arc<AtomicBool>,
     ) -> Result<Self, HandlerError> {
-        pollster::block_on(Self::create(window, gui_context, params, redraw))
+        pollster::block_on(Self::create(
+            window,
+            gui_context,
+            params,
+            editor_state,
+            redraw,
+        ))
     }
 
     async fn create(
         window: WindowContext,
         gui_context: GuiContext,
         params: Arc<MyPluginParams>,
+        editor_state: Arc<WgpuEditorState>,
         redraw: Arc<AtomicBool>,
     ) -> Result<Self, HandlerError> {
         let size = window.size();
@@ -162,13 +171,14 @@ impl CustomWgpuWindow {
                 surface,
                 surface_config,
             }),
-            redraw_requested: redraw,
             params,
+            editor_state,
+            redraw_requested: redraw,
         })
     }
 }
 
-impl baseview::WindowHandler for CustomWgpuWindow {
+impl baseview::WindowHandler for WgpuWindow {
     fn on_frame(&self) -> Result<(), HandlerError> {
         if !self.redraw_requested.swap(false, Ordering::Relaxed) {
             return Ok(());
@@ -262,16 +272,10 @@ impl baseview::WindowHandler for CustomWgpuWindow {
     }
 
     fn resized(&self, new_size: baseview::WindowSize) -> Result<(), HandlerError> {
-        self.params
-            .editor_state
-            .scale_factor
-            .store(new_size.scale_factor);
-
-        let size: LogicalSize<f32> = new_size.logical.cast();
-        self.params
-            .editor_state
+        self.editor_state.scale_factor.store(new_size.scale_factor);
+        self.editor_state
             .logical_size
-            .store((size.width, size.height));
+            .store(new_size.logical.cast());
 
         {
             let mut surface = self.surface.borrow_mut();
@@ -295,112 +299,90 @@ impl baseview::WindowHandler for CustomWgpuWindow {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CustomWgpuEditorState {
-    #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    logical_size: AtomicCell<(f32, f32)>,
-    /// Whether the editor's window is currently open.
-    #[serde(skip)]
-    open: AtomicBool,
-    #[serde(skip)]
-    scale_factor: AtomicCell<f64>,
-}
-
-impl CustomWgpuEditorState {
-    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
-        Arc::new(Self {
-            logical_size: AtomicCell::new((size.width, size.height)),
-            open: AtomicBool::new(false),
-            scale_factor: AtomicCell::new(1.0),
-        })
-    }
-
-    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn logical_size(&self) -> LogicalSize<f32> {
-        let (width, height) = self.logical_size.load();
-        LogicalSize::new(width, height)
-    }
-
-    /// Returns a `(width, height)` pair for the current size of the GUI in physical pixels.
-    pub fn physical_size(&self) -> PhysicalSize<u32> {
-        let (width, height) = self.logical_size.load();
-        let scale_factor = self.scale_factor();
-        LogicalSize::new(width, height).to_physical(scale_factor)
-    }
-
-    pub fn scale_factor(&self) -> f64 {
-        self.scale_factor.load()
-    }
-
-    /// Whether the GUI is currently visible.
-    pub fn is_open(&self) -> bool {
-        self.open.load(Ordering::Acquire)
-    }
-}
-
-impl<'a> PersistentField<'a, CustomWgpuEditorState> for Arc<CustomWgpuEditorState> {
-    fn set(&self, new_value: CustomWgpuEditorState) {
-        self.logical_size.store(new_value.logical_size.load());
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&CustomWgpuEditorState) -> R,
-    {
-        f(self)
-    }
-}
-
-pub struct CustomWgpuEditor {
+pub struct WgpuEditor {
     params: Arc<MyPluginParams>,
+    editor_state: Arc<WgpuEditorState>,
 }
 
-impl Editor for CustomWgpuEditor {
+impl Editor for WgpuEditor {
+    type Handle = WgpuEditorHandle;
+
     fn spawn(
         &self,
         parent: Option<ParentWindowHandle>,
+        wait_for_parent: bool,
         suggested_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<baseview::host::Host>,
-    ) -> Result<EditorWindow, HandlerError> {
+        host: Option<Box<dyn nice_plug::editor::HostCallbacks>>,
+    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
         let params = Arc::clone(&self.params);
+        let editor_state = Arc::clone(&self.editor_state);
 
         let redraw_requested = Arc::new(AtomicBool::new(true));
         let redraw_requested_2 = Arc::clone(&redraw_requested);
 
+        // The host is a re-implementation of
+        // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
+        //
+        // Create a small wrapper to adapt it to baseview's HostCallbacks trait.
+        struct HostAdapter {
+            host: Box<dyn nice_plug::editor::HostCallbacks>,
+        }
+        impl baseview::host::HostCallbacks for HostAdapter {
+            fn request_resize(
+                &mut self,
+                new_size: baseview::WindowSize,
+            ) -> Result<(), HandlerError> {
+                self.host
+                    .request_resize(new_size.physical.into(), new_size.scale_factor)
+                    .map_err(|e| HandlerError::from_boxed(e))
+            }
+
+            fn destroyed(&mut self) {
+                self.host.destroyed();
+            }
+        }
+        let host =
+            host.map(|host| baseview::host::Host::new().with_callbacks(HostAdapter { host }));
+
         let window = baseview::Window::create_with_host(
             WindowSettings::new()
                 .with_title("Wgpu Window")
-                .with_size(self.params.editor_state.logical_size())
-                .with_parent(parent.as_ref()),
-            move |window: WindowContext| -> Result<CustomWgpuWindow, HandlerError> {
-                CustomWgpuWindow::new(window, gui_context, params, redraw_requested_2)
-                    .map_err(|e| e.into())
+                .with_size(self.editor_state.logical_size())
+                .with_parent(parent.as_ref())
+                .with_wait_for_parent(wait_for_parent),
+            move |window: WindowContext| -> Result<WgpuWindow, HandlerError> {
+                WgpuWindow::new(
+                    window,
+                    gui_context,
+                    params,
+                    editor_state,
+                    redraw_requested_2,
+                )
+                .map_err(|e| e.into())
             },
             host,
         )?;
 
-        self.params.editor_state.open.store(true, Ordering::Release);
+        self.editor_state.open.store(true, Ordering::Release);
 
         if let Some(scale_factor) = suggested_scale_factor {
             let _ = window.suggest_fallback_scale_factor(scale_factor);
         }
 
         Ok(EditorWindow {
-            editor: Box::new(CustomWgpuEditorInstance {
-                state: self.params.editor_state.clone(),
+            handle: WgpuEditorHandle {
+                state: Arc::clone(&self.editor_state),
                 redraw_requested,
-            }),
+            },
             window,
         })
     }
 
     fn size(&self) -> PhysicalSize<u32> {
-        let scale_factor = self.params.editor_state.scale_factor();
-        self.params
-            .editor_state
-            .logical_size()
-            .to_physical(scale_factor)
+        let scale_factor = self.editor_state.scale_factor();
+        self.editor_state.logical_size().to_physical(scale_factor)
     }
 
     fn resize_hint(&self) -> ResizeHint {
@@ -408,37 +390,70 @@ impl Editor for CustomWgpuEditor {
     }
 }
 
-struct CustomWgpuEditorInstance {
-    state: Arc<CustomWgpuEditorState>,
+/// A handle to a spawned instance of our Editor.
+pub struct WgpuEditorHandle {
+    state: Arc<WgpuEditorState>,
     redraw_requested: Arc<AtomicBool>,
 }
 
-impl EditorInstance for CustomWgpuEditorInstance {
-    fn set_size(&mut self, new_size: PhysicalSize<u32>, window: &mut Window) -> bool {
+impl EditorHandle for WgpuEditorHandle {
+    type Window = baseview::Window;
+    type Error = baseview::Error;
+
+    fn run_until_closed(window: Self::Window) -> Result<(), Self::Error> {
+        window.run_until_closed()
+    }
+
+    fn set_parent(
+        &self,
+        parent: ParentWindowHandle,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.set_parent(&parent)
+    }
+
+    fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.show()
+    }
+
+    fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.hide()
+    }
+
+    fn set_size(&self, new_size: PhysicalSize<u32>, window: &Self::Window) -> bool {
         let current_size = window.size();
         if !RESIZE_HINT.is_size_valid(new_size, current_size.physical, current_size.scale_factor) {
             return false;
         }
 
-        window.resize(new_size.into()).is_ok()
+        if let Err(e) = window.resize(new_size) {
+            nice_error!("Failed to resize window to {:?}: {}", new_size, e);
+            false
+        } else {
+            true
+        }
     }
 
-    fn set_suggested_scale_factor(&mut self, scale_factor: f64, window: &mut Window) -> bool {
-        window.suggest_fallback_scale_factor(scale_factor).is_ok()
+    fn set_suggested_scale_factor(
+        &self,
+        scale_factor: f64,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.suggest_fallback_scale_factor(scale_factor)
     }
 
     /// Return the closest supported size.
     fn adjust_size(
         &self,
         new_size: PhysicalSize<u32>,
-        window: &Window,
+        window: &Self::Window,
     ) -> Option<PhysicalSize<u32>> {
         let current_size = window.size();
         Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
     }
 
     fn on_virtual_key_from_host(
-        &mut self,
+        &self,
         _key_code: VirtualKeyCode,
         _is_down: bool,
         _modifiers: Modifiers,
@@ -446,19 +461,8 @@ impl EditorInstance for CustomWgpuEditorInstance {
         false
     }
 
-    fn state_changed(&mut self, window: Option<&mut Window>) {
+    fn state_changed(&self) {
         self.redraw_requested.store(true, Ordering::Relaxed);
-
-        if let Some(window) = window {
-            let scale_factor = self.state.scale_factor();
-            let new_size: PhysicalSize<u32> = self.state.logical_size().to_physical(scale_factor);
-
-            if window.size().physical != new_size {
-                if let Err(e) = window.resize(new_size.into()) {
-                    nice_error!("Failed to resize window after state change: {}", e);
-                }
-            }
-        }
     }
 
     fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
@@ -472,9 +476,48 @@ impl EditorInstance for CustomWgpuEditorInstance {
     }
 }
 
-impl Drop for CustomWgpuEditorInstance {
+impl Drop for WgpuEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
+    }
+}
+
+#[derive(Debug)]
+pub struct WgpuEditorState {
+    logical_size: AtomicCell<LogicalSize<f32>>,
+    /// Whether the editor's window is currently open.
+    open: AtomicBool,
+    scale_factor: AtomicCell<f64>,
+}
+
+impl WgpuEditorState {
+    pub fn from_size(size: LogicalSize<f32>) -> Self {
+        Self {
+            logical_size: AtomicCell::new(size),
+            open: AtomicBool::new(false),
+            scale_factor: AtomicCell::new(1.0),
+        }
+    }
+
+    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        self.logical_size.load()
+    }
+
+    /// Returns a `(width, height)` pair for the current size of the GUI in physical pixels.
+    pub fn physical_size(&self) -> PhysicalSize<u32> {
+        let logical_size = self.logical_size();
+        let scale_factor = self.scale_factor();
+        logical_size.to_physical(scale_factor)
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor.load()
+    }
+
+    /// Whether the GUI is currently visible.
+    pub fn is_open(&self) -> bool {
+        self.open.load(Ordering::Acquire)
     }
 }
 
@@ -483,15 +526,11 @@ impl Drop for CustomWgpuEditorInstance {
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct MyPlugin {
     params: Arc<MyPluginParams>,
+    editor_state: Arc<WgpuEditorState>,
 }
 
 #[derive(Params)]
 pub struct MyPluginParams {
-    /// The editor state, saved together with the parameter state so the custom scaling can be
-    /// restored.
-    #[persist = "editor-state"]
-    editor_state: Arc<CustomWgpuEditorState>,
-
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -503,6 +542,7 @@ impl Default for MyPlugin {
     fn default() -> Self {
         Self {
             params: Arc::new(MyPluginParams::default()),
+            editor_state: Arc::new(WgpuEditorState::from_size(MIN_SIZE)),
         }
     }
 }
@@ -510,8 +550,6 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomWgpuEditorState::from_size(LogicalSize::new(400.0, 300.0)),
-
             // See the main gain example for more details
             gain: FloatParam::new(
                 "Gain",
@@ -554,6 +592,7 @@ impl Plugin for MyPlugin {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = WgpuEditor;
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -561,10 +600,11 @@ impl Plugin for MyPlugin {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(CustomWgpuEditor {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        Some(WgpuEditor {
             params: Arc::clone(&self.params),
-        }))
+            editor_state: Arc::clone(&self.editor_state),
+        })
     }
 
     fn process(
@@ -581,7 +621,7 @@ impl Plugin for MyPlugin {
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
-            if self.params.editor_state.is_open() {
+            if self.editor_state.is_open() {
                 // Do stuff
             }
         }

@@ -6,6 +6,8 @@ use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
+use nice_plug_core::editor::dpi::Size;
+#[cfg(feature = "editor")]
 use nice_plug_core::editor::{Editor, EditorWindow};
 use nice_plug_core::midi::{MidiConfig, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
@@ -55,10 +57,12 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
     #[allow(clippy::type_complexity)]
     #[cfg(feature = "editor")]
-    pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
+    pub editor: AtomicRefCell<Option<Arc<Mutex<P::Editor>>>>,
     #[allow(clippy::type_complexity)]
+    // My personal record for craziest Rust type!!!!
     #[cfg(feature = "editor")]
-    pub editor_window: Arc<Mutex<Option<fragile::Fragile<EditorWindow>>>>,
+    pub editor_window:
+        Arc<AtomicRefCell<Option<fragile::Fragile<EditorWindow<<P::Editor as Editor>::Handle>>>>>,
 
     /// The host's [`IComponentHandler`] instance, if passed through
     /// [`IEditController::set_component_handler`].
@@ -187,7 +191,7 @@ pub enum Task<P: Plugin> {
     // Request the editor to be resized according to its current size. Right now there is no way to
     // handle "denied resize" requests yet.
     #[cfg(feature = "editor")]
-    RequestResize(baseview::WindowSize),
+    RequestResize { size: Size, scale_factor: f64 },
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -312,7 +316,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             // Initialized later as it needs a reference to the wrapper for the async executor
             #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
-            editor_window: Arc::new(Mutex::new(None)),
+            editor_window: Arc::new(AtomicRefCell::new(None)),
 
             component_handler: AtomicRefCell::new(None),
 
@@ -685,23 +689,22 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
             #[cfg(feature = "editor")]
             Task::StateChanged => {
-                if self.is_editor_open.load(Ordering::SeqCst) {
-                    if let Some(window) = self.editor_window.lock().as_mut() {
-                        let window = window.get_mut();
-                        window.editor.state_changed(Some(&mut window.window));
-                    }
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    editor_window.get().handle.state_changed();
                 }
             }
             #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_hash, normalized_value) => {
-                if self.is_editor_open.load(Ordering::SeqCst) {
-                    if let Some(window) = self.editor_window.lock().as_mut() {
-                        let param_id = &self.param_id_by_hash[&param_hash];
-                        window
-                            .get_mut()
-                            .editor
-                            .param_value_changed(param_id, normalized_value);
-                    }
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    let param_id = &self.param_id_by_hash[&param_hash];
+                    editor_window
+                        .get()
+                        .handle
+                        .param_value_changed(param_id, normalized_value);
                 }
             }
             Task::TriggerRestart(flags) => match &*self.component_handler.borrow() {
@@ -717,13 +720,15 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                 },
                 None => crate::nice_debug_assert_failure!("Component handler not yet set"),
             },
-            Task::RequestResize(new_size) => {
+            #[cfg(feature = "editor")]
+            Task::RequestResize { size, scale_factor } => {
                 if self.is_editor_open.load(Ordering::SeqCst) {
                     unsafe {
                         crate::nice_debug_assert!(is_gui_thread);
                         let _success = WrapperView::request_resize(
                             &self.plug_view.read().clone().unwrap(),
-                            new_size,
+                            size,
+                            scale_factor,
                         );
                     }
                 } else {

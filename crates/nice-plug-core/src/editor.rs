@@ -1,27 +1,86 @@
 //! Traits for working with plugin editors.
 
-use baseview::dpi::{LogicalSize, PhysicalSize};
-use baseview::{HandlerError, Window};
 use bitflags::bitflags;
+use dpi::{LogicalSize, PhysicalSize, Size};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::error::Error;
 use std::ffi::{c_ulong, c_void};
 use std::num::{NonZeroIsize, NonZeroU32};
 use std::ptr::NonNull;
 
-pub use baseview;
-pub use baseview::dpi;
+pub use dpi;
 
 use crate::context::gui::GuiContext;
 
-pub struct EditorWindow {
-    pub editor: Box<dyn EditorInstance>,
-    pub window: Window,
+pub struct EditorWindow<E: EditorHandle> {
+    /// A handle to the instance of an open [`Editor`].
+    ///
+    /// When this handle is dropped, the editor instance is also dropped.
+    pub handle: E,
+
+    /// The owned window handle
+    ///
+    /// This will usually be [`baseview::Window`](). This is type-erased to avoid needing nice-plug-core
+    /// to depend on `baseview` until it has a stable version.
+    ///
+    /// When this is dropped, the window should be automatically closed.
+    pub window: E::Window,
 }
 
-/// A spawned instance of an [`Editor`].
+/// A handler for baseview windows to interact with their host.
+///
+/// (This is a re-implementation of
+/// [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+/// to avoid directly depending on `baseview` until it is stabilized.)
+pub trait HostCallbacks: 'static {
+    /// Requests the parent window to be resized to accommodate the child window with
+    /// the given new size.
+    ///
+    /// # Errors
+    ///
+    /// This can return any type of error, indicating the host either failed or denied
+    /// to handle the resize request. If it does, the error is logged and the resize
+    /// operation is canceled or reverted.
+    fn request_resize(&mut self, new_size: Size, scale_factor: f64) -> Result<(), Box<dyn Error>>;
+
+    /// Notifies the host that the child window has been destroyed for a reason outside
+    /// the host’s control.
+    ///
+    /// This can be because the display connection was lost, because the window handler
+    /// crashed, or because the window handler decided to close the window itself.
+    ///
+    /// The host should close its parent window, as it will not show anything useful
+    /// anymore.
+    fn destroyed(&mut self);
+}
+
+/// A handle to spawned instance of an [`Editor`].
 ///
 /// The host uses this to resize the editor's window and to dispatch key events.
-pub trait EditorInstance: Send + 'static {
+pub trait EditorHandle: Send + 'static {
+    type Window;
+    type Error: Error;
+
+    /// Open the window, and block the current thread until the window is
+    /// closed. Used only for standalone targets.
+    fn run_until_closed(window: Self::Window) -> Result<(), Self::Error>;
+
+    fn set_parent(
+        &self,
+        parent: ParentWindowHandle,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error>;
+
+    /// Show the window
+    ///
+    /// This will never be called on the standalone target.
+    fn show(&self, window: &Self::Window) -> Result<(), Self::Error>;
+
+    /// Hide the window
+    ///
+    /// This will never be called on the standalone target.
+    fn hide(&self, window: &Self::Window) -> Result<(), Self::Error>;
+
     /// Called by the wrapper when the host has resized the plugin's view (either
     /// because the host accepted an earlier [`GuiContext::request_resize()`], or
     /// because the user dragged a host-provided resize handle). The editor should
@@ -35,38 +94,41 @@ pub trait EditorInstance: Send + 'static {
     ///
     /// This is the counterpart to [`size()`][Editor::size()]: after a successful
     /// `set_size`, `size()` should report the new dimensions.
-    fn set_size(&mut self, new_size: PhysicalSize<u32>, window: &mut Window) -> bool {
-        let _ = window;
+    ///
+    /// This will never be called on the standalone target.
+    fn set_size(&self, new_size: PhysicalSize<u32>, window: &Self::Window) -> bool {
         let _ = new_size;
+        let _ = window;
         false
     }
 
     /// Return the closest supported size.
+    ///
+    /// This will never be called on the standalone target.
     fn adjust_size(
         &self,
         new_size: PhysicalSize<u32>,
-        window: &Window,
+        window: &Self::Window,
     ) -> Option<PhysicalSize<u32>> {
-        let _ = window;
         let _ = new_size;
+        let _ = window;
         None
     }
 
     /// Called when the host has a new suggested scale factor to use.
     ///
-    /// Right now this is never called on macOS since DPI scaling is built into the operating system
-    /// there.
-    fn set_suggested_scale_factor(&mut self, scale_factor: f64, window: &mut Window) -> bool;
-
-    /// Called when the plugin's state has changed (i.e. a preset was loaded). The editor should rescan
-    /// all of its parameters.
+    /// Right now this is never called on macOS since DPI scaling is built into the
+    /// operating system there.
     ///
-    /// The new state may also have a different window size, in which case the editor should resize its
-    /// window here.
-    ///
-    /// The `window` will be `None` on standalone targets.
-    fn state_changed(&mut self, window: Option<&mut Window>) {
+    /// This will never be called on the standalone target.
+    fn set_suggested_scale_factor(
+        &self,
+        scale_factor: f64,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        let _ = scale_factor;
         let _ = window;
+        Ok(())
     }
 
     /// Called when the host delivers a virtual-key event to the plugin's
@@ -93,6 +155,8 @@ pub trait EditorInstance: Send + 'static {
     /// editor should only return `true` if a text input in the editor
     /// currently has focus and can consume the key.
     ///
+    /// This will never be called on the standalone target.
+    ///
     /// # Parameters
     ///
     /// - `key_code`: the virtual key the host reports.
@@ -100,7 +164,7 @@ pub trait EditorInstance: Send + 'static {
     /// - `modifiers`: which modifier keys were held when the event was
     ///   generated.
     fn on_virtual_key_from_host(
-        &mut self,
+        &self,
         key_code: VirtualKeyCode,
         is_down: bool,
         modifiers: Modifiers,
@@ -110,6 +174,10 @@ pub trait EditorInstance: Send + 'static {
         let _ = modifiers;
         false
     }
+
+    /// Called when the plugin's state has changed (i.e. a preset was loaded). The
+    /// editor should rescan all of its parameters.
+    fn state_changed(&self) {}
 
     /// Called whenever a specific parameter's value has changed. You don't
     /// need to do anything with this, but this can be used to force a redraw when the host sends a
@@ -122,6 +190,8 @@ pub trait EditorInstance: Send + 'static {
 
 /// An editor for a [`Plugin`][crate::plugin::Plugin].
 pub trait Editor: Send {
+    type Handle: EditorHandle;
+
     /// Create an instance of the plugin's editor and embed it in the parent window. As explained in
     /// [`Plugin::editor()`][crate::plugin::Plugin::editor()], you can then read the parameter
     /// values directly from your [`Params`][crate::params::Params] object, and modifying the
@@ -150,10 +220,11 @@ pub trait Editor: Send {
     fn spawn(
         &self,
         parent: Option<ParentWindowHandle>,
+        wait_for_parent: bool,
         suggested_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<baseview::host::Host>,
-    ) -> Result<EditorWindow, HandlerError>;
+        host: Option<Box<dyn HostCallbacks>>,
+    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>>;
 
     /// Returns the (current) size of the editor in physical pixels.
     fn size(&self) -> PhysicalSize<u32>;
@@ -169,6 +240,114 @@ pub trait Editor: Send {
     /// size). See [`ResizeHint`] for the per-axis and aspect-ratio options.
     fn resize_hint(&self) -> ResizeHint {
         ResizeHint::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DummyEditorError;
+impl Error for DummyEditorError {}
+impl std::fmt::Display for DummyEditorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Plugin does not implement an editor")
+    }
+}
+
+impl EditorHandle for () {
+    type Window = ();
+    type Error = DummyEditorError;
+
+    fn run_until_closed(_window: Self::Window) -> Result<(), Self::Error> {
+        Err(DummyEditorError)
+    }
+
+    fn set_parent(
+        &self,
+        _parent: ParentWindowHandle,
+        _window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        Err(DummyEditorError)
+    }
+
+    fn show(&self, _window: &Self::Window) -> Result<(), Self::Error> {
+        Err(DummyEditorError)
+    }
+
+    fn hide(&self, _window: &Self::Window) -> Result<(), Self::Error> {
+        Err(DummyEditorError)
+    }
+
+    fn param_value_changed(&self, _id: &str, _normalized_value: f32) {}
+
+    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {}
+}
+
+impl Editor for () {
+    type Handle = ();
+
+    fn spawn(
+        &self,
+        _parent: Option<ParentWindowHandle>,
+        _wait_for_parent: bool,
+        _suggested_scale_factor: Option<f64>,
+        _gui_context: GuiContext,
+        _host: Option<Box<dyn HostCallbacks>>,
+    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
+        Err(String::from("Plugin does not implement an editor").into())
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        PhysicalSize::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SizeConstraints {
+    Logical {
+        min_size: Option<LogicalSize<f32>>,
+        max_size: Option<LogicalSize<f32>>,
+    },
+    Physical {
+        min_size: Option<PhysicalSize<u32>>,
+        max_size: Option<PhysicalSize<u32>>,
+    },
+}
+
+impl SizeConstraints {
+    pub const fn min_logical_size(min_size: LogicalSize<f32>) -> Self {
+        Self::Logical {
+            min_size: Some(min_size),
+            max_size: None,
+        }
+    }
+
+    pub const fn min_physical_size(min_size: PhysicalSize<u32>) -> Self {
+        Self::Physical {
+            min_size: Some(min_size),
+            max_size: None,
+        }
+    }
+
+    pub const fn logical(
+        min_size: Option<LogicalSize<f32>>,
+        max_size: Option<LogicalSize<f32>>,
+    ) -> Self {
+        Self::Logical { min_size, max_size }
+    }
+
+    pub const fn physical(
+        min_size: Option<PhysicalSize<u32>>,
+        max_size: Option<PhysicalSize<u32>>,
+    ) -> Self {
+        Self::Physical { min_size, max_size }
+    }
+}
+
+impl Default for SizeConstraints {
+    fn default() -> Self {
+        Self::Logical {
+            min_size: None,
+            max_size: None,
+        }
     }
 }
 
@@ -195,16 +374,7 @@ pub struct ResizeHint {
     pub aspect_ratio_width: u32,
     /// Aspect-ratio denominator (only used when `preserve_aspect_ratio` is `true`).
     pub aspect_ratio_height: u32,
-    /// The minimum supported size `(width, height)` in __logical__ pixels. Set to
-    /// `None` if there is no minimum supported size.
-    ///
-    /// The default is `None`.
-    pub min_size: Option<LogicalSize<f32>>,
-    /// The maximum supported size `(width, height)` in __logical__ pixels. Set to
-    /// `None` if there is no maximum supported size.
-    ///
-    /// The default is `None`.
-    pub max_size: Option<LogicalSize<f32>>,
+    pub size_constraints: SizeConstraints,
 }
 
 impl Default for ResizeHint {
@@ -218,8 +388,10 @@ impl Default for ResizeHint {
 impl ResizeHint {
     /// A non-resizable editor. This is the default value.
     pub const NON_RESIZABLE: Self = Self {
-        min_size: None,
-        max_size: None,
+        size_constraints: SizeConstraints::Logical {
+            min_size: None,
+            max_size: None,
+        },
         can_resize: false,
         can_resize_horizontally: false,
         can_resize_vertically: false,
@@ -231,60 +403,73 @@ impl ResizeHint {
     /// A freely resizable editor: both axes, no aspect-ratio lock. Convenience
     /// for the common case.
     pub const RESIZABLE: Self = Self {
-        min_size: None,
-        max_size: None,
         can_resize: true,
         can_resize_horizontally: true,
         can_resize_vertically: true,
         ..Self::NON_RESIZABLE
     };
 
-    /// A freely resizable editor: both axes, no aspect-ratio lock. Convenience
-    /// for the common case.
-    pub const fn with_min_size(min_size: LogicalSize<f32>) -> Self {
-        Self {
-            min_size: Some(min_size),
-            ..Self::RESIZABLE
-        }
+    pub const fn non_resizable() -> Self {
+        Self::NON_RESIZABLE
     }
 
-    /// A freely resizable editor: both axes, no aspect-ratio lock. Convenience
-    /// for the common case.
-    pub const fn with_min_and_max_size(
+    pub const fn resizable() -> Self {
+        Self::RESIZABLE
+    }
+
+    pub const fn with_min_logical_size(mut self, min_size: LogicalSize<f32>) -> Self {
+        self.size_constraints = SizeConstraints::Logical {
+            min_size: Some(min_size),
+            max_size: None,
+        };
+        self
+    }
+
+    pub const fn with_min_max_logical_size(
+        mut self,
         min_size: Option<LogicalSize<f32>>,
         max_size: Option<LogicalSize<f32>>,
     ) -> Self {
-        Self {
-            min_size,
-            max_size,
-            ..Self::RESIZABLE
-        }
+        self.size_constraints = SizeConstraints::Logical { min_size, max_size };
+        self
     }
 
-    /// A freely resizable editor with the given aspect-ratio lock.
-    ///
+    pub const fn with_min_physical_size(mut self, min_size: PhysicalSize<u32>) -> Self {
+        self.size_constraints = SizeConstraints::Physical {
+            min_size: Some(min_size),
+            max_size: None,
+        };
+        self
+    }
+
+    pub const fn with_min_max_physical_size(
+        mut self,
+        min_size: Option<PhysicalSize<u32>>,
+        max_size: Option<PhysicalSize<u32>>,
+    ) -> Self {
+        self.size_constraints = SizeConstraints::Physical { min_size, max_size };
+        self
+    }
+
+    pub const fn with_size_constraints(mut self, size_constraints: SizeConstraints) -> Self {
+        self.size_constraints = size_constraints;
+        self
+    }
+
     /// * `aspect_ratio_width`: aspect-ratio numerator
     /// * `aspect_ratio_height`: aspect-ratio denominator
-    /// * `min_size`: The minimum supported size `(width, height)` in __logical__ pixels.
-    ///   Set to `None` if there is no minimum supported size.
-    /// * `max_size`: The maximum supported size `(width, height)` in __logical__ pixels.
-    ///   Set to `None` if there is no maximum supported size.
-    pub const fn resizable_with_aspect_ratio(
+    pub const fn with_aspect_ratio(
+        mut self,
         aspect_ratio_width: u32,
         aspect_ratio_height: u32,
-        min_size: Option<LogicalSize<f32>>,
-        max_size: Option<LogicalSize<f32>>,
     ) -> Self {
         assert!(aspect_ratio_width != 0);
         assert!(aspect_ratio_height != 0);
 
-        Self {
-            min_size,
-            max_size,
-            aspect_ratio_width,
-            aspect_ratio_height,
-            ..Self::RESIZABLE
-        }
+        self.aspect_ratio_width = aspect_ratio_width;
+        self.aspect_ratio_height = aspect_ratio_height;
+
+        self
     }
 
     /// Returns whether or not the given size in physical pixels is valid.
@@ -310,14 +495,19 @@ impl ResizeHint {
             return current_size;
         }
 
-        let min_phy_size = self.min_size.map(|s| PhysicalSize {
-            width: (s.width as f64 * scale_factor).round() as u32,
-            height: (s.height as f64 * scale_factor).round() as u32,
-        });
-        let max_phy_size = self.max_size.map(|s| PhysicalSize {
-            width: (s.width as f64 * scale_factor).round() as u32,
-            height: (s.height as f64 * scale_factor).round() as u32,
-        });
+        let (min_phy_size, max_phy_size) = match self.size_constraints {
+            SizeConstraints::Logical { min_size, max_size } => (
+                min_size.map(|s| PhysicalSize {
+                    width: (s.width as f64 * scale_factor).round() as u32,
+                    height: (s.height as f64 * scale_factor).round() as u32,
+                }),
+                max_size.map(|s| PhysicalSize {
+                    width: (s.width as f64 * scale_factor).round() as u32,
+                    height: (s.height as f64 * scale_factor).round() as u32,
+                }),
+            ),
+            SizeConstraints::Physical { min_size, max_size } => (min_size, max_size),
+        };
 
         if let Some(min_size) = min_phy_size {
             new_size.width = new_size.width.max(min_size.width);

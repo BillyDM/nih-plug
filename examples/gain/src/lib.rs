@@ -151,6 +151,9 @@ impl Plugin for Gain {
     // splits.
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
     // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
     // from plain byte buffers.

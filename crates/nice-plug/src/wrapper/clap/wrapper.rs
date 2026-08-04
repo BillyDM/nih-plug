@@ -128,11 +128,12 @@ pub struct Wrapper<P: ClapPlugin> {
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
     #[cfg(feature = "editor")]
-    editor: AtomicRefCell<Option<Mutex<Box<dyn Editor>>>>,
+    editor: AtomicRefCell<Option<Mutex<P::Editor>>>,
     /// A handle for the currently active editor instance. The plugin should implement `Drop` on
     /// this handle for its closing behavior.
     #[cfg(feature = "editor")]
-    editor_window: Mutex<Option<fragile::Fragile<EditorWindow>>>,
+    editor_window:
+        AtomicRefCell<Option<fragile::Fragile<EditorWindow<<P::Editor as Editor>::Handle>>>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
@@ -394,28 +395,33 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
             #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_hash, normalized_value) => {
-                if let Some(window) = self.editor_window.lock().as_mut() {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
                     let param_id = &self.param_id_by_hash[&param_hash];
                     window
-                        .get_mut()
-                        .editor
+                        .get()
+                        .handle
                         .param_value_changed(param_id, normalized_value);
                 }
             }
             #[cfg(feature = "editor")]
             Task::StateChanged => {
-                if let Some(window) = self.editor_window.lock().as_mut() {
-                    let window = window.get_mut();
-                    window.editor.state_changed(Some(&mut window.window));
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
+                    window.get().handle.state_changed();
                 }
             }
             #[cfg(feature = "editor")]
             Task::ParameterModulationChanged(param_hash, modulation_offset) => {
-                if let Some(window) = self.editor_window.lock().as_mut() {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
                     let param_id = &self.param_id_by_hash[&param_hash];
                     window
-                        .get_mut()
-                        .editor
+                        .get()
+                        .handle
                         .param_modulation_changed(param_id, modulation_offset);
                 }
             }
@@ -582,7 +588,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
             #[cfg(feature = "editor")]
-            editor_window: Mutex::new(None),
+            editor_window: AtomicRefCell::new(None),
             #[cfg(feature = "editor")]
             suggested_scale_factor: AtomicCell::new(None),
 
@@ -2876,21 +2882,163 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        // In CLAP creating the editor window and embedding it in another window are separate, and
-        // those things are one and the same in our framework. So we'll just pretend we did
-        // something here.
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
-        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+        // For this function we need the underlying Arc so we can pass it to the editor
+        let wrapper = unsafe { Arc::from_raw((*plugin).plugin_data as *const Self) };
 
-        let editor_handle = wrapper.editor_window.lock();
-        if editor_handle.is_none() {
-            true
+        let result = {
+            if wrapper.editor_window.borrow().is_none() {
+                use std::error::Error;
+
+                use nice_plug_core::editor::{HostCallbacks, dpi::Size};
+
+                #[derive(Debug, thiserror::Error)]
+                enum ResizeError {
+                    #[error("Host refused window size: {0:?}")]
+                    HostRefusedSize(Size),
+                    #[error("Attempted to close window when plugin was closed")]
+                    PluginClosed,
+                }
+
+                struct ClapHostCallbacks<P: ClapPlugin> {
+                    wrapper: Weak<Wrapper<P>>,
+                    host_gui: ClapPtr<clap_host_gui>,
+                }
+
+                impl<P: ClapPlugin> HostCallbacks for ClapHostCallbacks<P> {
+                    fn request_resize(
+                        &mut self,
+                        new_size: Size,
+                        scale_factor: f64,
+                    ) -> Result<(), Box<dyn Error>> {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            use nice_plug_core::editor::dpi::PhysicalSize;
+
+                            let physical_size: PhysicalSize<u32> =
+                                new_size.to_physical(scale_factor);
+
+                            if unsafe_clap_call! {
+                                &*self.host_gui=>request_resize(
+                                    &*wrapper.host_callback,
+                                    physical_size.width as u32,
+                                    physical_size.height as u32,
+                                )
+                            } {
+                                Ok(())
+                            } else {
+                                Err(ResizeError::HostRefusedSize(new_size).into())
+                            }
+                        } else {
+                            Err(ResizeError::PluginClosed.into())
+                        }
+                    }
+
+                    fn destroyed(&mut self) {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            unsafe_clap_call! {
+                                &*self.host_gui=>closed(
+                                    &*wrapper.host_callback,
+                                    true,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                let host: Box<dyn HostCallbacks> = Box::new(ClapHostCallbacks {
+                    wrapper: wrapper.this.borrow().clone(),
+                    host_gui: ClapPtr::clone(&wrapper.host_gui.borrow().as_ref().unwrap()),
+                });
+
+                let suggested_scale_factor = wrapper.suggested_scale_factor.load();
+
+                match wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
+                    None,
+                    true,
+                    suggested_scale_factor,
+                    wrapper.clone().make_gui_context(),
+                    Some(host),
+                ) {
+                    Ok(editor_instance) => {
+                        *wrapper.editor_window.borrow_mut() =
+                            Some(fragile::Fragile::new(editor_instance));
+                        true
+                    }
+                    Err(e) => {
+                        crate::nice_error!("Failed to open editor: {}", e);
+                        false
+                    }
+                }
+            } else {
+                crate::nice_debug_assert_failure!(
+                    "Host tried to create editor while editor is already open"
+                );
+
+                false
+            }
+        };
+
+        // Leak the Arc again since we only needed a clone to pass to the GuiContext
+        let _ = Arc::into_raw(wrapper);
+
+        result
+    }
+
+    #[cfg(feature = "editor")]
+    unsafe extern "C" fn ext_gui_set_parent(
+        plugin: *const clap_plugin,
+        window: *const clap_sys::ext::gui::clap_window,
+    ) -> bool {
+        use nice_plug_core::editor::{EditorHandle, ParentWindowHandle};
+        use std::ffi::c_ulong;
+        use std::num::NonZeroIsize;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, window);
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+        let window = unsafe { &*window };
+
+        let result = if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            let api = unsafe { CStr::from_ptr(window.api) };
+            let parent_handle = unsafe {
+                if api == clap_sys::ext::gui::CLAP_WINDOW_API_X11 {
+                    #[allow(clippy::unnecessary_cast)]
+                    let w = window.specific.x11 as c_ulong;
+                    ParentWindowHandle::XlibWindow(w)
+                } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_COCOA {
+                    check_null_ptr!(false, window.specific.cocoa);
+                    let w = NonNull::new(window.specific.cocoa).unwrap();
+                    ParentWindowHandle::AppKitNsView(w)
+                } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_WIN32 {
+                    check_null_ptr!(false, window.specific.win32);
+                    let w = NonZeroIsize::new(window.specific.win32 as isize).unwrap();
+                    ParentWindowHandle::Win32Hwnd(w)
+                } else {
+                    crate::nice_debug_assert_failure!("Host passed an invalid API");
+                    return false;
+                }
+            };
+
+            if let Err(e) = editor_window
+                .handle
+                .set_parent(parent_handle, &editor_window.window)
+            {
+                crate::nice_error!("Failed to set editor parent window: {}", e);
+
+                false
+            } else {
+                true
+            }
         } else {
             crate::nice_debug_assert_failure!(
-                "Tried creating editor while the editor was already active"
+                "Host tried to set parent window while editor is not open"
             );
+
             false
-        }
+        };
+
+        result
     }
 
     #[cfg(feature = "editor")]
@@ -2898,7 +3046,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        let mut editor_handle = wrapper.editor_window.lock();
+        let mut editor_handle = wrapper.editor_window.borrow_mut();
         if editor_handle.is_some() {
             *editor_handle = None;
         } else {
@@ -2981,16 +3129,21 @@ impl<P: ClapPlugin> Wrapper<P> {
         width: *mut u32,
         height: *mut u32,
     ) -> bool {
-        use baseview::dpi::PhysicalSize;
+        use nice_plug_core::editor::EditorHandle;
+        use nice_plug_core::editor::dpi::PhysicalSize;
 
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        if let Some(window) = wrapper.editor_window.lock().as_ref() {
-            let size = unsafe { PhysicalSize::new(*width, *height) };
-            let window = window.get();
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
 
-            if let Some(new_size) = window.editor.adjust_size(size, &window.window) {
+            let size = unsafe { PhysicalSize::new(*width, *height) };
+
+            if let Some(new_size) = editor_window
+                .handle
+                .adjust_size(size, &editor_window.window)
+            {
                 unsafe {
                     *width = new_size.width;
                     *height = new_size.height;
@@ -3007,6 +3160,8 @@ impl<P: ClapPlugin> Wrapper<P> {
 
     #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_set_scale(plugin: *const clap_plugin, scale: f64) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
@@ -3018,16 +3173,18 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        if let Some(window) = wrapper.editor_window.lock().as_mut() {
-            let window = window.get_mut();
-            if window
-                .editor
-                .set_suggested_scale_factor(scale, &mut window.window)
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window
+                .handle
+                .set_suggested_scale_factor(scale, &editor_window.window)
             {
+                crate::nice_error!("Failed to set suggested scale factor: {}", e);
+                false
+            } else {
                 wrapper.suggested_scale_factor.store(Some(scale));
                 true
-            } else {
-                false
             }
         } else {
             false
@@ -3040,6 +3197,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         width: u32,
         height: u32,
     ) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
         // The host calls this after honoring an earlier `request_resize()`, when
         // the user drags a host-drawn resize handle, and (on Linux) if an
         // asynchronous resize request fails.
@@ -3048,137 +3207,15 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // Hand the new size to the editor. If there is no editor open, or the
         // editor doesn't support being resized, this fails and we tell the host so.
-        if let Some(window) = wrapper.editor_window.lock().as_mut() {
-            let window = window.get_mut();
-            window.editor.set_size(
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+            editor_window.handle.set_size(
                 nice_plug_core::editor::dpi::PhysicalSize { width, height },
-                &mut window.window,
+                &editor_window.window,
             )
         } else {
             false
         }
-    }
-
-    #[cfg(feature = "editor")]
-    unsafe extern "C" fn ext_gui_set_parent(
-        plugin: *const clap_plugin,
-        window: *const clap_sys::ext::gui::clap_window,
-    ) -> bool {
-        use nice_plug_core::editor::ParentWindowHandle;
-        use std::ffi::c_ulong;
-        use std::num::NonZeroIsize;
-
-        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, window);
-        // For this function we need the underlying Arc so we can pass it to the editor
-        let wrapper = unsafe { Arc::from_raw((*plugin).plugin_data as *const Self) };
-
-        let window = unsafe { &*window };
-
-        let result = {
-            if wrapper.editor_window.lock().is_none() {
-                let api = unsafe { CStr::from_ptr(window.api) };
-                let parent_handle = unsafe {
-                    if api == clap_sys::ext::gui::CLAP_WINDOW_API_X11 {
-                        #[allow(clippy::unnecessary_cast)]
-                        let w = window.specific.x11 as c_ulong;
-                        ParentWindowHandle::XlibWindow(w)
-                    } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_COCOA {
-                        check_null_ptr!(false, window.specific.cocoa);
-                        let w = NonNull::new(window.specific.cocoa).unwrap();
-                        ParentWindowHandle::AppKitNsView(w)
-                    } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_WIN32 {
-                        check_null_ptr!(false, window.specific.win32);
-                        let w = NonZeroIsize::new(window.specific.win32 as isize).unwrap();
-                        ParentWindowHandle::Win32Hwnd(w)
-                    } else {
-                        crate::nice_debug_assert_failure!("Host passed an invalid API");
-                        return false;
-                    }
-                };
-
-                #[derive(Debug, Clone, Copy, thiserror::Error)]
-                enum ResizeError {
-                    #[error("Host refused window size: {0:?}")]
-                    HostRefusedSize(baseview::WindowSize),
-                    #[error("Attempted to close window when plugin was closed")]
-                    PluginClosed,
-                }
-
-                struct ClapHostCallbacks<P: ClapPlugin> {
-                    wrapper: Weak<Wrapper<P>>,
-                    host_gui: ClapPtr<clap_host_gui>,
-                }
-
-                impl<P: ClapPlugin> baseview::host::HostCallbacks for ClapHostCallbacks<P> {
-                    fn request_resize(
-                        &mut self,
-                        size: baseview::WindowSize,
-                    ) -> Result<(), baseview::HandlerError> {
-                        if let Some(wrapper) = self.wrapper.upgrade() {
-                            if unsafe_clap_call! {
-                                &*self.host_gui=>request_resize(
-                                    &*wrapper.host_callback,
-                                    size.physical.width as u32,
-                                    size.physical.height as u32,
-                                )
-                            } {
-                                Ok(())
-                            } else {
-                                Err(ResizeError::HostRefusedSize(size).into())
-                            }
-                        } else {
-                            Err(ResizeError::PluginClosed.into())
-                        }
-                    }
-
-                    fn destroyed(&mut self) {
-                        if let Some(wrapper) = self.wrapper.upgrade() {
-                            unsafe_clap_call! {
-                                &*self.host_gui=>closed(
-                                    &*wrapper.host_callback,
-                                    true,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                let host = baseview::host::Host::new().with_callbacks(ClapHostCallbacks {
-                    wrapper: wrapper.this.borrow().clone(),
-                    host_gui: ClapPtr::clone(&wrapper.host_gui.borrow().as_ref().unwrap()),
-                });
-
-                let suggested_scale_factor = wrapper.suggested_scale_factor.load();
-
-                match wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
-                    Some(parent_handle),
-                    suggested_scale_factor,
-                    wrapper.clone().make_gui_context(),
-                    Some(host),
-                ) {
-                    Ok(editor_instance) => {
-                        *wrapper.editor_window.lock() =
-                            Some(fragile::Fragile::new(editor_instance));
-                        true
-                    }
-                    Err(e) => {
-                        crate::nice_error!("Failed to open editor: {}", e);
-                        false
-                    }
-                }
-            } else {
-                crate::nice_debug_assert_failure!(
-                    "Host tried to attach editor while the editor is already attached"
-                );
-
-                false
-            }
-        };
-
-        // Leak the Arc again since we only needed a clone to pass to the GuiContext
-        let _ = Arc::into_raw(wrapper);
-
-        result
     }
 
     #[cfg(feature = "editor")]
@@ -3196,16 +3233,45 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     #[cfg(feature = "editor")]
-    unsafe extern "C" fn ext_gui_show(_plugin: *const clap_plugin) -> bool {
-        // TODO: Does this get used? Is this only for the free-standing window extension? (which we
-        //       don't implement) This wouldn't make any sense for embedded editors.
-        false
+    unsafe extern "C" fn ext_gui_show(plugin: *const clap_plugin) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.show(&editor_window.window) {
+                crate::nice_error!("Failed to show editor window: {}", e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     #[cfg(feature = "editor")]
-    unsafe extern "C" fn ext_gui_hide(_plugin: *const clap_plugin) -> bool {
-        // TODO: Same as the above
-        false
+    unsafe extern "C" fn ext_gui_hide(plugin: *const clap_plugin) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.hide(&editor_window.window) {
+                crate::nice_error!("Failed to hide editor window: {}", e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     unsafe extern "C" fn ext_latency_get(plugin: *const clap_plugin) -> u32 {

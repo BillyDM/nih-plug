@@ -7,11 +7,8 @@
 
 use crossbeam::atomic::AtomicCell;
 use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::editor::Editor;
-use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize};
-use nice_plug_core::params::persist::PersistentField;
+use nice_plug_core::editor::dpi::{PhysicalSize, Size};
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -24,7 +21,7 @@ pub use egui_baseview::*;
 #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
 pub use baseview::gl::{GlConfig, Profile};
 
-pub use crate::editor::EguiNiceSettings;
+pub use crate::editor::{EguiEditor, EguiEditorHandle, EguiNiceSettings};
 
 mod editor;
 pub mod resizable_window;
@@ -44,12 +41,12 @@ pub fn create_egui_editor<A: NiceEguiApp>(
     egui_state: Arc<EguiState>,
     settings: EguiNiceSettings,
     app: A,
-) -> Option<Box<dyn Editor>> {
-    Some(Box::new(editor::EguiEditor {
+) -> Option<EguiEditor<A>> {
+    Some(EguiEditor {
         egui_state,
         user_app: Arc::new(Mutex::new(app)),
         settings: Arc::new(settings),
-    }))
+    })
 }
 
 /// Implement this trait to run an app with nice-plug-egui.
@@ -86,49 +83,34 @@ pub trait NiceEguiApp: Send + 'static {
 }
 
 /// State for an `nice-plug-egui` editor.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct EguiState {
-    /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nice_plug_core::params::persist::serialize_atomic_cell")]
-    logical_size: AtomicCell<(f32, f32)>,
+    size: AtomicCell<Size>,
 
-    /// It would be annoying if the zoom factor was saved along with presets. The plugin should
-    /// load this from a config file instead.
-    #[serde(skip)]
     pub(crate) zoom_factor: AtomicCell<f32>,
 
-    #[serde(skip)]
     pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
 
-    #[serde(skip)]
     /// The scaling factor reported by the host, if any. On macOS this will never be set and we
     /// should use the system scaling factor instead.
     pub(crate) system_scale_factor: AtomicCell<f64>,
 
     /// Whether the editor's window is currently open.
-    #[serde(skip)]
     open: AtomicBool,
 }
 
-impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
-    fn set(&self, new_value: EguiState) {
-        self.logical_size.store(new_value.logical_size.load());
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&EguiState) -> R,
-    {
-        f(self)
-    }
-}
-
 impl EguiState {
-    pub fn from_size(size: LogicalSize<f32>, zoom_factor: f32) -> Arc<Self> {
+    /// Create a new state for egui's editor.
+    ///
+    /// Note, changing the window size with
+    /// [`Ui::send_viewport_cmd`](https://docs.rs/egui/latest/egui/struct.Ui.html#method.send_viewport_cmd)
+    /// will NOT work when `size` is set to physical units. If working in physical units, change the
+    /// window size with [`egui_baseview::Frame::baseview_window()`] instead.
+    pub fn from_size(size: impl Into<Size>, zoom_factor: f32) -> Arc<Self> {
         assert!(zoom_factor > 0.0);
 
         Arc::new(Self {
-            logical_size: AtomicCell::new((size.width, size.height)),
+            size: AtomicCell::new(size.into()),
             zoom_factor: AtomicCell::new(zoom_factor),
             open: AtomicBool::new(false),
             host_scale_factor: AtomicCell::new(None),
@@ -136,24 +118,28 @@ impl EguiState {
         })
     }
 
-    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn logical_size(&self) -> LogicalSize<f32> {
-        let (width, height) = self.logical_size.load();
-        LogicalSize::new(width, height)
+    pub fn size(&self) -> Size {
+        self.size.load()
     }
 
     pub fn physical_size(&self) -> PhysicalSize<u32> {
-        let logical_size = self.logical_size();
-        let zoom_factor = self.zoom_factor.load();
-        let host_scale_factor = self.host_scale_factor.load();
-        let system_scale_factor = self.system_scale_factor.load();
+        let size = self.size.load();
 
-        let scale_factor = zoom_factor as f64
-            * host_scale_factor
-                .map(|s| s as f64)
-                .unwrap_or(system_scale_factor);
+        match size {
+            Size::Logical(logical_size) => {
+                let zoom_factor = self.zoom_factor.load();
+                let host_scale_factor = self.host_scale_factor.load();
+                let system_scale_factor = self.system_scale_factor.load();
 
-        logical_size.to_physical(scale_factor)
+                let scale_factor = zoom_factor as f64
+                    * host_scale_factor
+                        .map(|s| s as f64)
+                        .unwrap_or(system_scale_factor);
+
+                logical_size.to_physical(scale_factor)
+            }
+            Size::Physical(physical_size) => physical_size,
+        }
     }
 
     /// Whether the GUI is currently visible.
