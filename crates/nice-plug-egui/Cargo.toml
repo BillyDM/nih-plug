@@ -25,8 +25,8 @@ raw-window-handle.workspace = true
 nice-plug-core = { path = "../nice-plug-core", version = "0.2.0" }
 egui = { version = "0.35.0", default-features = false, features = ["bytemuck"] }
 #egui-baseview = { version = "0.6.0", default-features = false, features = [
-egui-baseview = { path = "../../../egui-baseview", default-features = false, features = [
-#egui-baseview = { git = "https://codeberg.org/RustAudio/egui-baseview.git", rev = "86814c04e553bc9357d77bc4d16d7f2fdad073b8", default-features = false, features = [
+#egui-baseview = { path = "../../../egui-baseview", default-features = false, features = [
+egui-baseview = { git = "https://codeberg.org/RustAudio/egui-baseview.git", rev = "8a706429a6c843c9886fe523dbecf84f335e0872", default-features = false, features = [
     "tracing",
 ] }
 crossbeam.workspace = true

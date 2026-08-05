@@ -1,4 +1,4 @@
-use crate::{NiceGuiContext, iced};
+use crate::{IcedNiceContext, iced};
 
 use iced::message;
 use iced::program::{self, Program};
@@ -14,28 +14,28 @@ use std::sync::{Arc, Mutex};
 pub mod timed;
 pub use timed::timed;
 
-mod editor_state;
-pub use editor_state::EditorState;
+mod persistent_state;
+pub use persistent_state::PersistentState;
 
-pub fn application<State, EState, Message, Theme, Renderer>(
-    editor_state: EditorState<EState>,
-    nice_ctx: NiceGuiContext,
-    boot: impl BootFn<State, EState, Message>,
+pub fn application<State, PState, Message, Theme, Renderer>(
+    persistent_state: PersistentState<PState>,
+    nice_ctx: IcedNiceContext,
+    boot: impl BootFn<State, PState, Message>,
     update: impl UpdateFn<State, Message>,
     view: impl for<'a> ViewFn<'a, State, Message, Theme, Renderer>,
 ) -> Application<impl Program<State = State, Message = Message, Theme = Theme>>
 where
     State: 'static,
-    EState: Send + 'static,
+    PState: Send + 'static,
     Message: Send + 'static + message::MaybeDebug + message::MaybeClone,
     Theme: theme::Base,
     Renderer: program::Renderer,
 {
     use std::marker::PhantomData;
 
-    struct Instance<State, EState, Boot, Message, Theme, Renderer, Update, View> {
-        nice_ctx: NiceGuiContext,
-        editor_state: Arc<Mutex<Option<EState>>>,
+    struct Instance<State, PState, Boot, Message, Theme, Renderer, Update, View> {
+        nice_ctx: IcedNiceContext,
+        persitent_state: Arc<Mutex<Option<PState>>>,
         boot: Boot,
         update: Update,
         view: View,
@@ -45,14 +45,14 @@ where
         _renderer: PhantomData<Renderer>,
     }
 
-    impl<State, EState, Boot, Message, Theme, Renderer, Update, View> Program
-        for Instance<State, EState, Boot, Message, Theme, Renderer, Update, View>
+    impl<State, PState, Boot, Message, Theme, Renderer, Update, View> Program
+        for Instance<State, PState, Boot, Message, Theme, Renderer, Update, View>
     where
-        EState: Send + 'static,
+        PState: Send + 'static,
         Message: Send + 'static,
         Theme: theme::Base,
         Renderer: program::Renderer,
-        Boot: self::BootFn<State, EState, Message>,
+        Boot: self::BootFn<State, PState, Message>,
         Update: self::UpdateFn<State, Message>,
         View: for<'a> self::ViewFn<'a, State, Message, Theme, Renderer>,
     {
@@ -69,7 +69,7 @@ where
         }
 
         fn boot(&self) -> (State, Task<Message>) {
-            let editor_state = EditorState::from_shared(&self.editor_state);
+            let editor_state = PersistentState::from_shared(&self.persitent_state);
 
             self.boot.boot(editor_state, self.nice_ctx.clone())
         }
@@ -98,7 +98,7 @@ where
     Application {
         raw: Instance {
             nice_ctx,
-            editor_state: editor_state.into_shared(),
+            persitent_state: persistent_state.into_shared(),
             boot,
             update,
             view,
@@ -243,7 +243,8 @@ where
         }
     }
 
-    /// Sets the scale factor of the [`Application`].
+    /// Sets the scale factor of the [`Application`]. This is applied on top of the system's
+    /// scale factor.
     pub fn scale_factor(
         self,
         f: impl Fn(&P::State) -> f32,
@@ -364,24 +365,25 @@ impl<P: Program> Program for ApplicationInner<P> {
 /// In practice, this means that [`application`] can both take
 /// simple functions like `State::default` and more advanced ones
 /// that return a [`Task`].
-pub trait BootFn<State, EState: Send + 'static, Message> {
+pub trait BootFn<State, PState: Send + 'static, Message: Send + 'static> {
     /// Initializes the [`Application`] state.
     fn boot(
         &self,
-        editor_state: EditorState<EState>,
-        nice_ctx: NiceGuiContext,
+        editor_state: PersistentState<PState>,
+        nice_ctx: IcedNiceContext,
     ) -> (State, Task<Message>);
 }
 
-impl<T, C, State, EState: Send + 'static, Message> BootFn<State, EState, Message> for T
+impl<T, C, State, PState: Send + 'static, Message: Send + 'static> BootFn<State, PState, Message>
+    for T
 where
-    T: Fn(EditorState<EState>, NiceGuiContext) -> C,
+    T: Fn(PersistentState<PState>, IcedNiceContext) -> C,
     C: IntoBoot<State, Message>,
 {
     fn boot(
         &self,
-        editor_state: EditorState<EState>,
-        nice_ctx: NiceGuiContext,
+        editor_state: PersistentState<PState>,
+        nice_ctx: IcedNiceContext,
     ) -> (State, Task<Message>) {
         self(editor_state, nice_ctx).into_boot()
     }

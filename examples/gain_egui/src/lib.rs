@@ -1,16 +1,14 @@
 use egui::{Margin, Vec2};
 use nice_plug::{context::gui::GuiContext, editor::dpi::LogicalSize, prelude::*};
 use nice_plug_egui::{
-    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, ResizeMode, create_egui_editor,
-    resizable_window::{ResizableWindow, ResizeWindowMode},
-    widgets,
+    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, create_egui_editor,
+    resizable_window::ResizableWindow, widgets,
 };
 use std::sync::{Arc, Mutex};
 
 const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 300.0);
 const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
-const ZOOM_FACTOR: f32 = 1.0;
-const RESIZE_MODE: ResizeMode = ResizeMode::ExpandViewport;
+const INITIAL_ZOOM_FACTOR: f32 = 1.0;
 
 /// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -27,6 +25,7 @@ const AUDIO_TO_GUI_MSG_CHANNEL_CAPACITY: usize = 128;
 /// This state persists across editor openings.
 pub struct GainEditor {
     open_state: Option<OpenEditorState>,
+    zoom_factor: f32,
 
     params: Arc<GainParams>,
     peak_meter: Arc<AtomicF32>,
@@ -93,132 +92,145 @@ impl NiceEguiApp for GainEditor {
 
         let setter = state.nice_gui_ctx.param_setter();
 
-        let resize_window_mode = match RESIZE_MODE {
-            // Expand the contents of the viewport to fit the window size
-            ResizeMode::ExpandViewport => ResizeWindowMode::ExpandViewport {
-                min_size: Vec2::new(MIN_WINDOW_SIZE.width, MIN_WINDOW_SIZE.height),
-                max_size: None,
-            },
-            // Zoom the contents of the viewport to fit the window size. This can be
-            // useful for some plugins that have a fixed layout.
-            ResizeMode::ZoomViewport => ResizeWindowMode::ZoomViewport {
-                min_zoom_factor: 0.25,
-                max_zoom_factor: 4.0,
-            },
-        };
+        ResizableWindow::new("res-wind")
+            .min_size(Vec2::new(MIN_WINDOW_SIZE.width, MIN_WINDOW_SIZE.height))
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .inner_margin(Margin::same(5))
+                    .show(ui, |ui| {
+                        // Display the track information
+                        let track_info = self
+                            .track_info
+                            .lock()
+                            .map(|info| info.clone())
+                            .unwrap_or_default();
+                        let name = track_info.name();
+                        if name.is_empty() {
+                            ui.label("Track name: (unknown)");
+                        } else {
+                            ui.label(format!("Track name: {name}"));
+                        }
+                        if let Some(color) = track_info.color() {
+                            let (r, g, b, a) = color.rgba();
 
-        ResizableWindow::new("res-wind", resize_window_mode).show(ui, |ui| {
-            egui::Frame::new()
-                .inner_margin(Margin::same(5))
-                .show(ui, |ui| {
-                    // Display the track information
-                    let track_info = self
-                        .track_info
-                        .lock()
-                        .map(|info| info.clone())
-                        .unwrap_or_default();
-                    let name = track_info.name();
-                    if name.is_empty() {
-                        ui.label("Track name: (unknown)");
-                    } else {
-                        ui.label(format!("Track name: {name}"));
-                    }
-                    if let Some(color) = track_info.color() {
-                        let (r, g, b, a) = color.rgba();
+                            ui.horizontal(|ui| {
+                                ui.label("Track color: ");
+                                let (rect, _response) = ui.allocate_exact_size(
+                                    egui::vec2(16.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
 
-                        ui.horizontal(|ui| {
-                            ui.label("Track color: ");
-                            let (rect, _response) = ui
-                                .allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+                                );
+                            });
+                        }
 
-                            ui.painter().rect_filled(
-                                rect,
-                                2.0,
-                                egui::Color32::from_rgba_unmultiplied(r, g, b, a),
-                            );
-                        });
-                    }
+                        // This is a fancy widget that can get all the information it needs to properly
+                        // display and modify the parameter from the parametr itself
+                        // It's not yet fully implemented, as the text is missing.
+                        ui.label("Some random integer");
+                        ui.add(widgets::ParamSlider::for_param(
+                            &self.params.some_int,
+                            &setter,
+                        ));
 
-                    // This is a fancy widget that can get all the information it needs to properly
-                    // display and modify the parameter from the parametr itself
-                    // It's not yet fully implemented, as the text is missing.
-                    ui.label("Some random integer");
-                    ui.add(widgets::ParamSlider::for_param(
-                        &self.params.some_int,
-                        &setter,
-                    ));
+                        ui.label("Gain");
+                        ui.add(widgets::ParamSlider::for_param(&self.params.gain, &setter));
 
-                    ui.label("Gain");
-                    ui.add(widgets::ParamSlider::for_param(&self.params.gain, &setter));
-
-                    ui.label(
-                        "Also gain, but with a standard widget. Note that it doesn't properly \
-                         take the parameter curve into account!",
-                    );
-
-                    // This is a simple naive version of a parameter slider that's not aware of how
-                    // the parameters work
-                    let prev_value = nice_plug::util::gain_to_db(self.params.gain.value());
-                    let mut new_value = prev_value;
-                    let ptr_down = ui
-                        .add(egui::widgets::Slider::new(&mut new_value, -30.0..=30.0).suffix(" dB"))
-                        .is_pointer_button_down_on();
-                    if !state.is_dragging_slider && (ptr_down || new_value != prev_value) {
-                        state.is_dragging_slider = true;
-                        setter.begin_set_parameter(&self.params.gain);
-                    }
-                    if new_value != prev_value {
-                        setter.set_parameter(
-                            &self.params.gain,
-                            nice_plug::util::db_to_gain(new_value),
+                        ui.label(
+                            "Also gain, but with a standard widget. Note that it doesn't properly \
+                             take the parameter curve into account!",
                         );
-                    }
-                    if state.is_dragging_slider && !ptr_down {
-                        state.is_dragging_slider = false;
-                        setter.end_set_parameter(&self.params.gain);
-                    }
 
-                    // TODO: Add a proper custom widget instead of reusing a progress bar
-                    let peak_meter = util::gain_to_db(
-                        self.peak_meter.load(std::sync::atomic::Ordering::Relaxed),
-                    );
-                    let peak_meter_text = if peak_meter > util::MINUS_INFINITY_DB {
-                        format!("{peak_meter:.1} dBFS")
-                    } else {
-                        String::from("-inf dBFS")
-                    };
+                        // This is a simple naive version of a parameter slider that's not aware of how
+                        // the parameters work
+                        let prev_value = nice_plug::util::gain_to_db(self.params.gain.value());
+                        let mut new_value = prev_value;
+                        let ptr_down = ui
+                            .add(
+                                egui::widgets::Slider::new(&mut new_value, -30.0..=30.0)
+                                    .suffix(" dB"),
+                            )
+                            .is_pointer_button_down_on();
+                        if !state.is_dragging_slider && (ptr_down || new_value != prev_value) {
+                            state.is_dragging_slider = true;
+                            setter.begin_set_parameter(&self.params.gain);
+                        }
+                        if new_value != prev_value {
+                            setter.set_parameter(
+                                &self.params.gain,
+                                nice_plug::util::db_to_gain(new_value),
+                            );
+                        }
+                        if state.is_dragging_slider && !ptr_down {
+                            state.is_dragging_slider = false;
+                            setter.end_set_parameter(&self.params.gain);
+                        }
 
-                    let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
-                    ui.allocate_space(egui::Vec2::splat(2.0));
-                    ui.add(
-                        egui::widgets::ProgressBar::new(peak_meter_normalized)
-                            .text(peak_meter_text),
-                    );
+                        // TODO: Add a proper custom widget instead of reusing a progress bar
+                        let peak_meter = util::gain_to_db(
+                            self.peak_meter.load(std::sync::atomic::Ordering::Relaxed),
+                        );
+                        let peak_meter_text = if peak_meter > util::MINUS_INFINITY_DB {
+                            format!("{peak_meter:.1} dBFS")
+                        } else {
+                            String::from("-inf dBFS")
+                        };
 
-                    // Demonstrate sending a message to the audio thread.
-                    if ui.button("send message").clicked()
-                        && let Err(e) = self.msg_channel.to_audio_tx.push(GuiToAudioMsg::MessageA)
-                    {
-                        nice_error!("Failed to send message to audio thread: {}", e);
-                    }
-                    // Demonstrate receiving messages from the audio thread.
-                    while let Ok(msg) = self.msg_channel.from_audio_rx.pop() {
-                        nice_log!("Got message from audio thread: {:?}", &msg);
-                    }
+                        let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
+                        ui.allocate_space(egui::Vec2::splat(2.0));
+                        ui.add(
+                            egui::widgets::ProgressBar::new(peak_meter_normalized)
+                                .text(peak_meter_text),
+                        );
 
-                    // Demonstrate mutating synced triple buffer state.
-                    if ui.button("mutate synced state").clicked() {
-                        self.next_value += 1;
-                        // Note, `triple_buffer_state.input_buffer_mut()` will not work for syncing state
-                        // this way. You must always completely overwrite the state with new data.
-                        self.triple_buffer_state.write(TripleBufferState {
-                            value_a: false,
-                            value_b: self.next_value,
-                            some_data: Vec::new(),
-                        });
-                    }
-                });
-        });
+                        // Demonstrate sending a message to the audio thread.
+                        if ui.button("send message").clicked()
+                            && let Err(e) =
+                                self.msg_channel.to_audio_tx.push(GuiToAudioMsg::MessageA)
+                        {
+                            nice_error!("Failed to send message to audio thread: {}", e);
+                        }
+                        // Demonstrate receiving messages from the audio thread.
+                        while let Ok(msg) = self.msg_channel.from_audio_rx.pop() {
+                            nice_log!("Got message from audio thread: {:?}", &msg);
+                        }
+
+                        // Demonstrate mutating synced triple buffer state.
+                        if ui.button("mutate synced state").clicked() {
+                            self.next_value += 1;
+                            // Note, `triple_buffer_state.input_buffer_mut()` will not work for syncing state
+                            // this way. You must always completely overwrite the state with new data.
+                            self.triple_buffer_state.write(TripleBufferState {
+                                value_a: false,
+                                value_b: self.next_value,
+                                some_data: Vec::new(),
+                            });
+                        }
+
+                        let before = self.zoom_factor;
+                        egui::ComboBox::from_label("zoom factor")
+                            .selected_text(format!(
+                                "{}%",
+                                (self.zoom_factor * 100.0).round() as u32
+                            ))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.zoom_factor, 0.5, "50%");
+                                ui.selectable_value(&mut self.zoom_factor, 0.75, "75%");
+                                ui.selectable_value(&mut self.zoom_factor, 1.0, "100%");
+                                ui.selectable_value(&mut self.zoom_factor, 1.25, "125%");
+                                ui.selectable_value(&mut self.zoom_factor, 1.5, "150%");
+                                ui.selectable_value(&mut self.zoom_factor, 1.75, "175%");
+                                ui.selectable_value(&mut self.zoom_factor, 2.0, "200%");
+                            });
+                        if self.zoom_factor != before {
+                            ui.set_zoom_factor(self.zoom_factor);
+                        }
+                    });
+            });
     }
 }
 
@@ -271,6 +283,38 @@ pub struct TripleBufferState {
 
 // ---------------------------------------------------------------------------------------------------
 
+#[derive(Params)]
+pub struct GainParams {
+    #[id = "gain"]
+    pub gain: FloatParam,
+
+    // TODO: Remove this parameter when we're done implementing the widgets
+    #[id = "foobar"]
+    pub some_int: IntParam,
+}
+
+impl Default for GainParams {
+    fn default() -> Self {
+        Self {
+            // See the main gain example for more details
+            gain: FloatParam::new(
+                "Gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            some_int: IntParam::new("Something", 3, IntRange::Linear { min: 0, max: 3 }),
+        }
+    }
+}
+
 pub struct Gain {
     params: Arc<GainParams>,
 
@@ -320,6 +364,11 @@ impl Default for Gain {
         let peak_meter = Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB));
         let track_info = Arc::new(std::sync::Mutex::new(TrackInfo::default()));
 
+        // If you wish to make the zoom factor user-configurable, then it should be loaded
+        // from a config file to make it persistent. The window size however does not need
+        // to be stored in a config file because hosts already keep track of that.
+        let zoom_factor = INITIAL_ZOOM_FACTOR;
+
         let initial_editor = GainEditor {
             open_state: None,
             params: params.clone(),
@@ -331,12 +380,13 @@ impl Default for Gain {
             },
             triple_buffer_state: triple_buffer_input,
             next_value: 0,
+            zoom_factor,
         };
 
         Self {
             params,
 
-            editor_state: EguiState::from_size(MIN_WINDOW_SIZE, ZOOM_FACTOR),
+            editor_state: EguiState::from_size(MIN_WINDOW_SIZE, zoom_factor),
 
             peak_meter_decay_weight: 1.0,
             peak_meter,
@@ -353,38 +403,6 @@ impl Default for Gain {
             initial_editor: Some(initial_editor),
 
             track_info,
-        }
-    }
-}
-
-#[derive(Params)]
-pub struct GainParams {
-    #[id = "gain"]
-    pub gain: FloatParam,
-
-    // TODO: Remove this parameter when we're done implementing the widgets
-    #[id = "foobar"]
-    pub some_int: IntParam,
-}
-
-impl Default for GainParams {
-    fn default() -> Self {
-        Self {
-            // See the main gain example for more details
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            some_int: IntParam::new("Something", 3, IntRange::Linear { min: 0, max: 3 }),
         }
     }
 }
@@ -423,9 +441,7 @@ impl Plugin for Gain {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         create_egui_editor(
             self.editor_state.clone(),
-            EguiNiceSettings::new()
-                .with_resize_hint(RESIZE_HINT)
-                .with_resize_mode(RESIZE_MODE),
+            EguiNiceSettings::new().with_resize_hint(RESIZE_HINT),
             self.initial_editor.take().unwrap(),
         )
     }

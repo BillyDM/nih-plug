@@ -3,7 +3,6 @@
 use crate::EguiState;
 use crate::NiceEguiApp;
 use egui_baseview::EguiWindowSettings;
-use egui_baseview::ResizeMode;
 use egui_baseview::baseview;
 use egui_baseview::baseview::HandlerError;
 use egui_baseview::{EguiWindow, GraphicsConfig};
@@ -16,6 +15,7 @@ use nice_plug_core::editor::ParentWindowHandle;
 use nice_plug_core::editor::ResizeHint;
 use nice_plug_core::editor::VirtualKeyCode;
 use nice_plug_core::editor::dpi::PhysicalSize;
+use nice_plug_core::editor::dpi::Size;
 use nice_plug_core::nice_error;
 use parking_lot::Mutex;
 use std::error::Error;
@@ -24,9 +24,18 @@ use std::sync::atomic::Ordering;
 
 #[derive(Default)]
 pub struct EguiNiceSettings {
+    /// The window title
     pub title: String,
+
+    /// The graphics configuration
     pub graphics: GraphicsConfig,
-    pub resize_mode: ResizeMode,
+
+    /// Describes whether and how a host may resize an [`Editor`], returned from
+    /// [`nice_plug_core::editor::Editor::resize_hint()`].
+    ///
+    /// The default is non-resizable (`can_resize: false`), matching the previous
+    /// fixed-size behavior. To make an editor resizable, return a hint with
+    /// `can_resize: true`; the per-axis flags and aspect-ratio fields refine how.
     pub resize_hint: ResizeHint,
 }
 
@@ -36,24 +45,26 @@ impl EguiNiceSettings {
         Self::default()
     }
 
+    /// Use the given window title
     #[inline]
     pub fn with_tile(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
 
+    /// Use the given graphics configuration
     #[inline]
     pub fn with_graphics_config(mut self, config: GraphicsConfig) -> Self {
         self.graphics = config;
         self
     }
 
-    #[inline]
-    pub fn with_resize_mode(mut self, resize_mode: ResizeMode) -> Self {
-        self.resize_mode = resize_mode;
-        self
-    }
-
+    /// Describes whether and how a host may resize an [`Editor`], returned from
+    /// [`Editor::resize_hint()`].
+    ///
+    /// The default is non-resizable (`can_resize: false`), matching the previous
+    /// fixed-size behavior. To make an editor resizable, return a hint with
+    /// `can_resize: true`; the per-axis flags and aspect-ratio fields refine how.
     #[inline]
     pub fn with_resize_hint(mut self, resize_hint: ResizeHint) -> Self {
         self.resize_hint = resize_hint;
@@ -65,6 +76,7 @@ struct UserAppWrapper<A: NiceEguiApp> {
     user_app: Arc<Mutex<A>>,
     gui_context: GuiContext,
     egui_ctx: Arc<Mutex<Option<egui::Context>>>,
+    egui_state: Arc<EguiState>,
 }
 
 impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
@@ -82,6 +94,24 @@ impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut egui_baseview::Frame) {
         self.user_app.lock().ui(ui, frame);
+    }
+
+    fn resized(&mut self, size: baseview::WindowSize) {
+        let current_size = self.egui_state.size();
+        let new_size = match current_size {
+            Size::Logical(_) => Size::Logical(size.logical),
+            Size::Physical(_) => Size::Physical(size.physical),
+        };
+
+        self.egui_state.size.store(new_size);
+
+        self.user_app.lock().resized(size);
+    }
+
+    fn zoom_factor_changed(&mut self, zoom_factor: f32) {
+        self.egui_state.zoom_factor.store(zoom_factor);
+
+        self.user_app.lock().zoom_factor_changed(zoom_factor);
     }
 }
 
@@ -105,16 +135,16 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
     ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
         let egui_state = self.egui_state.clone();
         let user_app = self.user_app.clone();
-        let zoom_factor = egui_state.zoom_factor.load();
         let size = egui_state.size();
+        let zoom_factor = egui_state.zoom_factor.load();
 
         let settings = EguiWindowSettings::new()
             .with_title(self.settings.title.clone())
             .with_size(size)
-            .with_resize_mode(self.settings.resize_mode)
             .with_zoom_factor(zoom_factor)
             .with_graphics_config(self.settings.graphics.clone())
             .with_parent(parent.as_ref())
+            .with_fallback_scale_factor(suggested_scale_factor)
             .with_wait_for_parent(wait_for_parent);
 
         let egui_ctx = Arc::new(Mutex::new(None));
@@ -150,13 +180,10 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
                 user_app,
                 gui_context,
                 egui_ctx: egui_ctx.clone(),
+                egui_state: egui_state.clone(),
             },
             host,
         )?;
-
-        if let Some(scale_factor) = suggested_scale_factor {
-            let _ = window.suggest_fallback_scale_factor(scale_factor)?;
-        }
 
         self.egui_state.open.store(true, Ordering::Release);
 

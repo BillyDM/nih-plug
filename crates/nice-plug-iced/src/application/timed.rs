@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{EditorState, NiceGuiContext, iced};
+use crate::{IcedNiceContext, PersistentState, iced};
 
 use iced::program::{self, Program};
 use iced::theme;
@@ -25,26 +25,26 @@ use super::{Application, BootFn, ViewFn};
 /// enables proper time traveling debugging with [`comet`].
 ///
 /// [`comet`]: https://github.com/iced-rs/comet
-pub fn timed<State, EState, Message, Theme, Renderer>(
-    editor_state: EditorState<EState>,
-    nice_ctx: NiceGuiContext,
-    boot: impl BootFn<State, EState, Message>,
+pub fn timed<State, PState, Message, Theme, Renderer>(
+    editor_state: PersistentState<PState>,
+    nice_ctx: IcedNiceContext,
+    boot: impl BootFn<State, PState, Message>,
     update: impl UpdateFn<State, Message>,
     subscription: impl Fn(&State) -> Subscription<Message>,
     view: impl for<'a> ViewFn<'a, State, Message, Theme, Renderer>,
 ) -> Application<impl Program<State = State, Message = (Message, Instant), Theme = Theme>>
 where
     State: 'static,
-    EState: Send + 'static,
+    PState: Send + 'static,
     Message: Send + 'static,
     Theme: theme::Base + 'static,
     Renderer: program::Renderer + 'static,
 {
     use std::marker::PhantomData;
 
-    struct Instance<State, EState, Message, Theme, Renderer, Boot, Update, Subscription, View> {
-        nice_ctx: NiceGuiContext,
-        editor_state: Arc<Mutex<Option<EState>>>,
+    struct Instance<State, PState, Message, Theme, Renderer, Boot, Update, Subscription, View> {
+        nice_ctx: IcedNiceContext,
+        persistent_state: Arc<Mutex<Option<PState>>>,
         boot: Boot,
         update: Update,
         subscription: Subscription,
@@ -55,14 +55,14 @@ where
         _renderer: PhantomData<Renderer>,
     }
 
-    impl<State, EState, Message, Theme, Renderer, Boot, Update, Subscription, View> Program
-        for Instance<State, EState, Message, Theme, Renderer, Boot, Update, Subscription, View>
+    impl<State, PState, Message, Theme, Renderer, Boot, Update, Subscription, View> Program
+        for Instance<State, PState, Message, Theme, Renderer, Boot, Update, Subscription, View>
     where
-        EState: Send + 'static,
+        PState: Send + 'static,
         Message: Send + 'static,
         Theme: theme::Base + 'static,
         Renderer: program::Renderer + 'static,
-        Boot: self::BootFn<State, EState, Message>,
+        Boot: self::BootFn<State, PState, Message>,
         Update: self::UpdateFn<State, Message>,
         Subscription: Fn(&State) -> self::Subscription<Message>,
         View: for<'a> self::ViewFn<'a, State, Message, Theme, Renderer>,
@@ -88,7 +88,7 @@ where
         }
 
         fn boot(&self) -> (State, Task<Self::Message>) {
-            let editor_state = EditorState::from_shared(&self.editor_state);
+            let editor_state = PersistentState::from_shared(&self.persistent_state);
 
             let (state, task) = self.boot.boot(editor_state, self.nice_ctx.clone());
 
@@ -128,7 +128,7 @@ where
     Application {
         raw: Instance {
             nice_ctx,
-            editor_state: editor_state.into_shared(),
+            persistent_state: editor_state.into_shared(),
             boot,
             update,
             subscription,

@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 
 use crossbeam::atomic::AtomicCell;
+use egui_baseview::baseview::WindowSize;
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::editor::dpi::{PhysicalSize, Size};
 use parking_lot::Mutex;
@@ -74,6 +75,16 @@ pub trait NiceEguiApp: Send + 'static {
     /// This will only ever be called while an editor window is open.
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut Frame);
 
+    /// Called when the window has been resized.
+    fn resized(&mut self, new_size: WindowSize) {
+        let _ = new_size;
+    }
+
+    /// Called when the zoom factor has changed.
+    fn zoom_factor_changed(&mut self, zoom_factor: f32) {
+        let _ = zoom_factor;
+    }
+
     /// Called when the editor is closed. This is needed because the plugin editor window
     /// can be opened and closed multiple times.
     ///
@@ -86,8 +97,7 @@ pub trait NiceEguiApp: Send + 'static {
 #[derive(Debug)]
 pub struct EguiState {
     size: AtomicCell<Size>,
-
-    pub(crate) zoom_factor: AtomicCell<f32>,
+    zoom_factor: AtomicCell<f32>,
 
     pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
 
@@ -101,11 +111,6 @@ pub struct EguiState {
 
 impl EguiState {
     /// Create a new state for egui's editor.
-    ///
-    /// Note, changing the window size with
-    /// [`Ui::send_viewport_cmd`](https://docs.rs/egui/latest/egui/struct.Ui.html#method.send_viewport_cmd)
-    /// will NOT work when `size` is set to physical units. If working in physical units, change the
-    /// window size with [`egui_baseview::Frame::baseview_window()`] instead.
     pub fn from_size(size: impl Into<Size>, zoom_factor: f32) -> Arc<Self> {
         assert!(zoom_factor > 0.0);
 
@@ -140,6 +145,12 @@ impl EguiState {
             }
             Size::Physical(physical_size) => physical_size,
         }
+    }
+
+    /// The current user zoom (scale) factor. This is applied on top of the
+    /// system's scale factor.
+    pub fn user_scale_factor(&self) -> f32 {
+        self.zoom_factor.load()
     }
 
     /// Whether the GUI is currently visible.

@@ -351,7 +351,8 @@ impl Editor for WgpuEditor {
                 .with_title("Wgpu Window")
                 .with_size(self.editor_state.logical_size())
                 .with_parent(parent.as_ref())
-                .with_wait_for_parent(wait_for_parent),
+                .with_wait_for_parent(wait_for_parent)
+                .with_fallback_scale_factor(suggested_scale_factor),
             move |window: WindowContext| -> Result<WgpuWindow, HandlerError> {
                 WgpuWindow::new(
                     window,
@@ -366,10 +367,6 @@ impl Editor for WgpuEditor {
         )?;
 
         self.editor_state.open.store(true, Ordering::Release);
-
-        if let Some(scale_factor) = suggested_scale_factor {
-            let _ = window.suggest_fallback_scale_factor(scale_factor);
-        }
 
         Ok(EditorWindow {
             handle: WgpuEditorHandle {
