@@ -106,6 +106,12 @@ where
                 }
             },
             move |egui_ctx, extra_commands, state| {
+                // For now, just always redraw. Most plugin GUIs have meters, and those almost always
+                // need a redraw. Later we can try to be a bit more sophisticated about this. Without
+                // this we would also have a blank GUI when it gets first opened because most DAWs open
+                // their GUI while the window is still unmapped.
+                egui_ctx.request_repaint();
+
                 let setter = ParamSetter::new(context_1.as_ref());
                 (update)(egui_ctx, &setter, extra_commands, &mut state.lock());
             },
