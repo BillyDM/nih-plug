@@ -81,10 +81,8 @@ pub trait EditorHandle: Send + 'static {
     /// This will never be called on the standalone target.
     fn hide(&self, window: &Self::Window) -> Result<(), Self::Error>;
 
-    /// Called by the wrapper when the host has resized the plugin's view (either
-    /// because the host accepted an earlier [`GuiContext::request_resize()`], or
-    /// because the user dragged a host-provided resize handle). The editor should
-    /// resize its own window and contents to match these dimensions.
+    /// Called by the wrapper when the host has resized the plugin's view. The
+    /// editor should resize its own window and contents to match these dimensions.
     ///
     /// Return `true` if the editor applied the new size, `false` if it rejected
     /// it (e.g. the size is outside what the GUI supports). The default
@@ -205,7 +203,7 @@ pub trait Editor: Send {
     ///
     /// If an error is returned, then the editor will not open.
     ///
-    /// If [`set_scale_factor()`][Self::set_scale_factor()] has been called, then any created
+    /// If [`EditorHandle::set_suggested_scale_factor()`] has been called, then any created
     /// windows should have their sizes multiplied by that factor.
     ///
     /// The wrapper guarantees that a previous handle has been dropped before this function is
@@ -236,7 +234,7 @@ pub trait Editor: Send {
     /// The default is [`ResizeHint::default()`], which is **not** resizable, so
     /// editors keep their fixed-size behavior unless they opt in. An editor that
     /// supports host resizing should return a hint with `can_resize: true` (and
-    /// usually also implement [`set_size()`][Self::set_size()] to apply the new
+    /// usually also implement [`EditorHandle::set_size()`] to apply the new
     /// size). See [`ResizeHint`] for the per-axis and aspect-ratio options.
     fn resize_hint(&self) -> ResizeHint {
         ResizeHint::default()
@@ -590,7 +588,7 @@ impl HasWindowHandle for ParentWindowHandle {
 }
 
 /// A non-character key delivered to
-/// [`Editor::on_virtual_key_from_host`]. Variant names mirror standard
+/// [`EditorHandle::on_virtual_key_from_host`]. Variant names mirror standard
 /// keyboard nomenclature; printable ASCII characters never appear here
 /// because they flow through the plugin window's native keyboard path
 /// instead.

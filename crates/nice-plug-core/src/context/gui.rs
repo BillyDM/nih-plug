@@ -150,7 +150,7 @@ pub trait GuiContextInner: Send + Sync + 'static {
 /// # Note
 ///
 /// This is only intended to be used from the GUI. Use the methods on
-/// [`ActivateContext`][crate::context::init::ActivateContext] and
+/// [`ActivateContext`][crate::context::activate::ActivateContext] and
 /// [`ProcessContext`][crate::context::process::ProcessContext] to run tasks during the `activate()`
 /// and `process()` functions.
 //

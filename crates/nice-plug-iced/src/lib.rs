@@ -94,7 +94,7 @@ pub struct IcedNiceSettings {
     /// The window title
     pub title: String,
 
-    /// Describes whether and how a host may resize an [`Editor`](nice_plug_core::editor::Editor),
+    /// Describes whether and how a host may resize an [`Editor`],
     /// returned from [`nice_plug_core::editor::Editor::resize_hint()`].
     ///
     /// The default is non-resizable (`can_resize: false`), matching the previous

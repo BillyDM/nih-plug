@@ -124,7 +124,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
     }
 }
 
-/// The window handle used for [`IcedEditor`].
+/// The window handle used for [`IcedEditor`](crate::IcedEditor).
 pub struct IcedEditorHandle {
     editor_state: Arc<IcedEditorState>,
     notifier: PollSubNotifier,

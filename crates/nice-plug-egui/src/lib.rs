@@ -28,14 +28,12 @@ mod editor;
 pub mod resizable_window;
 pub mod widgets;
 
-/// Create an [`Editor`] instance using an [`egui`] GUI. Using the user state parameter is
-/// optional, but it can be useful for keeping track of some temporary GUI-only settings. See the
-/// `nice-plug_gain_egui` example for more information on how to use this. The [`EguiState`] passed
-/// to this function contains the GUI's intitial size, and this is kept in sync whenever the GUI gets
-/// resized. You can also use this to know if the GUI is open, so you can avoid performing
-/// potentially expensive calculations while the GUI is not open. If you want this size to be
-/// persisted when restoring a plugin instance, then you can store it in a `#[persist = "key"]`
-/// field on your parameters struct.
+/// Create an [`Editor`](nice_plug_core::editor::Editor) instance using an [`egui`] GUI. Using the
+/// user state parameter is optional, but it can be useful for keeping track of some temporary
+/// GUI-only settings. See the `nice-plug_gain_egui` example for more information on how to use this.
+/// The [`EguiState`] passed to this function contains the GUI's intitial size, and this is kept in
+/// sync whenever the GUI gets resized. You can also use this to know if the GUI is open, so you can
+/// avoid performing potentially expensive calculations while the GUI is not open.
 ///
 /// See [`EguiState::from_size()`].
 pub fn create_egui_editor<A: NiceEguiApp>(
