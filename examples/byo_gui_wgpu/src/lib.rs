@@ -336,7 +336,7 @@ impl Editor for WgpuEditor {
             ) -> Result<(), HandlerError> {
                 self.host
                     .request_resize(new_size.physical.into(), new_size.scale_factor)
-                    .map_err(|e| HandlerError::from_boxed(e))
+                    .map_err(HandlerError::from_boxed)
             }
 
             fn destroyed(&mut self) {
@@ -361,7 +361,6 @@ impl Editor for WgpuEditor {
                     editor_state,
                     redraw_requested_2,
                 )
-                .map_err(|e| e.into())
             },
             host,
         )?;

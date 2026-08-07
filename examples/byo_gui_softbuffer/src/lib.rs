@@ -179,7 +179,7 @@ impl Editor for SoftbufferEditor {
             ) -> Result<(), HandlerError> {
                 self.host
                     .request_resize(new_size.physical.into(), new_size.scale_factor)
-                    .map_err(|e| HandlerError::from_boxed(e))
+                    .map_err(HandlerError::from_boxed)
             }
 
             fn destroyed(&mut self) {

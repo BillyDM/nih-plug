@@ -132,6 +132,7 @@ pub struct Wrapper<P: ClapPlugin> {
     /// A handle for the currently active editor instance. The plugin should implement `Drop` on
     /// this handle for its closing behavior.
     #[cfg(feature = "editor")]
+    #[allow(clippy::type_complexity)]
     editor_window:
         AtomicRefCell<Option<fragile::Fragile<EditorWindow<<P::Editor as Editor>::Handle>>>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
@@ -2920,8 +2921,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                             if unsafe_clap_call! {
                                 &*self.host_gui=>request_resize(
                                     &*wrapper.host_callback,
-                                    physical_size.width as u32,
-                                    physical_size.height as u32,
+                                    physical_size.width,
+                                    physical_size.height,
                                 )
                             } {
                                 Ok(())
@@ -2947,7 +2948,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 let host: Box<dyn HostCallbacks> = Box::new(ClapHostCallbacks {
                     wrapper: wrapper.this.borrow().clone(),
-                    host_gui: ClapPtr::clone(&wrapper.host_gui.borrow().as_ref().unwrap()),
+                    host_gui: ClapPtr::clone(wrapper.host_gui.borrow().as_ref().unwrap()),
                 });
 
                 let suggested_scale_factor = wrapper.suggested_scale_factor.load();
@@ -2997,7 +2998,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
         let window = unsafe { &*window };
 
-        let result = if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
             let api = unsafe { CStr::from_ptr(window.api) };
@@ -3036,9 +3037,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             );
 
             false
-        };
-
-        result
+        }
     }
 
     #[cfg(feature = "editor")]

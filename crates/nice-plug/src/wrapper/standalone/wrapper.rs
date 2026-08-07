@@ -336,7 +336,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                         <P::Editor as Editor>::Handle::run_until_closed(window)
                             .map_err(|e| WrapperError::WindowError(e.into()))
                     }
-                    Err(e) => Err(WrapperError::WindowError(e.into())),
+                    Err(e) => Err(WrapperError::WindowError(e)),
                 }
             }
             None => Ok(()),

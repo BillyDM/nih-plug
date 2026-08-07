@@ -78,7 +78,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
             ) -> Result<(), HandlerError> {
                 self.host
                     .request_resize(new_size.physical.into(), new_size.scale_factor)
-                    .map_err(|e| HandlerError::from_boxed(e))
+                    .map_err(HandlerError::from_boxed)
             }
 
             fn destroyed(&mut self) {
@@ -109,7 +109,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
             handle: IcedEditorHandle {
                 editor_state: Arc::clone(&self.editor_state),
                 notifier: self.notifier.clone(),
-                resize_hint: self.settings.resize_hint.clone(),
+                resize_hint: self.settings.resize_hint,
             },
             window,
         })
