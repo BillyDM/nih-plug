@@ -231,7 +231,7 @@ macro_rules! nice_export_vst3 {
         #[unsafe(no_mangle)]
         #[cfg(all(target_family = "unix", not(target_os = "macos")))]
         pub extern "C" fn ModuleEntry(_lib_handle: *mut ::std::ffi::c_void) -> bool {
-            $({$crate::wrapper::setup_logger::<$plugin_ty>;})+
+            $({$crate::wrapper::setup_logger::<$plugin_ty>();})+
             true
         }
 
@@ -248,7 +248,7 @@ macro_rules! nice_export_vst3 {
         #[unsafe(no_mangle)]
         #[cfg(target_os = "macos")]
         pub extern "C" fn bundleEntry(_lib_handle: *mut ::std::ffi::c_void) -> bool {
-            $({$crate::wrapper::setup_logger::<$plugin_ty>;})+
+            $({$crate::wrapper::setup_logger::<$plugin_ty>();})+
             true
         }
 
@@ -265,7 +265,7 @@ macro_rules! nice_export_vst3 {
         #[unsafe(no_mangle)]
         #[cfg(target_os = "windows")]
         pub extern "system" fn InitDll() -> bool {
-            $crate::wrapper::setup_logger();
+            $({$crate::wrapper::setup_logger::<$plugin_ty>();})+
             true
         }
 

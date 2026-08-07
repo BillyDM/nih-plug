@@ -110,10 +110,7 @@ impl NiceLogWriter {
     /// then the output is sent to the Windows debugger instead.
     #[cfg(windows)]
     pub fn new_stderr_or_windbg() -> Self {
-        NiceLogWriter::StderrOrWinDbg(
-            BufferedStandardStream::stderr(io::stderr()),
-            windbg::WinDbgWriter::default(),
-        )
+        NiceLogWriter::StderrOrWinDbg(io::stderr(), windbg::WinDbgWriter::default())
     }
 
     /// Construct an [`NiceLogWriter`] that writes to STDERR with optional color support
@@ -160,12 +157,12 @@ impl Write for NiceLogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg.write(buf),
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr.write(buf),
             NiceLogWriter::Stderr(stderr) => stderr.write(buf),
             #[cfg(windows)]
-            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::WinDbg(windbg) => windbg.write(buf),
             NiceLogWriter::File(file, _) => file.write(buf),
         }
     }
@@ -173,12 +170,14 @@ impl Write for NiceLogWriter {
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
         match self {
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => {
+                windbg.write_vectored(bufs)
+            }
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr.write_vectored(bufs),
             NiceLogWriter::Stderr(stderr) => stderr.write_vectored(bufs),
             #[cfg(windows)]
-            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::WinDbg(windbg) => windbg.write_vectored(bufs),
             NiceLogWriter::File(file, _) => file.write_vectored(bufs),
         }
     }
@@ -186,12 +185,12 @@ impl Write for NiceLogWriter {
     fn flush(&mut self) -> io::Result<()> {
         match self {
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg.flush(),
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr.flush(),
             NiceLogWriter::Stderr(stderr) => stderr.flush(),
             #[cfg(windows)]
-            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::WinDbg(windbg) => windbg.flush(),
             NiceLogWriter::File(file, _) => file.flush(),
         }
     }
@@ -199,12 +198,12 @@ impl Write for NiceLogWriter {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         match self {
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg.write_all(buf),
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr.write_all(buf),
             NiceLogWriter::Stderr(stderr) => stderr.write_all(buf),
             #[cfg(windows)]
-            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::WinDbg(windbg) => windbg.write_all(buf),
             NiceLogWriter::File(file, _) => file.write_all(buf),
         }
     }
@@ -212,12 +211,14 @@ impl Write for NiceLogWriter {
     fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> io::Result<()> {
         match self {
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => windbg,
+            NiceLogWriter::StderrOrWinDbg(_, windbg) if windbg::attached() => {
+                windbg.write_fmt(args)
+            }
             #[cfg(windows)]
-            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr,
+            NiceLogWriter::StderrOrWinDbg(stderr, _) => stderr.write_fmt(args),
             NiceLogWriter::Stderr(stderr) => stderr.write_fmt(args),
             #[cfg(windows)]
-            NiceLogWriter::WinDbg(windbg) => windbg,
+            NiceLogWriter::WinDbg(windbg) => windbg.write_fmt(args),
             NiceLogWriter::File(file, _) => file.write_fmt(args),
         }
     }

@@ -1819,6 +1819,8 @@ impl<P: ClapPlugin> Wrapper<P> {
     /// prevent corrupting data and changing parameters during processing the actual state is only
     /// updated at the end of the audio processing cycle.
     pub fn set_state_object_from_gui(&self, mut state: PluginState) {
+        let mut did_set_state_inner = false;
+
         // Use a loop and timeouts to handle the super rare edge case when this function gets called
         // between a process call and the host disabling the plugin
         loop {
@@ -1852,13 +1854,16 @@ impl<P: ClapPlugin> Wrapper<P> {
                 // Otherwise we'll set the state right here and now, since this function should be
                 // called from a GUI thread
                 self.set_state_inner(&mut state);
+                did_set_state_inner = true;
                 break;
             }
         }
 
-        // After the state has been updated, notify the host about the new parameter values
-        let task_posted = self.schedule_gui(Task::RescanParamValues);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        if !did_set_state_inner {
+            // After the state has been updated, notify the host about the new parameter values
+            let task_posted = self.schedule_gui(Task::RescanParamValues);
+            crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        } // Else the RescanParamValues task has already been sent
     }
 
     pub fn set_latency_samples(&self, samples: u32) {

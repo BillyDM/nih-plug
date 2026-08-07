@@ -67,20 +67,6 @@ debug = true
 strip = "none"
 ```
 
-Also, GUI libraries that depend on [wgpu](https://wgpu.rs/) may be very spammy. You can add the following dependencies to help reduce the log spam:
-```toml
-[dependencies]
-# Reduce wgpu log spam
-log = { version = "0.4", features = [
-    "max_level_debug",
-    "release_max_level_info",
-] }
-tracing = { version = "0.1", features = [
-    "max_level_info",
-    "release_max_level_info",
-] }
-```
-
 Additionally, you can enable the `unsafe_flush_denormals` feature flag, which can lead to a significant performance increases in some cases. HOWEVER, the Rust compiler technically considers this to be undefined behavior, so use at your own risk! Though if any UB did occur, the only damage will likely just be audio glitches, not memory safety issues.
 
 ```toml

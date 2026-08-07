@@ -22,7 +22,7 @@ nice-plug = { version = "0.2.0", features = [
 ] }
 # The `canvas` feature must be enabled for iced_audio widgets to work.
 nice-plug-iced = { version = "0.2.0", features = ["canvas"] }
-iced_audio = { version = "0.14.1", features = ["nice-plug"] }
+iced_audio = { version = "0.15.0", features = ["nice-plug"] }
 atomic_float = "1.1"
 # Important: `wgpu` is extremely spammy with its logs, so disable it by adding these crates:
 log = { version = "0.4", features = ["max_level_debug"] }

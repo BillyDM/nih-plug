@@ -27,15 +27,6 @@ const SSE_FTZ_BIT: u32 = 1 << 15;
 #[cfg(all(not(miri), target_arch = "aarch64", feature = "unsafe_flush_denormals"))]
 const AARCH64_FTZ_BIT: u64 = 1 << 24;
 
-#[cfg(all(
-    debug_assertions,
-    feature = "assert_process_allocs",
-    all(windows, target_env = "gnu")
-))]
-compile_error!(
-    "The 'assert_process_allocs' feature does not work correctly in combination with the 'x86_64-pc-windows-gnu' target, see https://github.com/Windfisch/rust-assert-no-alloc/issues/7"
-);
-
 #[cfg(all(debug_assertions, feature = "assert_process_allocs"))]
 #[global_allocator]
 static A: nice_assert_no_alloc::AllocDisabler = nice_assert_no_alloc::AllocDisabler;
