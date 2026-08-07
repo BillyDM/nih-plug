@@ -617,10 +617,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
         // host we couldn't honor it.
         if let Some(editor_window) = self.inner.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
-            if editor_window.handle.set_size(size, &editor_window.window) {
-                kResultOk
-            } else {
+
+            if let Err(e) = editor_window.handle.set_size(size, &editor_window.window) {
+                crate::nice_error!("Failed to resize window to {:?}: {}", size, e);
                 kResultFalse
+            } else {
+                kResultOk
             }
         } else {
             kResultFalse

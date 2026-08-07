@@ -16,7 +16,6 @@ use nice_plug_core::editor::ResizeHint;
 use nice_plug_core::editor::VirtualKeyCode;
 use nice_plug_core::editor::dpi::PhysicalSize;
 use nice_plug_core::editor::dpi::Size;
-use nice_plug_core::nice_error;
 use parking_lot::Mutex;
 use std::error::Error;
 use std::sync::Arc;
@@ -237,22 +236,12 @@ impl EditorHandle for EguiEditorHandle {
         window.hide()
     }
 
-    fn set_size(&self, new_size: PhysicalSize<u32>, window: &Self::Window) -> bool {
-        let current_size = window.size();
-        if !self.resize_hint.is_size_valid(
-            new_size,
-            current_size.physical,
-            current_size.scale_factor,
-        ) {
-            return false;
-        }
-
-        if let Err(e) = window.resize(new_size) {
-            nice_error!("Failed to resize window to {:?}: {}", new_size, e);
-            false
-        } else {
-            true
-        }
+    fn set_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.resize(new_size)
     }
 
     fn set_suggested_scale_factor(

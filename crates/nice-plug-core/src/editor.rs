@@ -84,21 +84,15 @@ pub trait EditorHandle: Send + 'static {
     /// Called by the wrapper when the host has resized the plugin's view. The
     /// editor should resize its own window and contents to match these dimensions.
     ///
-    /// Return `true` if the editor applied the new size, `false` if it rejected
-    /// it (e.g. the size is outside what the GUI supports). The default
-    /// implementation is a no-op that returns `false`, so editors that don't
-    /// support being resized by the host keep their previous fixed-size
-    /// behavior without any changes.
-    ///
     /// This is the counterpart to [`size()`][Editor::size()]: after a successful
     /// `set_size`, `size()` should report the new dimensions.
     ///
     /// This will never be called on the standalone target.
-    fn set_size(&self, new_size: PhysicalSize<u32>, window: &Self::Window) -> bool {
-        let _ = new_size;
-        let _ = window;
-        false
-    }
+    fn set_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error>;
 
     /// Return the closest supported size.
     ///
@@ -271,6 +265,14 @@ impl EditorHandle for () {
     }
 
     fn hide(&self, _window: &Self::Window) -> Result<(), Self::Error> {
+        Err(DummyEditorError)
+    }
+
+    fn set_size(
+        &self,
+        _new_size: PhysicalSize<u32>,
+        _window: &Self::Window,
+    ) -> Result<(), Self::Error> {
         Err(DummyEditorError)
     }
 

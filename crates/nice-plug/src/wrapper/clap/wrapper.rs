@@ -3208,10 +3208,16 @@ impl<P: ClapPlugin> Wrapper<P> {
         // editor doesn't support being resized, this fails and we tell the host so.
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
-            editor_window.handle.set_size(
+
+            if let Err(e) = editor_window.handle.set_size(
                 nice_plug_core::editor::dpi::PhysicalSize { width, height },
                 &editor_window.window,
-            )
+            ) {
+                crate::nice_error!("Failed to resize window to ({}, {}): {}", width, height, e);
+                false
+            } else {
+                true
+            }
         } else {
             false
         }
