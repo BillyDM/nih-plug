@@ -3,7 +3,7 @@ use nice_plug_iced::{
     IcedEditor, IcedEditorState, IcedNiceContext, IcedNiceSettings, PersistentState,
     iced::{
         self, Center, PollSubNotifier, Subscription, Theme,
-        widget::{Column, ProgressBar, button, column, pick_list, slider, text},
+        widget::{Column, ProgressBar, button, column, pick_list, row, slider, text},
     },
 };
 use nice_plug_iced::{application, create_iced_editor};
@@ -12,7 +12,7 @@ use std::sync::{Arc, atomic::Ordering};
 const MIN_GAIN_DB: f32 = -30.0;
 const MAX_GAIN_DB: f32 = 30.0;
 
-const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 300.0);
+const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 320.0);
 const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
 const INITIAL_SCALE_FACTOR: f32 = 1.0;
 
@@ -151,11 +151,16 @@ impl MyGui {
                     .normalized_value_to_string(params.gain.modulated_normalized_value(), true)
             ),
             ProgressBar::new(-80.0..=0.0, self.peak_meter_db),
-            pick_list(
-                scale_opts,
-                Some(ScaleOption(self.ctx.user_scale_factor())),
-                |opt| Message::SetScaleFactor(opt.0)
-            )
+            row![
+                text("scale"),
+                pick_list(
+                    scale_opts,
+                    Some(ScaleOption(self.ctx.user_scale_factor())),
+                    |opt| Message::SetScaleFactor(opt.0)
+                )
+            ]
+            .align_y(Center)
+            .spacing(7.0)
         ]
         .padding(20)
         .spacing(12.0)

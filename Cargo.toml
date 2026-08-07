@@ -17,7 +17,7 @@ members = [
   "examples/gain",
   "examples/gain_egui",
   "examples/gain_iced",
-  #"examples/iced_audio_widget", // TODO: Add this back when nice-plug-core 0.2 is published
+  #"examples/iced_audio_widget", // TODO: Add this back when nice-plug-core 0.3 is published
   "examples/midi_inverter",
   "examples/poly_mod_synth",
   "examples/sine",

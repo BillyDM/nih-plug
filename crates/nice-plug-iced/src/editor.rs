@@ -88,7 +88,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
         let host =
             host.map(|host| baseview::host::Host::new().with_callbacks(HostAdapter { host }));
 
-        let (window, _iced_handle) = iced_baseview::create_window(
+        let (window, _message_sender) = iced_baseview::create_window(
             settings,
             self.notifier.clone(),
             move |window_size| {

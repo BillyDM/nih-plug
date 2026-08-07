@@ -523,13 +523,19 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 self.inner.clone().make_gui_context(),
                 Some(host),
             ) {
-                Ok(editor_window) => {
-                    *window = Some(Fragile::new(editor_window));
-                    self.inner.is_editor_open.store(true, Ordering::SeqCst);
-                    kResultOk
-                }
+                Ok(editor_window) => match editor_window.handle.show(&editor_window.window) {
+                    Ok(()) => {
+                        *window = Some(Fragile::new(editor_window));
+                        self.inner.is_editor_open.store(true, Ordering::SeqCst);
+                        kResultOk
+                    }
+                    Err(e) => {
+                        crate::nice_error!("Failed to show editor: {}", e);
+                        kResultFalse
+                    }
+                },
                 Err(e) => {
-                    crate::nice_error!("Failed to open editor: {}", e);
+                    crate::nice_error!("Failed to create editor: {}", e);
                     kResultFalse
                 }
             }
