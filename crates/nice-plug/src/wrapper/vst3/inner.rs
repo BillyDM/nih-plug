@@ -316,6 +316,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             // Initialized later as it needs a reference to the wrapper for the async executor
             #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
             editor_window: Arc::new(AtomicRefCell::new(None)),
 
             component_handler: AtomicRefCell::new(None),

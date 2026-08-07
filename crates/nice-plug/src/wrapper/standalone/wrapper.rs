@@ -5,9 +5,8 @@ use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
 #[cfg(feature = "editor")]
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
-use nice_plug_core::editor::EditorWindow;
 #[cfg(feature = "editor")]
-use nice_plug_core::editor::{Editor, EditorHandle};
+use nice_plug_core::editor::{Editor, EditorHandle, EditorWindow};
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
@@ -55,8 +54,7 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
     #[allow(clippy::type_complexity)]
     #[cfg(feature = "editor")]
     pub editor_handle: Mutex<Option<<P::Editor as Editor>::Handle>>,
-    #[cfg(feature = "editor")]
-    close_gui_requested: Arc<AtomicBool>,
+    close_requested: Arc<AtomicBool>,
 
     /// A realtime-safe task queue so the plugin can schedule tasks that need to be run later on the
     /// GUI thread. See the same field in the VST3 wrapper for more information on why this looks
@@ -206,9 +204,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             editor: AtomicRefCell::new(None),
             #[cfg(feature = "editor")]
             editor_handle: Mutex::new(None),
-            // Set in `run()`
-            #[cfg(feature = "editor")]
-            close_gui_requested: Arc::new(AtomicBool::new(false)),
+            close_requested: Arc::new(AtomicBool::new(false)),
 
             // Also initialized later as it also needs a reference to the wrapper
             event_loop: AtomicRefCell::new(None),
@@ -300,7 +296,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     /// Will return an error if the plugin threw an error during audio processing or if the editor
     /// could not be opened.
     pub fn run(self: Arc<Self>) -> Result<(), WrapperError> {
-        let close_gui_requested = Arc::clone(&self.close_gui_requested);
+        let close_gui_requested = Arc::clone(&self.close_requested);
         if let Err(e) = ctrlc::set_handler(move || {
             close_gui_requested.store(true, Ordering::Relaxed);
         }) {
@@ -310,7 +306,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         // We'll spawn a separate thread to handle IO and to process audio. This audio thread should
         // terminate together with this function.
         let terminate_audio_thread = Arc::new(AtomicBool::new(false));
-        let close_gui_requested = Arc::clone(&self.close_gui_requested);
+        let close_gui_requested = Arc::clone(&self.close_requested);
         let audio_thread = {
             let this = self.clone();
             let terminate_audio_thread = terminate_audio_thread.clone();
@@ -353,7 +349,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             crate::nice_log!("No GUI available for {}, blocking indefinitely...", P::NAME);
 
             loop {
-                if self.close_gui_requested.swap(false, Ordering::Relaxed) {
+                if self.close_requested.swap(false, Ordering::Relaxed) {
                     break;
                 }
 
