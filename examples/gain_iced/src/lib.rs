@@ -82,11 +82,6 @@ impl MyGui {
     }
 
     pub fn update(&mut self, message: Message) {
-        // Sync the current window size and the user's scale factor to the iced
-        // editor's state. This is needed to persist window size across editor
-        // opens.
-        self.ctx.sync_window_size();
-
         let setter = self.ctx.nice_context.param_setter();
         let params = &self.persistent_state.params;
 
@@ -103,7 +98,9 @@ impl MyGui {
                 // file somewhere so that it persists across sessions.
             }
             Message::WindowResized => {
-                // Notify the host that the window has resized.
+                // Sync the current window size and the user's scale factor to the iced
+                // editor's state. This is needed to persist window size across editor
+                // opens.
                 self.ctx.sync_window_size();
             }
             Message::Increment => {
