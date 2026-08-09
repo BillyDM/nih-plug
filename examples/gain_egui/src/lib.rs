@@ -1,7 +1,7 @@
 use egui::{Margin, Vec2};
 use nice_plug::{context::gui::GuiContext, editor::dpi::LogicalSize, prelude::*};
 use nice_plug_egui::{
-    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, create_egui_editor,
+    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, RepaintNotifier, create_egui_editor,
     resizable_window::ResizableWindow, widgets,
 };
 use std::sync::{Arc, Mutex};
@@ -174,13 +174,21 @@ impl NiceEguiApp for GainEditor {
                         let peak_meter = util::gain_to_db(
                             self.peak_meter.load(std::sync::atomic::Ordering::Relaxed),
                         );
+
                         let peak_meter_text = if peak_meter > util::MINUS_INFINITY_DB {
                             format!("{peak_meter:.1} dBFS")
                         } else {
                             String::from("-inf dBFS")
                         };
 
-                        let peak_meter_normalized = (peak_meter + 60.0) / 60.0;
+                        let mut peak_meter_normalized = (peak_meter + 60.0) / 60.0;
+                        if peak_meter_normalized <= util::MINUS_INFINITY_GAIN {
+                            peak_meter_normalized = 0.0;
+                        } else {
+                            // Smooth the meter value on the next frame.
+                            ui.request_repaint();
+                        }
+
                         ui.allocate_space(egui::Vec2::splat(2.0));
                         ui.add(
                             egui::widgets::ProgressBar::new(peak_meter_normalized)
@@ -329,6 +337,12 @@ pub struct Gain {
     /// This is stored as voltage gain.
     peak_meter: Arc<AtomicF32>,
 
+    /// A realtime-safe handle to request a repaint & update for an egui app.
+    ///
+    /// This can be used, for example, to notify the GUI that the value of a decibel
+    /// meter has changed.
+    repaint_notifier: RepaintNotifier,
+
     /// A message channel to send events between the GUI and the audio thread.
     ///
     /// This is optional. If you don't need to pass events, you can omit this field.
@@ -391,6 +405,8 @@ impl Default for Gain {
             peak_meter_decay_weight: 1.0,
             peak_meter,
 
+            repaint_notifier: RepaintNotifier::new(),
+
             msg_channel: AudioMsgChannel {
                 to_gui_tx,
                 from_gui_rx,
@@ -441,6 +457,7 @@ impl Plugin for Gain {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         create_egui_editor(
             self.editor_state.clone(),
+            self.repaint_notifier.clone(),
             EguiNiceSettings::new().with_resize_hint(RESIZE_HINT),
             self.initial_editor.take().unwrap(),
         )
@@ -524,15 +541,21 @@ impl Plugin for Gain {
             if self.editor_state.is_open() {
                 amplitude = (amplitude / num_samples as f32).abs();
                 let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
-                let new_peak_meter = if amplitude > current_peak_meter {
+                let mut new_peak_meter = if amplitude > current_peak_meter {
                     amplitude
                 } else {
                     current_peak_meter * self.peak_meter_decay_weight
                         + amplitude * (1.0 - self.peak_meter_decay_weight)
                 };
+                if new_peak_meter <= util::MINUS_INFINITY_GAIN {
+                    new_peak_meter = 0.0;
+                }
 
-                self.peak_meter
-                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+                if new_peak_meter != current_peak_meter {
+                    self.peak_meter
+                        .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
+                    self.repaint_notifier.request_repaint();
+                }
             }
         }
 

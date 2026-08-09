@@ -3,6 +3,7 @@
 use crate::EguiState;
 use crate::NiceEguiApp;
 use egui_baseview::EguiWindowSettings;
+use egui_baseview::RepaintNotifier;
 use egui_baseview::baseview;
 use egui_baseview::baseview::HandlerError;
 use egui_baseview::{EguiWindow, GraphicsConfig};
@@ -118,6 +119,7 @@ pub struct EguiEditor<A: NiceEguiApp> {
     pub(crate) egui_state: Arc<EguiState>,
     pub(crate) user_app: Arc<Mutex<A>>,
     pub(crate) settings: Arc<EguiNiceSettings>,
+    pub(crate) repaint_notifier: RepaintNotifier,
 }
 
 impl<A: NiceEguiApp> Editor for EguiEditor<A> {
@@ -143,7 +145,8 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
             .with_graphics_config(self.settings.graphics.clone())
             .with_parent(parent.as_ref())
             .with_fallback_scale_factor(fallback_scale_factor)
-            .with_wait_for_parent(wait_for_parent);
+            .with_wait_for_parent(wait_for_parent)
+            .with_repaint_notifier(self.repaint_notifier.clone());
 
         let egui_ctx = Arc::new(Mutex::new(None));
 
@@ -196,7 +199,7 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
             UserAppWrapper {
                 user_app,
                 gui_context,
-                egui_ctx: egui_ctx.clone(),
+                egui_ctx,
                 egui_state: egui_state.clone(),
             },
             host,
@@ -208,7 +211,7 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
             handle: EguiEditorHandle {
                 egui_state: self.egui_state.clone(),
                 resize_hint: self.settings.resize_hint,
-                egui_ctx,
+                repaint_notifier: self.repaint_notifier.clone(),
             },
             window,
         })
@@ -226,7 +229,7 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
 /// A handle to a spawned instance of an [`EguiEditor`].
 pub struct EguiEditorHandle {
     egui_state: Arc<EguiState>,
-    egui_ctx: Arc<Mutex<Option<egui::Context>>>,
+    repaint_notifier: RepaintNotifier,
     resize_hint: ResizeHint,
 }
 
@@ -254,9 +257,7 @@ impl EditorHandle for EguiEditorHandle {
         // that, or baseview needs to add a `baseview::WindowEvent::Shown` event.
         //
         // For now, we must manually trigger a redraw.
-        if let Some(egui_ctx) = self.egui_ctx.lock().as_ref() {
-            egui_ctx.request_repaint();
-        }
+        self.repaint_notifier.request_repaint();
 
         res
     }
@@ -310,21 +311,15 @@ impl EditorHandle for EguiEditorHandle {
     }
 
     fn state_changed(&self) {
-        if let Some(egui_ctx) = self.egui_ctx.lock().as_ref() {
-            egui_ctx.request_repaint();
-        }
+        self.repaint_notifier.request_repaint();
     }
 
     fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
-        if let Some(egui_ctx) = self.egui_ctx.lock().as_ref() {
-            egui_ctx.request_repaint();
-        }
+        self.repaint_notifier.request_repaint();
     }
 
     fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {
-        if let Some(egui_ctx) = self.egui_ctx.lock().as_ref() {
-            egui_ctx.request_repaint();
-        }
+        self.repaint_notifier.request_repaint();
     }
 }
 

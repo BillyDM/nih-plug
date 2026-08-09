@@ -38,6 +38,7 @@ pub mod widgets;
 /// See [`EguiState::from_size()`].
 pub fn create_egui_editor<A: NiceEguiApp>(
     egui_state: Arc<EguiState>,
+    repaint_notifier: RepaintNotifier,
     settings: EguiNiceSettings,
     app: A,
 ) -> Option<EguiEditor<A>> {
@@ -45,6 +46,7 @@ pub fn create_egui_editor<A: NiceEguiApp>(
         egui_state,
         user_app: Arc::new(Mutex::new(app)),
         settings: Arc::new(settings),
+        repaint_notifier,
     })
 }
 
