@@ -98,9 +98,8 @@ impl MyGui {
                 // file somewhere so that it persists across sessions.
             }
             Message::WindowResized => {
-                // Sync the current window size and the user's scale factor to the iced
-                // editor's state. This is needed to persist window size across editor
-                // opens.
+                // Sync the current window size to the iced editor's state. This is
+                // needed to persist window size across editor opens.
                 self.ctx.sync_window_size();
             }
             Message::Increment => {
