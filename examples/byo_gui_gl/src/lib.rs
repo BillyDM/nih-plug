@@ -259,7 +259,8 @@ impl baseview::WindowHandler for GlWindow {
 
     fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
         // Do event processing here.
-        #[allow(clippy::match_single_binding)]
+        #[allow(clippy::single_match)]
+        #[allow(clippy::collapsible_match)]
         match &event {
             baseview::Event::Window(event) => match event {
                 baseview::WindowEvent::Focused => {

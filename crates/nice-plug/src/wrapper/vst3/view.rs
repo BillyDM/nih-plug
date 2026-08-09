@@ -248,7 +248,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
     ) -> bool {
         use vst3::Steinberg::IPlugFrameTrait;
 
-        let Some(inner) = Weak::upgrade(&(&**this).inner) else {
+        let Some(inner) = Weak::upgrade(&(**this).inner) else {
             return false;
         };
 
@@ -550,7 +550,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
             let fallback_scale_factor = self.fallback_scale_factor.load().map(|s| s as f64);
 
-            let res = match self.editor.upgrade().unwrap().lock().spawn(
+            match self.editor.upgrade().unwrap().lock().spawn(
                 Some(parent_handle),
                 false,
                 fallback_scale_factor,
@@ -575,9 +575,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                     crate::nice_error!("Failed to create editor: {}", e);
                     kResultFalse
                 }
-            };
-
-            res
+            }
         } else {
             crate::nice_debug_assert_failure!(
                 "Host tried to attach editor while the editor is already attached"

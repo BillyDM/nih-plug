@@ -3036,7 +3036,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window
                 .handle
-                .set_parent(parent_handle, &editor_window.window.borrow())
+                .set_parent(parent_handle, editor_window.window.borrow())
             {
                 crate::nice_error!("Failed to set editor parent window: {}", e);
 
@@ -3154,7 +3154,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Some(new_size) = editor_window
                 .handle
-                .adjust_size(size, &editor_window.window.borrow())
+                .adjust_size(size, editor_window.window.borrow())
             {
                 unsafe {
                     *width = new_size.width;
@@ -3182,7 +3182,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window
                 .handle
-                .set_fallback_scale_factor(scale, &editor_window.window.borrow())
+                .set_fallback_scale_factor(scale, editor_window.window.borrow())
             {
                 crate::nice_error!("Failed to set suggested scale factor: {}", e);
                 false
@@ -3216,7 +3216,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window.handle.set_size(
                 nice_plug_core::editor::dpi::PhysicalSize { width, height },
-                &editor_window.window.borrow(),
+                editor_window.window.borrow(),
             ) {
                 crate::nice_error!("Failed to resize window to ({}, {}): {}", width, height, e);
                 false
@@ -3252,7 +3252,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            if let Err(e) = editor_window.handle.show(&editor_window.window.borrow()) {
+            if let Err(e) = editor_window.handle.show(editor_window.window.borrow()) {
                 crate::nice_error!("Failed to show editor window: {}", e);
                 false
             } else {
@@ -3273,7 +3273,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            if let Err(e) = editor_window.handle.hide(&editor_window.window.borrow()) {
+            if let Err(e) = editor_window.handle.hide(editor_window.window.borrow()) {
                 crate::nice_error!("Failed to hide editor window: {}", e);
                 false
             } else {
