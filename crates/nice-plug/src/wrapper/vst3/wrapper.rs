@@ -743,7 +743,10 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
 
                 use crate::wrapper::vst3::view::WrapperView;
 
-                let view = ComWrapper::new(WrapperView::new(self.inner.clone(), editor.clone()));
+                let view = ComWrapper::new(WrapperView::new(
+                    Arc::downgrade(&self.inner),
+                    Arc::downgrade(editor),
+                ));
                 let plug_view_ptr = view.to_com_ptr::<IPlugView>().unwrap().into_raw();
                 *self.inner.plug_view.write() = Some(view);
                 plug_view_ptr

@@ -8,7 +8,7 @@ use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
 use nice_plug_core::editor::dpi::Size;
 #[cfg(feature = "editor")]
-use nice_plug_core::editor::{Editor, EditorWindow};
+use nice_plug_core::editor::{Editor, SpawnedEditor};
 use nice_plug_core::midi::{MidiConfig, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
@@ -62,7 +62,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     // My personal record for craziest Rust type!!!!
     #[cfg(feature = "editor")]
     pub editor_window:
-        Arc<AtomicRefCell<Option<fragile::Fragile<EditorWindow<<P::Editor as Editor>::Handle>>>>>,
+        Arc<AtomicRefCell<Option<fragile::Fragile<SpawnedEditor<<P::Editor as Editor>::Handle>>>>>,
 
     /// The host's [`IComponentHandler`] instance, if passed through
     /// [`IEditController::set_component_handler`].
@@ -192,6 +192,8 @@ pub enum Task<P: Plugin> {
     // handle "denied resize" requests yet.
     #[cfg(feature = "editor")]
     RequestResize { size: Size, scale_factor: f64 },
+    #[cfg(feature = "editor")]
+    CallMainThread,
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -734,6 +736,17 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                     }
                 } else {
                     crate::nice_debug_assert_failure!("Can't resize a closed editor");
+                }
+            }
+            #[cfg(feature = "editor")]
+            Task::CallMainThread => {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    let editor_window = editor_window.get();
+                    editor_window
+                        .handle
+                        .host_main_thread_callback(&editor_window.window)
                 }
             }
         }

@@ -3,9 +3,10 @@ use iced_baseview::baseview::HandlerError;
 use iced_baseview::shell::SharedWindowSize;
 use iced_baseview::{IcedWindowSettings, PollSubNotifier, Program, baseview, message};
 use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize, Size};
 use nice_plug_core::editor::{
-    Editor, EditorHandle, EditorWindow, Modifiers, ParentWindowHandle, ResizeHint, VirtualKeyCode,
+    Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SpawnedEditor,
+    VirtualKeyCode,
 };
 use std::error::Error;
 use std::sync::{
@@ -41,10 +42,10 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
         &self,
         parent: Option<ParentWindowHandle>,
         wait_for_parent: bool,
-        suggested_scale_factor: Option<f64>,
+        fallback_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<Box<dyn nice_plug_core::editor::HostCallbacks>>,
-    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
         let build = self.build.clone();
         let persistent_state = PersistentState::from_shared(&self.persistent_state);
         let size = self.editor_state.size.load();
@@ -58,42 +59,61 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
             .with_scale_factor(zoom_factor)
             .with_parent(parent.as_ref())
             .with_wait_for_parent(wait_for_parent)
-            .with_fallback_scale_factor(suggested_scale_factor)
+            .with_fallback_scale_factor(fallback_scale_factor)
             .with_ignore_non_modifier_keys(self.settings.ignore_non_modifier_keys)
             .with_always_redraw(self.settings.always_redraw);
 
         // The host is a re-implementation of
         // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // and
+        // [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
         // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
         //
-        // Create a small wrapper to adapt it to baseview's HostCallbacks trait.
-        struct HostAdapter {
-            host: Box<dyn nice_plug_core::editor::HostCallbacks>,
-        }
-        impl baseview::host::HostCallbacks for HostAdapter {
-            fn request_resize(
-                &mut self,
-                new_size: baseview::WindowSize,
-            ) -> Result<(), HandlerError> {
-                self.host
-                    .request_resize(new_size.physical.into(), new_size.scale_factor)
-                    .map_err(HandlerError::from_boxed)
+        // Create a small wrapper to adapt it to baseview's HostCallbacks traits.
+        let host = {
+            struct HostCallbackAdapter {
+                host: Box<dyn nice_plug_core::editor::HostCallbacks>,
             }
+            impl baseview::host::HostCallbacks for HostCallbackAdapter {
+                fn request_resize(
+                    &mut self,
+                    new_size: baseview::WindowSize,
+                ) -> Result<(), HandlerError> {
+                    self.host
+                        .request_resize(new_size.physical.into(), new_size.scale_factor)
+                        .map_err(HandlerError::from_boxed)
+                }
 
-            fn destroyed(&mut self) {
-                self.host.destroyed();
+                fn destroyed(&mut self) {
+                    self.host.destroyed();
+                }
             }
-        }
-        let host =
-            host.map(|host| baseview::host::Host::new().with_callbacks(HostAdapter { host }));
+            struct HostMainThreadCallerAdapter {
+                host: Box<dyn nice_plug_core::editor::HostMainThreadCaller>,
+            }
+            impl baseview::host::HostMainThreadCaller for HostMainThreadCallerAdapter {
+                fn call_main_thread(&mut self) {
+                    self.host.call_main_thread();
+                }
+            }
+            host.map(|host| {
+                baseview::host::Host::new()
+                    .with_callbacks(HostCallbackAdapter {
+                        host: host.callbacks,
+                    })
+                    .with_main_thread(HostMainThreadCallerAdapter {
+                        host: host.main_thread_caller,
+                    })
+            })
+        };
 
         let (window, _message_sender) = iced_baseview::create_window(
             settings,
             self.notifier.clone(),
-            move |window_size| {
+            move |shared_window_size| {
                 let nice_ctx = IcedNiceContext {
                     nice_context,
-                    window_size,
+                    shared_window_size,
                     editor_state,
                 };
 
@@ -104,7 +124,7 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
 
         self.editor_state.open.store(true, Ordering::Release);
 
-        Ok(EditorWindow {
+        Ok(SpawnedEditor {
             handle: IcedEditorHandle {
                 editor_state: Arc::clone(&self.editor_state),
                 notifier: self.notifier.clone(),
@@ -147,11 +167,24 @@ impl EditorHandle for IcedEditorHandle {
     }
 
     fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
-        window.show()
+        let res = window.show();
+
+        // TODO: This might be a baseview bug. the `baseview::WindowEvent::Focused`
+        // event does not always get called after `window.show()` is called. Either
+        // that, or baseview needs to add a `baseview::WindowEvent::Shown` event.
+        //
+        // For now, we must manually trigger a redraw.
+        self.notifier.notify();
+
+        res
     }
 
     fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
         window.hide()
+    }
+
+    fn host_main_thread_callback(&self, window: &Self::Window) {
+        window.host_main_thread_callback();
     }
 
     fn set_size(
@@ -162,7 +195,7 @@ impl EditorHandle for IcedEditorHandle {
         window.resize(new_size)
     }
 
-    fn set_suggested_scale_factor(
+    fn set_fallback_scale_factor(
         &self,
         scale_factor: f64,
         window: &Self::Window,
@@ -220,11 +253,11 @@ pub struct IcedEditorState {
 
     pub(crate) zoom_factor: AtomicCell<f32>,
 
-    pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
-
     /// The scaling factor reported by the host, if any. On macOS this will never be set and we
     /// should use the system scaling factor instead.
-    pub(crate) system_scale_factor: AtomicCell<f64>,
+    pub(crate) fallback_scale_factor: AtomicCell<Option<f32>>,
+
+    pub(crate) scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     open: AtomicBool,
@@ -239,8 +272,8 @@ impl IcedEditorState {
             size: AtomicCell::new(size.into()),
             zoom_factor: AtomicCell::new(scale_factor),
             open: AtomicBool::new(false),
-            host_scale_factor: AtomicCell::new(None),
-            system_scale_factor: AtomicCell::new(1.0),
+            fallback_scale_factor: AtomicCell::new(None),
+            scale_factor: AtomicCell::new(None),
         })
     }
 
@@ -248,24 +281,26 @@ impl IcedEditorState {
         self.size.load()
     }
 
+    fn scale_factor(&self) -> f32 {
+        let zoom_factor = self.zoom_factor.load();
+        let scale_factor = self.scale_factor.load();
+        let fallback_scale_factor = self.fallback_scale_factor.load();
+
+        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0) * zoom_factor)
+    }
+
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        let size = self.size.load();
+        let scale_factor = self.scale_factor();
+
+        size.to_logical(scale_factor as f64)
+    }
+
     pub fn physical_size(&self) -> PhysicalSize<u32> {
         let size = self.size.load();
+        let scale_factor = self.scale_factor();
 
-        match size {
-            Size::Logical(logical_size) => {
-                let zoom_factor = self.zoom_factor.load();
-                let host_scale_factor = self.host_scale_factor.load();
-                let system_scale_factor = self.system_scale_factor.load();
-
-                let scale_factor = zoom_factor as f64
-                    * host_scale_factor
-                        .map(|s| s as f64)
-                        .unwrap_or(system_scale_factor);
-
-                logical_size.to_physical(scale_factor)
-            }
-            Size::Physical(physical_size) => physical_size,
-        }
+        size.to_physical(scale_factor as f64)
     }
 
     /// The current user zoom (scale) factor. This is applied on top of the
@@ -290,7 +325,7 @@ impl IcedEditorState {
 
 pub struct IcedNiceContext {
     pub nice_context: GuiContext,
-    window_size: SharedWindowSize,
+    shared_window_size: SharedWindowSize,
     editor_state: Arc<IcedEditorState>,
 }
 
@@ -301,7 +336,11 @@ impl IcedNiceContext {
     }
 
     pub fn window_size(&self) -> baseview::WindowSize {
-        self.window_size.get()
+        self.shared_window_size.get()
+    }
+
+    pub fn request_window_resize(&self, size: LogicalSize<f32>) {
+        self.shared_window_size.request_resize(size);
     }
 
     /// The current user zoom (scale) factor. This is applied on top of the
@@ -323,6 +362,10 @@ impl IcedNiceContext {
     pub fn sync_window_size(&self) {
         let size = self.window_size();
 
+        self.editor_state
+            .scale_factor
+            .store(Some(size.scale_factor as f32));
+
         let old_size = self.editor_state.size.load();
         let new_size = match old_size {
             Size::Logical(_) => Size::Logical(size.logical),
@@ -336,7 +379,7 @@ impl Clone for IcedNiceContext {
     fn clone(&self) -> Self {
         Self {
             nice_context: self.nice_context.clone(),
-            window_size: self.window_size.clone(),
+            shared_window_size: self.shared_window_size.clone(),
             editor_state: Arc::clone(&self.editor_state),
         }
     }

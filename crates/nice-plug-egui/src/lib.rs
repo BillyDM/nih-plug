@@ -8,7 +8,7 @@
 use crossbeam::atomic::AtomicCell;
 use egui_baseview::baseview::WindowSize;
 use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize, Size};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,11 +97,11 @@ pub struct EguiState {
     size: AtomicCell<Size>,
     zoom_factor: AtomicCell<f32>,
 
-    pub(crate) host_scale_factor: AtomicCell<Option<f32>>,
-
     /// The scaling factor reported by the host, if any. On macOS this will never be set and we
     /// should use the system scaling factor instead.
-    pub(crate) system_scale_factor: AtomicCell<f64>,
+    pub(crate) fallback_scale_factor: AtomicCell<Option<f32>>,
+
+    pub(crate) scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     open: AtomicBool,
@@ -116,8 +116,8 @@ impl EguiState {
             size: AtomicCell::new(size.into()),
             zoom_factor: AtomicCell::new(zoom_factor),
             open: AtomicBool::new(false),
-            host_scale_factor: AtomicCell::new(None),
-            system_scale_factor: AtomicCell::new(1.0),
+            fallback_scale_factor: AtomicCell::new(None),
+            scale_factor: AtomicCell::new(None),
         })
     }
 
@@ -125,24 +125,26 @@ impl EguiState {
         self.size.load()
     }
 
+    fn scale_factor(&self) -> f32 {
+        let zoom_factor = self.zoom_factor.load();
+        let scale_factor = self.scale_factor.load();
+        let fallback_scale_factor = self.fallback_scale_factor.load();
+
+        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0) * zoom_factor)
+    }
+
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        let size = self.size.load();
+        let scale_factor = self.scale_factor();
+
+        size.to_logical(scale_factor as f64)
+    }
+
     pub fn physical_size(&self) -> PhysicalSize<u32> {
         let size = self.size.load();
+        let scale_factor = self.scale_factor();
 
-        match size {
-            Size::Logical(logical_size) => {
-                let zoom_factor = self.zoom_factor.load();
-                let host_scale_factor = self.host_scale_factor.load();
-                let system_scale_factor = self.system_scale_factor.load();
-
-                let scale_factor = zoom_factor as f64
-                    * host_scale_factor
-                        .map(|s| s as f64)
-                        .unwrap_or(system_scale_factor);
-
-                logical_size.to_physical(scale_factor)
-            }
-            Size::Physical(physical_size) => physical_size,
-        }
+        size.to_physical(scale_factor as f64)
     }
 
     /// The current user zoom (scale) factor. This is applied on top of the

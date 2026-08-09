@@ -6,7 +6,7 @@ use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
-use nice_plug_core::editor::{Editor, EditorHandle, EditorWindow};
+use nice_plug_core::editor::{Editor, EditorHandle, SpawnedEditor};
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
@@ -325,7 +325,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
 
                 match editor.lock().spawn(None, false, None, context, None) {
                     Ok(editor_window) => {
-                        let EditorWindow {
+                        let SpawnedEditor {
                             handle: instance,
                             window,
                         } = editor_window;

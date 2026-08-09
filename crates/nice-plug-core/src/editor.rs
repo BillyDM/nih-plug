@@ -12,7 +12,7 @@ pub use dpi;
 
 use crate::context::gui::GuiContext;
 
-pub struct EditorWindow<E: EditorHandle> {
+pub struct SpawnedEditor<E: EditorHandle> {
     /// A handle to the instance of an open [`Editor`].
     ///
     /// When this handle is dropped, the editor instance is also dropped.
@@ -52,6 +52,29 @@ pub trait HostCallbacks: 'static {
     /// The host should close its parent window, as it will not show anything useful
     /// anymore.
     fn destroyed(&mut self);
+}
+
+/// A special handler for the Window thread to wake up and call methods on the main thread.
+///
+/// (This is a re-implementation of
+/// [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
+/// to avoid directly depending on `baseview` until it is stabilized.)
+///
+/// # Platform compatibility notes
+///
+/// This is only needed on X11, as Windows and macOS windows already run on the main thread.
+pub trait HostMainThreadCaller: Send + 'static {
+    /// Schedules a callback on the main thread.
+    ///
+    /// # Platform compatibility notes
+    ///
+    /// Only X11 needs this. This can be implemented as a no-op on Windows and macOS.
+    fn call_main_thread(&mut self);
+}
+
+pub struct HostMethods {
+    pub callbacks: Box<dyn HostCallbacks>,
+    pub main_thread_caller: Box<dyn HostMainThreadCaller>,
 }
 
 /// A handle to spawned instance of an [`Editor`].
@@ -94,6 +117,8 @@ pub trait EditorHandle: Send + 'static {
         window: &Self::Window,
     ) -> Result<(), Self::Error>;
 
+    fn host_main_thread_callback(&self, window: &Self::Window);
+
     /// Return the closest supported size.
     ///
     /// This will never be called on the standalone target.
@@ -113,7 +138,7 @@ pub trait EditorHandle: Send + 'static {
     /// operating system there.
     ///
     /// This will never be called on the standalone target.
-    fn set_suggested_scale_factor(
+    fn set_fallback_scale_factor(
         &self,
         scale_factor: f64,
         window: &Self::Window,
@@ -197,7 +222,7 @@ pub trait Editor: Send {
     ///
     /// If an error is returned, then the editor will not open.
     ///
-    /// If [`EditorHandle::set_suggested_scale_factor()`] has been called, then any created
+    /// If [`EditorHandle::set_fallback_scale_factor()`] has been called, then any created
     /// windows should have their sizes multiplied by that factor.
     ///
     /// The wrapper guarantees that a previous handle has been dropped before this function is
@@ -213,10 +238,10 @@ pub trait Editor: Send {
         &self,
         parent: Option<ParentWindowHandle>,
         wait_for_parent: bool,
-        suggested_scale_factor: Option<f64>,
+        fallback_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<Box<dyn HostCallbacks>>,
-    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>>;
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>>;
 
     /// Returns the (current) size of the editor in physical pixels.
     fn size(&self) -> PhysicalSize<u32>;
@@ -268,6 +293,8 @@ impl EditorHandle for () {
         Err(DummyEditorError)
     }
 
+    fn host_main_thread_callback(&self, _window: &Self::Window) {}
+
     fn set_size(
         &self,
         _new_size: PhysicalSize<u32>,
@@ -288,10 +315,10 @@ impl Editor for () {
         &self,
         _parent: Option<ParentWindowHandle>,
         _wait_for_parent: bool,
-        _suggested_scale_factor: Option<f64>,
+        _fallback_scale_factor: Option<f64>,
         _gui_context: GuiContext,
-        _host: Option<Box<dyn HostCallbacks>>,
-    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
+        _host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
         Err(String::from("Plugin does not implement an editor").into())
     }
 

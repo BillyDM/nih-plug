@@ -70,7 +70,7 @@ use nice_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig,
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
-use nice_plug_core::editor::{Editor, EditorWindow};
+use nice_plug_core::editor::{Editor, SpawnedEditor};
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
@@ -134,13 +134,13 @@ pub struct Wrapper<P: ClapPlugin> {
     #[cfg(feature = "editor")]
     #[allow(clippy::type_complexity)]
     editor_window:
-        AtomicRefCell<Option<fragile::Fragile<EditorWindow<<P::Editor as Editor>::Handle>>>>,
+        AtomicRefCell<Option<fragile::Fragile<SpawnedEditor<<P::Editor as Editor>::Handle>>>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
     #[cfg(feature = "editor")]
-    suggested_scale_factor: AtomicCell<Option<f64>>,
+    fallback_scale_factor: AtomicCell<Option<f64>>,
     is_activated: AtomicBool,
     is_processing: AtomicBool,
     /// The current IO configuration, modified through the `clap_plugin_audio_ports_config`
@@ -591,7 +591,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             #[cfg(feature = "editor")]
             editor_window: AtomicRefCell::new(None),
             #[cfg(feature = "editor")]
-            suggested_scale_factor: AtomicCell::new(None),
+            fallback_scale_factor: AtomicCell::new(None),
 
             is_activated: AtomicBool::new(false),
             is_processing: AtomicBool::new(false),
@@ -865,32 +865,6 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         result
     }
-
-    /*
-    /// Request a resize based on the editor's current reported size. As of CLAP 0.24 this can
-    /// safely be called from any thread. If this returns `false`, then the plugin should reset its
-    /// size back to the previous value.
-    #[cfg(feature = "editor")]
-    fn request_resize(&self) -> bool {
-        match (
-            self.host_gui.borrow().as_ref(),
-            self.editor.borrow().as_ref(),
-        ) {
-            (Some(host_gui), Some(editor)) => {
-                let size = editor.lock().size();
-
-                unsafe_clap_call! {
-                    host_gui=>request_resize(
-                        &*self.host_callback,
-                        size.width,
-                        size.height,
-                    )
-                }
-            }
-            _ => false,
-        }
-    }
-    */
 
     /// Convenience function for setting a value for a parameter as triggered by a CLAP parameter
     /// update. The same rate is for updating parameter smoothing.
@@ -2591,6 +2565,18 @@ impl<P: ClapPlugin> Wrapper<P> {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
+        #[cfg(feature = "editor")]
+        {
+            use nice_plug_core::editor::EditorHandle;
+
+            if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+                let editor_window = editor_window.get();
+                editor_window
+                    .handle
+                    .host_main_thread_callback(&editor_window.window);
+            }
+        }
+
         // [Self::schedule_gui] posts a task to the queue and asks the host to call this function
         // on the main thread, so once that's done we can just handle all requests here
         while let Some(task) = wrapper.tasks.pop() {
@@ -2896,7 +2882,9 @@ impl<P: ClapPlugin> Wrapper<P> {
             if wrapper.editor_window.borrow().is_none() {
                 use std::error::Error;
 
-                use nice_plug_core::editor::{HostCallbacks, dpi::Size};
+                use nice_plug_core::editor::{
+                    HostCallbacks, HostMainThreadCaller, HostMethods, dpi::Size,
+                };
 
                 #[derive(Debug, thiserror::Error)]
                 enum ResizeError {
@@ -2951,23 +2939,43 @@ impl<P: ClapPlugin> Wrapper<P> {
                     }
                 }
 
-                let host: Box<dyn HostCallbacks> = Box::new(ClapHostCallbacks {
+                let callbacks: Box<dyn HostCallbacks> = Box::new(ClapHostCallbacks {
                     wrapper: wrapper.this.borrow().clone(),
                     host_gui: ClapPtr::clone(wrapper.host_gui.borrow().as_ref().unwrap()),
                 });
 
-                let suggested_scale_factor = wrapper.suggested_scale_factor.load();
+                struct ClapHostMainThreadCaller<P: ClapPlugin> {
+                    wrapper: Weak<Wrapper<P>>,
+                }
+
+                impl<P: ClapPlugin> HostMainThreadCaller for ClapHostMainThreadCaller<P> {
+                    fn call_main_thread(&mut self) {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            unsafe_clap_call! { &*wrapper.host_callback=>request_callback(&*wrapper.host_callback) };
+                        }
+                    }
+                }
+
+                let main_thread_caller: Box<dyn HostMainThreadCaller> =
+                    Box::new(ClapHostMainThreadCaller {
+                        wrapper: wrapper.this.borrow().clone(),
+                    });
+
+                let fallback_scale_factor = wrapper.fallback_scale_factor.load();
 
                 match wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
                     None,
                     true,
-                    suggested_scale_factor,
+                    fallback_scale_factor,
                     wrapper.clone().make_gui_context(),
-                    Some(host),
+                    Some(HostMethods {
+                        callbacks,
+                        main_thread_caller,
+                    }),
                 ) {
-                    Ok(editor_instance) => {
+                    Ok(editor_window) => {
                         *wrapper.editor_window.borrow_mut() =
-                            Some(fragile::Fragile::new(editor_instance));
+                            Some(fragile::Fragile::new(editor_window));
                         true
                     }
                     Err(e) => {
@@ -3028,7 +3036,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window
                 .handle
-                .set_parent(parent_handle, &editor_window.window)
+                .set_parent(parent_handle, &editor_window.window.borrow())
             {
                 crate::nice_error!("Failed to set editor parent window: {}", e);
 
@@ -3146,7 +3154,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Some(new_size) = editor_window
                 .handle
-                .adjust_size(size, &editor_window.window)
+                .adjust_size(size, &editor_window.window.borrow())
             {
                 unsafe {
                     *width = new_size.width;
@@ -3174,12 +3182,12 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window
                 .handle
-                .set_suggested_scale_factor(scale, &editor_window.window)
+                .set_fallback_scale_factor(scale, &editor_window.window.borrow())
             {
                 crate::nice_error!("Failed to set suggested scale factor: {}", e);
                 false
             } else {
-                wrapper.suggested_scale_factor.store(Some(scale));
+                wrapper.fallback_scale_factor.store(Some(scale));
                 true
             }
         } else {
@@ -3208,7 +3216,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             if let Err(e) = editor_window.handle.set_size(
                 nice_plug_core::editor::dpi::PhysicalSize { width, height },
-                &editor_window.window,
+                &editor_window.window.borrow(),
             ) {
                 crate::nice_error!("Failed to resize window to ({}, {}): {}", width, height, e);
                 false
@@ -3244,7 +3252,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            if let Err(e) = editor_window.handle.show(&editor_window.window) {
+            if let Err(e) = editor_window.handle.show(&editor_window.window.borrow()) {
                 crate::nice_error!("Failed to show editor window: {}", e);
                 false
             } else {
@@ -3265,7 +3273,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            if let Err(e) = editor_window.handle.hide(&editor_window.window) {
+            if let Err(e) = editor_window.handle.hide(&editor_window.window.borrow()) {
                 crate::nice_error!("Failed to hide editor window: {}", e);
                 false
             } else {

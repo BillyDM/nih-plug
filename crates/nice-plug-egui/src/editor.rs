@@ -7,15 +7,11 @@ use egui_baseview::baseview;
 use egui_baseview::baseview::HandlerError;
 use egui_baseview::{EguiWindow, GraphicsConfig};
 use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::editor::Editor;
-use nice_plug_core::editor::EditorHandle;
-use nice_plug_core::editor::EditorWindow;
-use nice_plug_core::editor::Modifiers;
-use nice_plug_core::editor::ParentWindowHandle;
-use nice_plug_core::editor::ResizeHint;
-use nice_plug_core::editor::VirtualKeyCode;
-use nice_plug_core::editor::dpi::PhysicalSize;
-use nice_plug_core::editor::dpi::Size;
+use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::{
+    Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SpawnedEditor,
+    VirtualKeyCode,
+};
 use parking_lot::Mutex;
 use std::error::Error;
 use std::sync::Arc;
@@ -96,12 +92,15 @@ impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
     }
 
     fn resized(&mut self, size: baseview::WindowSize) {
+        self.egui_state
+            .scale_factor
+            .store(Some(size.scale_factor as f32));
+
         let current_size = self.egui_state.size();
         let new_size = match current_size {
             Size::Logical(_) => Size::Logical(size.logical),
             Size::Physical(_) => Size::Physical(size.physical),
         };
-
         self.egui_state.size.store(new_size);
 
         self.user_app.lock().resized(size);
@@ -128,10 +127,10 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
         &self,
         parent: Option<ParentWindowHandle>,
         wait_for_parent: bool,
-        suggested_scale_factor: Option<f64>,
+        fallback_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<Box<dyn nice_plug_core::editor::HostCallbacks>>,
-    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
         let egui_state = self.egui_state.clone();
         let user_app = self.user_app.clone();
         let size = egui_state.size();
@@ -143,35 +142,54 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
             .with_zoom_factor(zoom_factor)
             .with_graphics_config(self.settings.graphics.clone())
             .with_parent(parent.as_ref())
-            .with_fallback_scale_factor(suggested_scale_factor)
+            .with_fallback_scale_factor(fallback_scale_factor)
             .with_wait_for_parent(wait_for_parent);
 
         let egui_ctx = Arc::new(Mutex::new(None));
 
         // The host is a re-implementation of
         // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // and
+        // [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
         // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
         //
-        // Create a small wrapper to adapt it to baseview's HostCallbacks trait.
-        struct HostAdapter {
-            host: Box<dyn nice_plug_core::editor::HostCallbacks>,
-        }
-        impl baseview::host::HostCallbacks for HostAdapter {
-            fn request_resize(
-                &mut self,
-                new_size: baseview::WindowSize,
-            ) -> Result<(), HandlerError> {
-                self.host
-                    .request_resize(new_size.physical.into(), new_size.scale_factor)
-                    .map_err(HandlerError::from_boxed)
+        // Create a small wrapper to adapt it to baseview's HostCallbacks traits.
+        let host = {
+            struct HostCallbackAdapter {
+                host: Box<dyn nice_plug_core::editor::HostCallbacks>,
             }
+            impl baseview::host::HostCallbacks for HostCallbackAdapter {
+                fn request_resize(
+                    &mut self,
+                    new_size: baseview::WindowSize,
+                ) -> Result<(), HandlerError> {
+                    self.host
+                        .request_resize(new_size.physical.into(), new_size.scale_factor)
+                        .map_err(HandlerError::from_boxed)
+                }
 
-            fn destroyed(&mut self) {
-                self.host.destroyed();
+                fn destroyed(&mut self) {
+                    self.host.destroyed();
+                }
             }
-        }
-        let host =
-            host.map(|host| baseview::host::Host::new().with_callbacks(HostAdapter { host }));
+            struct HostMainThreadCallerAdapter {
+                host: Box<dyn nice_plug_core::editor::HostMainThreadCaller>,
+            }
+            impl baseview::host::HostMainThreadCaller for HostMainThreadCallerAdapter {
+                fn call_main_thread(&mut self) {
+                    self.host.call_main_thread();
+                }
+            }
+            host.map(|host| {
+                baseview::host::Host::new()
+                    .with_callbacks(HostCallbackAdapter {
+                        host: host.callbacks,
+                    })
+                    .with_main_thread(HostMainThreadCallerAdapter {
+                        host: host.main_thread_caller,
+                    })
+            })
+        };
 
         let window = EguiWindow::create_with_host(
             settings,
@@ -186,7 +204,7 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
 
         self.egui_state.open.store(true, Ordering::Release);
 
-        Ok(EditorWindow {
+        Ok(SpawnedEditor {
             handle: EguiEditorHandle {
                 egui_state: self.egui_state.clone(),
                 resize_hint: self.settings.resize_hint,
@@ -229,11 +247,26 @@ impl EditorHandle for EguiEditorHandle {
     }
 
     fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
-        window.show()
+        let res = window.show();
+
+        // TODO: This might be a baseview bug. the `baseview::WindowEvent::Focused`
+        // event does not always get called after `window.show()` is called. Either
+        // that, or baseview needs to add a `baseview::WindowEvent::Shown` event.
+        //
+        // For now, we must manually trigger a redraw.
+        if let Some(egui_ctx) = self.egui_ctx.lock().as_ref() {
+            egui_ctx.request_repaint();
+        }
+
+        res
     }
 
     fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
         window.hide()
+    }
+
+    fn host_main_thread_callback(&self, window: &Self::Window) {
+        window.host_main_thread_callback();
     }
 
     fn set_size(
@@ -244,7 +277,7 @@ impl EditorHandle for EguiEditorHandle {
         window.resize(new_size)
     }
 
-    fn set_suggested_scale_factor(
+    fn set_fallback_scale_factor(
         &self,
         scale_factor: f64,
         window: &Self::Window,

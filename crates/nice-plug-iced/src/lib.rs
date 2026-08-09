@@ -6,7 +6,7 @@ use std::{
 use iced_baseview::{PollSubNotifier, Program, baseview::HandlerError};
 use nice_plug_core::{
     context::gui::GuiContext,
-    editor::{Editor, EditorWindow, ParentWindowHandle, ResizeHint},
+    editor::{Editor, HostMethods, ParentWindowHandle, ResizeHint, SpawnedEditor},
 };
 
 pub use iced_baseview as iced;
@@ -30,14 +30,14 @@ impl Editor for IcedEditor {
         &self,
         parent: Option<ParentWindowHandle>,
         wait_for_parent: bool,
-        suggested_scale_factor: Option<f64>,
+        fallback_scale_factor: Option<f64>,
         gui_context: GuiContext,
-        host: Option<Box<dyn nice_plug_core::editor::HostCallbacks>>,
-    ) -> Result<EditorWindow<Self::Handle>, Box<dyn Error>> {
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
         self.inner.spawn(
             parent,
             wait_for_parent,
-            suggested_scale_factor,
+            fallback_scale_factor,
             gui_context,
             host,
         )

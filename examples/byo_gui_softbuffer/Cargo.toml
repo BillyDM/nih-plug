@@ -17,7 +17,8 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { version = "0.3", features = ["tracing"] }
+#baseview = { version = "0.3", features = ["tracing"] }
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "f106a5190f3a5861cacba7cab9ceb4f9532ebdfe", features = ["tracing"] }
 softbuffer = { version = "0.4.8", default-features = false, features = [
     "kms",
     "x11",
