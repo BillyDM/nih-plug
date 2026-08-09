@@ -248,7 +248,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
     ) -> bool {
         use vst3::Steinberg::IPlugFrameTrait;
 
-        let Some(inner) = this.inner.upgrade() else {
+        let Some(inner) = Weak::upgrade(&(&**this).inner) else {
             return false;
         };
 

@@ -112,19 +112,21 @@ impl<P: Plugin, B: Backend<P>> GuiContextInner for WrapperGuiContext<P, B> {
     }
 
     unsafe fn raw_begin_set_parameter(&self, _param: ParamPtr) {
-        let wrapper = self.wrapper.upgrade().unwrap();
-
         // Since there's no automation being recorded here, gestures don't mean anything
 
         #[cfg(debug_assertions)]
-        match wrapper.param_id_from_ptr(_param) {
-            Some(param_id) => self
-                .param_gesture_checker
-                .borrow_mut()
-                .begin_set_parameter(param_id),
-            None => crate::nice_debug_assert_failure!(
-                "raw_begin_set_parameter() called with an unknown ParamPtr"
-            ),
+        {
+            let wrapper = self.wrapper.upgrade().unwrap();
+
+            match wrapper.param_id_from_ptr(_param) {
+                Some(param_id) => self
+                    .param_gesture_checker
+                    .borrow_mut()
+                    .begin_set_parameter(param_id),
+                None => crate::nice_debug_assert_failure!(
+                    "raw_begin_set_parameter() called with an unknown ParamPtr"
+                ),
+            }
         }
     }
 
@@ -148,18 +150,20 @@ impl<P: Plugin, B: Backend<P>> GuiContextInner for WrapperGuiContext<P, B> {
     }
 
     unsafe fn raw_end_set_parameter(&self, _param: ParamPtr) {
-        let wrapper = self.wrapper.upgrade().unwrap();
-
         #[cfg(debug_assertions)]
-        match wrapper.param_id_from_ptr(_param) {
-            Some(param_id) => self
-                .param_gesture_checker
-                .borrow_mut()
-                .end_set_parameter(param_id),
-            None => {
-                crate::nice_debug_assert_failure!(
-                    "raw_end_set_parameter() called with an unknown ParamPtr"
-                )
+        {
+            let wrapper = self.wrapper.upgrade().unwrap();
+
+            match wrapper.param_id_from_ptr(_param) {
+                Some(param_id) => self
+                    .param_gesture_checker
+                    .borrow_mut()
+                    .end_set_parameter(param_id),
+                None => {
+                    crate::nice_debug_assert_failure!(
+                        "raw_end_set_parameter() called with an unknown ParamPtr"
+                    )
+                }
             }
         }
     }
