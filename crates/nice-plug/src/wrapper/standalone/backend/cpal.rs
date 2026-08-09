@@ -982,7 +982,10 @@ impl CpalMidir {
 
                         midi_input_events.clear();
                         if let Some(input_event_rb_consumer) = &mut input_event_rb_consumer {
-                            if let Ok(event) = input_event_rb_consumer.pop() {
+                            // Drain the whole ring: the midir input callback can
+                            // enqueue many events (e.g. a fast-moving CC wheel)
+                            // between audio callbacks.
+                            while let Ok(event) = input_event_rb_consumer.pop() {
                                 midi_input_events.push(event);
                             }
                         }
