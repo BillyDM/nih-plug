@@ -19,7 +19,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
     "tracing-subscriber",
 ] }
 #baseview = { version = "0.3", features = ["opengl", "tracing"] }
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "f106a5190f3a5861cacba7cab9ceb4f9532ebdfe", features = ["opengl", "tracing"] }
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "e85e49515126f990904522604b656722dbc65a39", features = ["opengl", "tracing"] }
 glow = "0.18"
 crossbeam = "0.8"
 atomic_float = "1.1"

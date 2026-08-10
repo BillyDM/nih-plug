@@ -23,10 +23,10 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 [dependencies]
 raw-window-handle.workspace = true
 nice-plug-core = { path = "../nice-plug-core", version = "0.2.0" }
-egui = { version = "0.35.0", default-features = false, features = ["bytemuck"] }
+egui = { version = "0.36.1", default-features = false, features = ["bytemuck"] }
 #egui-baseview = { version = "0.6.0", default-features = false, features = [
 #egui-baseview = { path = "../../../egui-baseview", default-features = false, features = [
-egui-baseview = { git = "https://codeberg.org/RustAudio/egui-baseview.git", rev = "07c89cdb1eca83d65c470e1fd8dd252f53f41097", default-features = false, features = [
+egui-baseview = { git = "https://codeberg.org/RustAudio/egui-baseview.git", rev = "92c82ce2e7cf8fa0a13013db123940d1a76bca10", default-features = false, features = [
     "tracing",
 ] }
 crossbeam.workspace = true
