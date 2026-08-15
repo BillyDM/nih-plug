@@ -86,7 +86,7 @@ iced_debug = "0.14"
 iced_program = "0.14"
 #iced_baseview = { version = "0.4.0", default-features = false, features = [
 #iced_baseview = { path = "../../../iced_baseview", default-features = false, features = [
-iced_baseview = { git = "https://codeberg.org/RustAudio/iced_baseview.git", rev = "8fbf7e03afa74e64730a9dda737fc258c4216844", default-features = false, features = [
+iced_baseview = { git = "https://codeberg.org/RustAudio/iced_baseview.git", rev = "b74c919e4f786a18226acb380878a8b9578ecaee", default-features = false, features = [
     "tracing",
 ] }
 crossbeam-utils = "0.8"

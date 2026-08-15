@@ -371,6 +371,8 @@ impl Editor for GlEditor {
             WindowSettings::new()
                 .with_title("OpenGL Window")
                 .with_size(self.editor_state.logical_size())
+                .with_min_size::<LogicalSize<f32>>(Some(MIN_SIZE))
+                .with_resizable(RESIZE_HINT.can_resize)
                 .with_parent(parent.as_ref())
                 .with_wait_for_parent(wait_for_parent)
                 .with_fallback_scale_factor(fallback_scale_factor)

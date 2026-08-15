@@ -687,6 +687,9 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             return kResultFalse;
         };
 
+        #[cfg(not(all(target_family = "unix", not(target_os = "macos"))))]
+        let _ = inner;
+
         match unsafe { ComRef::from_raw(frame) } {
             Some(frame) => {
                 // On Linux the host will expose another interface that lets us run code on the

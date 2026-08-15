@@ -9,7 +9,7 @@ use iced::{Element, Executor, Font, Never, Preset, Subscription, Task, Theme};
 use iced_debug as debug;
 
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
 
 pub mod timed;
 pub use timed::timed;
@@ -33,9 +33,9 @@ where
 {
     use std::marker::PhantomData;
 
-    struct Instance<State, PState, Boot, Message, Theme, Renderer, Update, View> {
+    struct Instance<State, PState: Send + 'static, Boot, Message, Theme, Renderer, Update, View> {
         nice_ctx: IcedNiceContext,
-        persitent_state: Arc<Mutex<Option<PState>>>,
+        persitent_state: RefCell<Option<PersistentState<PState>>>,
         boot: Boot,
         update: Update,
         view: View,
@@ -69,9 +69,8 @@ where
         }
 
         fn boot(&self) -> (State, Task<Message>) {
-            let editor_state = PersistentState::from_shared(&self.persitent_state);
-
-            self.boot.boot(editor_state, self.nice_ctx.clone())
+            let persistent_state = { self.persitent_state.borrow_mut().take().unwrap() };
+            self.boot.boot(persistent_state, self.nice_ctx.clone())
         }
 
         fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
@@ -98,7 +97,7 @@ where
     Application {
         raw: Instance {
             nice_ctx,
-            persitent_state: persistent_state.into_shared(),
+            persitent_state: RefCell::new(Some(persistent_state)),
             boot,
             update,
             view,

@@ -12,7 +12,7 @@ use nice_plug::{
 };
 use softbuffer::SoftBufferError;
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     error::Error,
     sync::{
         Arc,
@@ -33,7 +33,6 @@ pub struct SoftbufferWindow {
     params: Arc<MyPluginParams>,
     editor_state: Arc<SoftbufferEditorState>,
     redraw_requested: Arc<AtomicBool>,
-    is_first_frame: Cell<bool>,
 }
 
 struct Surface {
@@ -69,17 +68,13 @@ impl SoftbufferWindow {
             params,
             editor_state,
             redraw_requested,
-            is_first_frame: Cell::new(true),
         })
     }
 }
 
 impl baseview::WindowHandler for SoftbufferWindow {
     fn on_frame(&self) -> Result<(), HandlerError> {
-        if self.is_first_frame.get() {
-            // For some reason, softbuffer doesn't show anything on the first paint.
-            self.is_first_frame.set(false);
-        } else if !self.redraw_requested.swap(false, Ordering::Relaxed) {
+        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
             return Ok(());
         }
 
@@ -219,6 +214,8 @@ impl Editor for SoftbufferEditor {
             WindowSettings::new()
                 .with_title("Softbuffer Window")
                 .with_size(self.editor_state.logical_size())
+                .with_min_size::<LogicalSize<f32>>(Some(MIN_SIZE))
+                .with_resizable(RESIZE_HINT.can_resize)
                 .with_parent(parent.as_ref())
                 .with_wait_for_parent(wait_for_parent)
                 .with_fallback_scale_factor(fallback_scale_factor),

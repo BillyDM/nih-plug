@@ -8,6 +8,7 @@ use egui_baseview::baseview;
 use egui_baseview::baseview::HandlerError;
 use egui_baseview::{EguiWindow, GraphicsConfig};
 use nice_plug_core::context::gui::GuiContext;
+use nice_plug_core::editor::SizeConstraints;
 use nice_plug_core::editor::dpi::{PhysicalSize, Size};
 use nice_plug_core::editor::{
     Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SpawnedEditor,
@@ -138,9 +139,22 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
         let size = egui_state.size();
         let zoom_factor = egui_state.zoom_factor.load();
 
+        let (min_size, max_size): (Option<Size>, Option<Size>) =
+            match self.settings.resize_hint.size_constraints {
+                SizeConstraints::Logical { min_size, max_size } => {
+                    (min_size.map(|s| s.into()), max_size.map(|s| s.into()))
+                }
+                SizeConstraints::Physical { min_size, max_size } => {
+                    (min_size.map(|s| s.into()), max_size.map(|s| s.into()))
+                }
+            };
+
         let settings = EguiWindowSettings::new()
             .with_title(self.settings.title.clone())
             .with_size(size)
+            .with_min_size(min_size)
+            .with_max_size(max_size)
+            .with_resizable(self.settings.resize_hint.can_resize)
             .with_zoom_factor(zoom_factor)
             .with_graphics_config(self.settings.graphics.clone())
             .with_parent(parent.as_ref())

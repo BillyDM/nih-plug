@@ -5,8 +5,8 @@ use iced_baseview::{IcedWindowSettings, PollSubNotifier, Program, baseview, mess
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize, Size};
 use nice_plug_core::editor::{
-    Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SpawnedEditor,
-    VirtualKeyCode,
+    Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SizeConstraints,
+    SpawnedEditor, VirtualKeyCode,
 };
 use std::error::Error;
 use std::sync::{
@@ -53,9 +53,22 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
         let nice_context = gui_context.clone();
         let editor_state = self.editor_state.clone();
 
+        let (min_size, max_size): (Option<Size>, Option<Size>) =
+            match self.settings.resize_hint.size_constraints {
+                SizeConstraints::Logical { min_size, max_size } => {
+                    (min_size.map(|s| s.into()), max_size.map(|s| s.into()))
+                }
+                SizeConstraints::Physical { min_size, max_size } => {
+                    (min_size.map(|s| s.into()), max_size.map(|s| s.into()))
+                }
+            };
+
         let settings = IcedWindowSettings::new()
             .with_title(self.settings.title.clone())
             .with_size(size)
+            .with_min_size(min_size)
+            .with_max_size(max_size)
+            .with_resizable(self.settings.resize_hint.can_resize)
             .with_scale_factor(zoom_factor)
             .with_parent(parent.as_ref())
             .with_wait_for_parent(wait_for_parent)
