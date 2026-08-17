@@ -28,7 +28,7 @@ default-members = ["crates/nice-plug"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.88"
 authors = [
   "Robbert van der Helm <mail@robbertvanderhelm.nl>",
   "Billy Messenger <billydm@noreply.codeberg.org>",
