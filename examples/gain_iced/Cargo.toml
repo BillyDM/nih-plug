@@ -16,9 +16,9 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.3.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.2.0" }
+nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.3.0" }
 atomic_float = "1.1"

@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", default-features = false, features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.3.0", default-features = false, features = [
     "vst3",
     "tracing-subscriber",
     "assert_process_allocs",
