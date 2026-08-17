@@ -1,29 +1,31 @@
 use atomic_refcell::AtomicRefCell;
-use baseview::{EventStatus, Window, WindowContext, WindowOpenOptions, WindowSize};
-use crossbeam::channel::{self, Sender};
+use crossbeam::channel;
 use crossbeam::queue::ArrayQueue;
 use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
-use nice_plug_core::context::gui::AsyncExecutor;
+#[cfg(feature = "editor")]
+use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
-use nice_plug_core::editor::{Editor, ParentWindowHandle};
+#[cfg(feature = "editor")]
+use nice_plug_core::editor::{Editor, EditorHandle, SpawnedEditor};
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
 use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
-use raw_window_handle::HasWindowHandle;
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
-use std::ffi::c_ulong;
+#[cfg(feature = "editor")]
+use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 
 use super::backend::Backend;
 use super::config::WrapperConfig;
-use super::context::{WrapperGuiContext, WrapperInitContext, WrapperProcessContext};
+use super::context::{WrapperActivateContext, WrapperProcessContext};
 use crate::event_loop::{EventLoop, MainThreadExecutor, OsEventLoop};
 use crate::util::permit_alloc;
+#[cfg(feature = "editor")]
+use crate::wrapper::standalone::context::WrapperGuiContext;
 use crate::wrapper::state;
 use crate::wrapper::util::process_wrapper;
 
@@ -47,9 +49,12 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
     #[allow(clippy::type_complexity)]
-    pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
-    /// A channel for sending tasks to the GUI window, if the plugin has a GUI. Set in `run()`.
-    gui_tasks_sender: AtomicRefCell<Option<Sender<GuiTask>>>,
+    #[cfg(feature = "editor")]
+    pub editor: AtomicRefCell<Option<Arc<Mutex<P::Editor>>>>,
+    #[allow(clippy::type_complexity)]
+    #[cfg(feature = "editor")]
+    pub editor_handle: Mutex<Option<<P::Editor as Editor>::Handle>>,
+    close_requested: Arc<AtomicBool>,
 
     /// A realtime-safe task queue so the plugin can schedule tasks that need to be run later on the
     /// GUI thread. See the same field in the VST3 wrapper for more information on why this looks
@@ -88,7 +93,7 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
     updated_state_sender: channel::Sender<PluginState>,
     /// The receiver belonging to [`new_state_sender`][Self::new_state_sender].
     updated_state_receiver: channel::Receiver<PluginState>,
-    /// The current latency in samples, as set by the plugin through the [`InitContext`] and the
+    /// The current latency in samples, as set by the plugin through the [`ActivateContext`] and the
     /// [`ProcessContext`]. This value may not be used depending on the audio backend, but it's
     /// still kept track of to avoid firing debug assertions multiple times for the same latency
     /// value.
@@ -102,76 +107,42 @@ pub struct Wrapper<P: Plugin, B: Backend<P>> {
 pub enum Task<P: Plugin> {
     /// Execute one of the plugin's background tasks.
     PluginTask(P::BackgroundTask),
-    /// Inform the plugin that one or more parameter values have changed.
-    ParameterValuesChanged,
+    #[cfg(feature = "editor")]
+    StateChanged,
     /// Inform the plugin that one parameter's value has changed. This uses the parameter hashes
     /// since the task will be created from the audio thread. We don't have parameter hashes here
     /// like in the plugin APIs, so we'll just use the `ParamPtr`s directly. These are used to index
     /// the hashmaps stored on `Wrapper`.
+    #[cfg(feature = "editor")]
     ParameterValueChanged(ParamPtr, f32),
 }
 
 /// Errors that may arise while initializing the wrapped plugins.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, thiserror::Error)]
 pub enum WrapperError {
-    /// The plugin returned `false` during initialization.
-    InitializationFailed,
-}
-
-struct WrapperWindowHandler {
-    /// The editor handle for the plugin's open editor. The editor should clean itself up when it
-    /// gets dropped.
-    _editor_handle: Box<dyn Any>,
-
-    /// This is used to communicate with the wrapper from the audio thread and from within the
-    /// baseview window handler on the GUI thread.
-    gui_task_receiver: channel::Receiver<GuiTask>,
-
-    window: WindowContext,
-}
-
-/// A message sent to the GUI thread.
-pub enum GuiTask {
-    /// Resize the window to the following size.
-    Resize(baseview::dpi::Size),
-    /// The close window. This will cause the application to terminate.
-    Close,
-}
-
-impl baseview::WindowHandler for WrapperWindowHandler {
-    fn on_frame(&self) {
-        while let Ok(task) = self.gui_task_receiver.try_recv() {
-            match task {
-                GuiTask::Resize(new_size) => {
-                    self.window.resize(new_size);
-                }
-                GuiTask::Close => self.window.request_close(),
-            }
-        }
-    }
-
-    fn on_event(&self, _event: baseview::Event) -> EventStatus {
-        EventStatus::Ignored
-    }
-
-    fn resized(&self, _new_size: WindowSize) {}
+    /// The plugin returned `false` during activation.
+    #[error("The plugin returned false during activation")]
+    ActivationFailed,
+    #[cfg(feature = "editor")]
+    #[error("{0}")]
+    WindowError(#[from] Box<dyn Error>),
 }
 
 impl<P: Plugin, B: Backend<P>> MainThreadExecutor<Task<P>> for Wrapper<P, B> {
     fn execute(&self, task: Task<P>, _is_gui_thread: bool) {
         match task {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
-            Task::ParameterValuesChanged => {
-                if let Some(editor) = self.editor.borrow().as_ref() {
-                    editor.lock().param_values_changed();
+            #[cfg(feature = "editor")]
+            Task::StateChanged => {
+                if let Some(editor_handle) = self.editor_handle.lock().as_ref() {
+                    editor_handle.state_changed();
                 }
             }
+            #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_ptr, normalized_value) => {
-                if let Some(editor) = self.editor.borrow().as_ref() {
+                if let Some(editor) = self.editor_handle.lock().as_ref() {
                     let param_id = &self.param_ptr_to_id[&param_ptr];
-                    editor
-                        .lock()
-                        .param_value_changed(param_id, normalized_value);
+                    editor.param_value_changed(param_id, normalized_value);
                 }
             }
         }
@@ -229,9 +200,11 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             task_executor,
             params,
             // Initialized later as it needs a reference to the wrapper for the async executor
+            #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
-            // Set in `run()`
-            gui_tasks_sender: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
+            editor_handle: Mutex::new(None),
+            close_requested: Arc::new(AtomicBool::new(false)),
 
             // Also initialized later as it also needs a reference to the wrapper
             event_loop: AtomicRefCell::new(None),
@@ -265,34 +238,37 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             Some(OsEventLoop::new_and_spawn(Arc::downgrade(&wrapper)));
 
         // The editor needs to be initialized later so the Async executor can work.
-        *wrapper.editor.borrow_mut() = wrapper
-            .plugin
-            .lock()
-            .editor(AsyncExecutor::new(
-                Arc::new({
-                    let wrapper = wrapper.clone();
+        #[cfg(feature = "editor")]
+        {
+            *wrapper.editor.borrow_mut() = wrapper
+                .plugin
+                .lock()
+                .editor(nice_plug_core::context::gui::AsyncExecutor::new(
+                    Arc::new({
+                        let wrapper = wrapper.clone();
 
-                    move |task| {
-                        let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-                Arc::new({
-                    let wrapper = wrapper.clone();
+                        move |task| {
+                            let task_posted = wrapper.schedule_background(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                    Arc::new({
+                        let wrapper = wrapper.clone();
 
-                    move |task| {
-                        let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-            ))
-            .map(|editor| Arc::new(Mutex::new(editor)));
+                        move |task| {
+                            let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                ))
+                .map(|editor| Arc::new(Mutex::new(editor)));
+        }
 
         // Before initializing the plugin, make sure all smoothers are set the the default values
         for param in wrapper.param_id_to_ptr.values() {
@@ -301,12 +277,12 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
 
         {
             let mut plugin = wrapper.plugin.lock();
-            if !plugin.initialize(
+            if !plugin.activate(
                 &wrapper.audio_io_layout,
                 &wrapper.buffer_config,
-                &mut wrapper.make_init_context(),
+                &mut wrapper.make_activate_context(),
             ) {
-                return Err(WrapperError::InitializationFailed);
+                return Err(WrapperError::ActivationFailed);
             }
             process_wrapper(|| plugin.reset());
         }
@@ -320,75 +296,76 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     /// Will return an error if the plugin threw an error during audio processing or if the editor
     /// could not be opened.
     pub fn run(self: Arc<Self>) -> Result<(), WrapperError> {
-        let (gui_task_sender, gui_task_receiver) = channel::bounded(512);
-        *self.gui_tasks_sender.borrow_mut() = Some(gui_task_sender.clone());
+        let close_gui_requested = Arc::clone(&self.close_requested);
+        if let Err(e) = ctrlc::set_handler(move || {
+            close_gui_requested.store(true, Ordering::Relaxed);
+        }) {
+            crate::nice_error!("Error setting close signal callback {}", e);
+        }
 
         // We'll spawn a separate thread to handle IO and to process audio. This audio thread should
         // terminate together with this function.
         let terminate_audio_thread = Arc::new(AtomicBool::new(false));
+        let close_gui_requested = Arc::clone(&self.close_requested);
         let audio_thread = {
             let this = self.clone();
             let terminate_audio_thread = terminate_audio_thread.clone();
-            thread::spawn(move || this.run_audio_thread(terminate_audio_thread, gui_task_sender))
+            thread::spawn(move || {
+                this.run_audio_thread(terminate_audio_thread, close_gui_requested)
+            })
         };
 
-        match self.editor.borrow().clone() {
+        #[allow(unused_mut)]
+        let mut gui_spawned = false;
+
+        #[cfg(feature = "editor")]
+        let res = match self.editor.borrow().clone() {
             Some(editor) => {
                 let context = self.clone().make_gui_context();
 
-                let size = editor.lock().size();
-
-                Window::open_blocking(
-                    WindowOpenOptions::new().with_title(P::NAME).with_size(size),
-                    move |window| {
-                        let parent_handle = match window.window_handle().unwrap().as_raw() {
-                            raw_window_handle::RawWindowHandle::Xlib(handle) =>
-                            {
-                                #[allow(clippy::unnecessary_cast)]
-                                ParentWindowHandle::XlibWindow(handle.window as c_ulong)
-                            }
-                            raw_window_handle::RawWindowHandle::Xcb(handle) => {
-                                ParentWindowHandle::XcbWindow(handle.window)
-                            }
-                            raw_window_handle::RawWindowHandle::AppKit(handle) => {
-                                ParentWindowHandle::AppKitNsView(handle.ns_view)
-                            }
-                            raw_window_handle::RawWindowHandle::Win32(handle) => {
-                                ParentWindowHandle::Win32Hwnd(handle.hwnd)
-                            }
-                            handle => unimplemented!("Unsupported window handle: {handle:?}"),
-                        };
-
-                        // TODO: This spawn function should be able to fail and return an error, but
-                        //       baseview does not support this yet. Once this is added, we should
-                        //       immediately close the parent window when this happens so the loop
-                        //       can exit.
-                        let editor_handle = editor.lock().spawn(parent_handle, context);
-
-                        WrapperWindowHandler {
-                            _editor_handle: editor_handle,
-                            gui_task_receiver,
+                match editor.lock().spawn(None, false, None, context, None) {
+                    Ok(editor_window) => {
+                        let SpawnedEditor {
+                            handle: instance,
                             window,
-                        }
-                    },
-                )
+                        } = editor_window;
+
+                        gui_spawned = true;
+                        *self.editor_handle.lock() = Some(instance);
+
+                        <P::Editor as Editor>::Handle::run_until_closed(window)
+                            .map_err(|e| WrapperError::WindowError(e.into()))
+                    }
+                    Err(e) => Err(WrapperError::WindowError(e)),
+                }
             }
-            None => {
-                // TODO: Properly block until SIGINT is received if the plugin does not have an editor
-                // TODO: Make sure to handle `GuiTask::Close` here as well
-                crate::nice_log!("{} does not have a GUI, blocking indefinitely...", P::NAME);
-                std::thread::park();
+            None => Ok(()),
+        };
+
+        #[cfg(not(feature = "editor"))]
+        let res = Ok(());
+
+        if !gui_spawned {
+            crate::nice_log!("No GUI available for {}, blocking indefinitely...", P::NAME);
+
+            loop {
+                if self.close_requested.swap(false, Ordering::Relaxed) {
+                    break;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
 
         terminate_audio_thread.store(true, Ordering::SeqCst);
-        audio_thread.join().unwrap();
+
+        let _ = audio_thread.join();
 
         // Some plugins may use this to clean up resources. Should not be needed for the standalone
         // application, but it seems like a good idea to stay consistent.
         self.plugin.lock().deactivate();
 
-        Ok(())
+        res
     }
 
     /// Get a parameter's ID based on a `ParamPtr`. Used in the `GuiContext` implementation for the
@@ -404,6 +381,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     ///
     /// This returns false if the parameter was not set because the `ParamPtr` was either unknown or
     /// the queue is full.
+    #[cfg(feature = "editor")]
     pub fn set_parameter(&self, param: ParamPtr, normalized: f32) -> bool {
         if !self.param_ptr_to_id.contains_key(&param) {
             return false;
@@ -421,6 +399,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     /// Get the plugin's state object, may be called by the plugin's GUI as part of its own preset
     /// management. The wrapper doesn't use these functions and serializes and deserializes directly
     /// the JSON in the relevant plugin API methods instead.
+    #[cfg(feature = "editor")]
     pub fn get_state_object(&self) -> PluginState {
         unsafe {
             state::serialize_object::<P>(
@@ -435,6 +414,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     /// Update the plugin's internal state, called by the plugin itself from the GUI thread. To
     /// prevent corrupting data and changing parameters during processing the actual state is only
     /// updated at the end of the audio processing cycle.
+    #[cfg(feature = "editor")]
     pub fn set_state_object_from_gui(&self, state: PluginState) {
         match self.updated_state_sender.send(state) {
             Ok(_) => {
@@ -474,17 +454,6 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         event_loop.schedule_gui(task)
     }
 
-    /// Request the outer window to be resized to the editor's current size.
-    pub fn request_resize(&self) {
-        if let Some(gui_tasks_sender) = self.gui_tasks_sender.borrow().as_ref() {
-            let size = self.editor.borrow().as_ref().unwrap().lock().size();
-
-            // This will cause the editor to be resized at the start of the next frame
-            let push_successful = gui_tasks_sender.send(GuiTask::Resize(size)).is_ok();
-            crate::nice_debug_assert!(push_successful, "Could not queue window resize");
-        }
-    }
-
     pub fn set_latency_samples(&self, samples: u32) {
         // This should only change the value if it's actually needed
         let old_latency = self.current_latency.swap(samples, Ordering::SeqCst);
@@ -501,7 +470,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
     fn run_audio_thread(
         self: Arc<Self>,
         should_terminate: Arc<AtomicBool>,
-        gui_task_sender: channel::Sender<GuiTask>,
+        close_gui_requested: Arc<AtomicBool>,
     ) {
         self.clone().backend.borrow_mut().run(
             move |buffer, aux, transport, input_events, output_events| {
@@ -524,11 +493,7 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                             crate::nice_error!("The plugin returned an error while processing:");
                             crate::nice_error!("{}", err);
 
-                            let push_successful = gui_task_sender.send(GuiTask::Close).is_ok();
-                            crate::nice_debug_assert!(
-                                push_successful,
-                                "Could not queue window close, the editor will remain open"
-                            );
+                            close_gui_requested.store(true, Ordering::Relaxed);
 
                             return false;
                         }
@@ -544,14 +509,18 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                     {
                         if unsafe { param_ptr._internal_set_normalized_value(normalized_value) } {
                             unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
-                            let task_posted = self.schedule_gui(Task::ParameterValueChanged(
-                                param_ptr,
-                                normalized_value,
-                            ));
-                            crate::nice_debug_assert!(
-                                task_posted,
-                                "The task queue is full, dropping task..."
-                            );
+
+                            #[cfg(feature = "editor")]
+                            {
+                                let task_posted = self.schedule_gui(Task::ParameterValueChanged(
+                                    param_ptr,
+                                    normalized_value,
+                                ));
+                                crate::nice_debug_assert!(
+                                    task_posted,
+                                    "The task queue is full, dropping task..."
+                                );
+                            }
                         }
                     }
 
@@ -581,16 +550,17 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         );
     }
 
-    fn make_gui_context(self: Arc<Self>) -> Arc<WrapperGuiContext<P, B>> {
-        Arc::new(WrapperGuiContext {
-            wrapper: self,
+    #[cfg(feature = "editor")]
+    fn make_gui_context(self: Arc<Self>) -> GuiContext {
+        GuiContext::new(Arc::new(WrapperGuiContext {
+            wrapper: Arc::downgrade(&self),
             #[cfg(debug_assertions)]
             param_gesture_checker: Default::default(),
-        })
+        }))
     }
 
-    fn make_init_context(&self) -> WrapperInitContext<'_, P, B> {
-        WrapperInitContext { wrapper: self }
+    fn make_activate_context(&self) -> WrapperActivateContext<'_, P, B> {
+        WrapperActivateContext { wrapper: self }
     }
 
     fn make_process_context<'a>(
@@ -644,15 +614,15 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
         // If the plugin was already initialized then it needs to be reinitialized
         {
             // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-            let mut init_context = self.make_init_context();
+            let mut activate_context = self.make_activate_context();
             let mut plugin = self.plugin.lock();
 
             // See above
             success = permit_alloc(|| {
-                plugin.initialize(
+                plugin.activate(
                     &self.audio_io_layout,
                     &self.buffer_config,
-                    &mut init_context,
+                    &mut activate_context,
                 )
             });
             if success {
@@ -665,14 +635,12 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
             "Plugin returned false when reinitializing after loading state"
         );
 
-        // Reinitialize the plugin after loading state so it can respond to the new parameter values
-        let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-
-        // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
-        //       could keep track of the last known size and compare the GUI's current size against
-        //       that but that also seems brittle.
-        self.request_resize();
+        #[cfg(feature = "editor")]
+        {
+            // Reinitialize the plugin after loading state so it can respond to the new parameter values
+            let task_posted = self.schedule_gui(Task::StateChanged);
+            crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+        }
 
         success
     }

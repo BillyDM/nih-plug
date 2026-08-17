@@ -13,11 +13,11 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", version = "0.2.0", features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.3.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { version = "0.2.0", features = ["opengl"] }
+baseview = { version = "0.3.1", features = ["tracing"] }
 softbuffer = { version = "0.4.8", default-features = false, features = [
     "kms",
     "x11",

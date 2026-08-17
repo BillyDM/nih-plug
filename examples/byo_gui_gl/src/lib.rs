@@ -1,47 +1,26 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw OpenGL context.
 
 use baseview::{
-    WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy,
-    dpi::{LogicalSize, Size},
-    gl::GlConfig,
+    HandlerError, WindowContext, WindowSettings,
+    dpi::{LogicalSize, PhysicalSize},
+    gl::{GlConfig, GlContext},
 };
 use crossbeam::atomic::AtomicCell;
 use glow::Context;
-use nice_plug::params::persist::PersistentField;
-use nice_plug::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use nice_plug::editor::{EditorHandle, HostMethods, SpawnedEditor};
+use nice_plug::{context::gui::GuiContext, prelude::*};
+use std::{
+    error::Error,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
-/// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
-const PEAK_METER_DECAY_MS: f64 = 150.0;
+use crate::OpenGlError::GlError;
 
-pub struct CustomGlWindow {
-    gui_context: Arc<dyn GuiContext>,
-    gl: Arc<glow::Context>,
-    window: WindowContext,
-
-    vertex_array: glow::NativeVertexArray,
-    program: glow::NativeProgram,
-
-    #[allow(unused)]
-    params: Arc<MyPluginParams>,
-    #[allow(unused)]
-    peak_meter: Arc<AtomicF32>,
-}
-
-impl Drop for CustomGlWindow {
-    fn drop(&mut self) {
-        use glow::HasContext as _;
-
-        unsafe {
-            self.gl.delete_program(self.program);
-            self.gl.delete_vertex_array(self.vertex_array);
-        }
-    }
-}
+const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(400.0, 300.0);
+const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_SIZE);
 
 /// Helper for parsing and interpreting the OpenGL shader version. This will
 /// help ensure maximum compatibility with systems.
@@ -92,37 +71,96 @@ fn get_shader_version_string(gl: &Arc<Context>) -> &'static str {
     shader_version
 }
 
-impl CustomGlWindow {
-    fn new(
-        window: WindowContext,
-        gui_context: Arc<dyn GuiContext>,
-        params: Arc<MyPluginParams>,
-        peak_meter: Arc<AtomicF32>,
-    ) -> Self {
+#[derive(Debug, thiserror::Error)]
+pub enum OpenGlError {
+    #[error("Failed to get baseview's GL context")]
+    NoContext,
+    #[error("GL program: {0}")]
+    GlError(String),
+    #[error("{0}")]
+    Baseview(#[from] baseview::Error),
+}
+
+impl From<String> for OpenGlError {
+    fn from(err: String) -> Self {
+        Self::GlError(err)
+    }
+}
+
+// A small gaurd that makes sure the OpenGL context is released if an error
+// is returned.
+struct ContextGaurd<'a> {
+    gl_context: &'a GlContext,
+}
+
+impl<'a> ContextGaurd<'a> {
+    pub unsafe fn new(gl_context: &'a GlContext) -> Result<Self, OpenGlError> {
+        unsafe {
+            gl_context.make_current()?;
+        }
+        Ok(Self { gl_context })
+    }
+}
+
+impl<'a> Drop for ContextGaurd<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl_context.make_not_current().unwrap();
+        }
+    }
+}
+
+pub struct GlWindow {
+    _gui_context: GuiContext,
+    gl: Arc<glow::Context>,
+    window: WindowContext,
+
+    vertex_array: glow::NativeVertexArray,
+    program: glow::NativeProgram,
+
+    #[allow(unused)]
+    params: Arc<MyPluginParams>,
+    editor_state: Arc<GlEditorState>,
+    redraw_requested: Arc<AtomicBool>,
+}
+
+impl Drop for GlWindow {
+    fn drop(&mut self) {
         use glow::HasContext as _;
 
-        // TODO: Return an error instead of panicking once baseview gets thats
-        // ability.
-        let gl_context = window
-            .gl_context()
-            .expect("failed to get baseview gl context");
+        unsafe {
+            self.gl.delete_program(self.program);
+            self.gl.delete_vertex_array(self.vertex_array);
+        }
+    }
+}
+
+impl GlWindow {
+    fn new(
+        window: WindowContext,
+        gui_context: GuiContext,
+        params: Arc<MyPluginParams>,
+        editor_state: Arc<GlEditorState>,
+        redraw_requested: Arc<AtomicBool>,
+    ) -> Result<Self, OpenGlError> {
+        use glow::HasContext as _;
+
+        let gl_context = window.gl_context().ok_or(OpenGlError::NoContext)?;
 
         let (gl, vertex_array, program) = unsafe {
-            gl_context.make_current();
+            let _context_gaurd = ContextGaurd::new(&gl_context);
 
             #[allow(clippy::arc_with_non_send_sync)]
-            let gl = Arc::new(glow::Context::from_loader_function(|s| {
+            let gl = Arc::new(glow::Context::from_loader_function_cstr(|s| {
                 gl_context.get_proc_address(s)
             }));
 
             let shader_version = get_shader_version_string(&gl);
 
-            let vertex_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
+            let vertex_array = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(vertex_array));
 
-            let program = gl.create_program().expect("Cannot create program");
+            let program = gl.create_program()?;
 
             let (vertex_shader_source, fragment_shader_source) = (
                 r#"const vec2 verts[3] = vec2[3](
@@ -157,7 +195,7 @@ impl CustomGlWindow {
                 gl.shader_source(shader, &format!("{}\n{}", shader_version, shader_source));
                 gl.compile_shader(shader);
                 if !gl.get_shader_compile_status(shader) {
-                    panic!("{}", gl.get_shader_info_log(shader));
+                    return Err(GlError(gl.get_shader_info_log(shader)));
                 }
                 gl.attach_shader(program, shader);
                 shaders.push(shader);
@@ -165,7 +203,7 @@ impl CustomGlWindow {
 
             gl.link_program(program);
             if !gl.get_program_link_status(program) {
-                panic!("{}", gl.get_program_info_log(program));
+                return Err(GlError(gl.get_program_info_log(program)));
             }
 
             for shader in shaders {
@@ -175,156 +213,169 @@ impl CustomGlWindow {
 
             gl.use_program(Some(program));
 
-            gl_context.make_not_current();
-
             (gl, vertex_array, program)
         };
 
-        Self {
-            gui_context,
+        Ok(Self {
+            _gui_context: gui_context,
             gl,
             vertex_array,
             program,
             params,
-            peak_meter,
+            editor_state,
             window,
-        }
+            redraw_requested,
+        })
     }
 }
 
-impl baseview::WindowHandler for CustomGlWindow {
-    fn on_frame(&self) {
-        use glow::HasContext as _;
+impl baseview::WindowHandler for GlWindow {
+    fn on_frame(&self) -> Result<(), HandlerError> {
+        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
+            return Ok(());
+        }
+
         // Do rendering here.
 
-        let gl_context = self
-            .window
-            .gl_context()
-            .expect("failed to get baseview gl context");
+        use glow::HasContext as _;
+
+        let gl_context = self.window.gl_context().unwrap();
 
         unsafe {
-            gl_context.make_current();
+            let _context_gaurd = ContextGaurd::new(&gl_context);
 
             self.gl.clear_color(0.05, 0.05, 0.05, 1.0);
             self.gl.clear(glow::COLOR_BUFFER_BIT);
 
             self.gl.draw_arrays(glow::TRIANGLES, 0, 3);
 
-            gl_context.swap_buffers();
-            gl_context.make_not_current();
+            if let Err(e) = gl_context.swap_buffers() {
+                nice_plug::nice_error!("{}", e);
+            }
         }
+
+        Ok(())
     }
 
     fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
-        // Use this to set parameter values.
-        let _param_setter = ParamSetter::new(self.gui_context.as_ref());
-
         // Do event processing here.
-        #[allow(clippy::match_single_binding)]
+        #[allow(clippy::single_match)]
+        #[allow(clippy::collapsible_match)]
         match &event {
-            // Do event processing here.
+            baseview::Event::Window(event) => match event {
+                baseview::WindowEvent::Focused => {
+                    self.redraw_requested.store(true, Ordering::Relaxed);
+                }
+                _ => {}
+            },
             _ => {}
         }
 
         baseview::EventStatus::Captured
     }
 
-    fn resized(&self, new_size: baseview::WindowSize) {
-        self.params
-            .editor_state
-            .window_scale_factor
-            .store(new_size.scale_factor as f32);
-        self.params.editor_state.size.store(new_size.logical.cast());
+    fn resized(&self, new_size: baseview::WindowSize) -> Result<(), HandlerError> {
+        use glow::HasContext as _;
+
+        self.editor_state.scale_factor.store(new_size.scale_factor);
+        self.editor_state
+            .logical_size
+            .store(new_size.logical.cast());
+
+        let gl_context = self.window.gl_context().unwrap();
+
+        unsafe {
+            let _context_gaurd = ContextGaurd::new(&gl_context);
+
+            self.gl.viewport(
+                0,
+                0,
+                new_size.physical.width as i32,
+                new_size.physical.height as i32,
+            );
+        }
+
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        Ok(())
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CustomGlEditorState {
-    #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<LogicalSize<f32>>,
-    #[serde(skip)]
-    window_scale_factor: AtomicCell<f32>,
-    #[serde(skip)]
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    host_scale_factor: AtomicCell<Option<f32>>,
-    /// Whether the editor's window is currently open.
-    #[serde(skip)]
-    open: AtomicBool,
-}
-
-impl CustomGlEditorState {
-    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
-        Arc::new(Self {
-            size: AtomicCell::new(size),
-            window_scale_factor: AtomicCell::new(1.0),
-            host_scale_factor: AtomicCell::new(None),
-            open: AtomicBool::new(false),
-        })
-    }
-
-    /// Returns a `(width, height)` pair for the current size of the GUI in logical pixels.
-    pub fn size(&self) -> Size {
-        self.size.load().into()
-    }
-
-    pub fn window_scale_factor(&self) -> f32 {
-        self.window_scale_factor.load()
-    }
-
-    pub fn host_scale_factor(&self) -> Option<f32> {
-        self.host_scale_factor.load()
-    }
-
-    /// Whether the GUI is currently visible.
-    // Called `is_open()` instead of `open()` to avoid the ambiguity.
-    pub fn is_open(&self) -> bool {
-        self.open.load(Ordering::Acquire)
-    }
-}
-
-impl<'a> PersistentField<'a, CustomGlEditorState> for Arc<CustomGlEditorState> {
-    fn set(&self, new_value: CustomGlEditorState) {
-        self.size.store(new_value.size.load());
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&CustomGlEditorState) -> R,
-    {
-        f(self)
-    }
-}
-
-pub struct CustomGlEditor {
+pub struct GlEditor {
     params: Arc<MyPluginParams>,
-    peak_meter: Arc<AtomicF32>,
+    editor_state: Arc<GlEditorState>,
 }
 
-impl Editor for CustomGlEditor {
+impl Editor for GlEditor {
+    type Handle = GlEditorHandle;
+
     fn spawn(
         &self,
-        parent: ParentWindowHandle,
-        context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any> {
-        let size = self.params.editor_state.size();
-        let host_scale_factor = self.params.editor_state.host_scale_factor();
-
-        let gui_context = Arc::clone(&context);
-
+        parent: Option<ParentWindowHandle>,
+        wait_for_parent: bool,
+        fallback_scale_factor: Option<f64>,
+        gui_context: GuiContext,
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
         let params = Arc::clone(&self.params);
-        let peak_meter = Arc::clone(&self.peak_meter);
+        let editor_state = Arc::clone(&self.editor_state);
 
-        let scale_policy = host_scale_factor
-            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
+        let redraw_requested = Arc::new(AtomicBool::new(true));
+        let redraw_requested_2 = Arc::clone(&redraw_requested);
 
-        let window = baseview::Window::open_parented(
-            &parent,
-            WindowOpenOptions::new()
+        // The host is a re-implementation of
+        // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // and
+        // [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
+        // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
+        //
+        // Create a small wrapper to adapt it to baseview's HostCallbacks traits.
+        let host = {
+            struct HostCallbackAdapter {
+                host: Box<dyn nice_plug::editor::HostCallbacks>,
+            }
+            impl baseview::host::HostCallbacks for HostCallbackAdapter {
+                fn request_resize(
+                    &mut self,
+                    new_size: baseview::WindowSize,
+                ) -> Result<(), HandlerError> {
+                    self.host
+                        .request_resize(new_size.physical.into(), new_size.scale_factor)
+                        .map_err(HandlerError::from_boxed)
+                }
+
+                fn destroyed(&mut self) {
+                    self.host.destroyed();
+                }
+            }
+            struct HostMainThreadCallerAdapter {
+                host: Box<dyn nice_plug::editor::HostMainThreadCaller>,
+            }
+            impl baseview::host::HostMainThreadCaller for HostMainThreadCallerAdapter {
+                fn call_main_thread(&mut self) {
+                    self.host.call_main_thread();
+                }
+            }
+            host.map(|host| {
+                baseview::host::Host::new()
+                    .with_callbacks(HostCallbackAdapter {
+                        host: host.callbacks,
+                    })
+                    .with_main_thread(HostMainThreadCallerAdapter {
+                        host: host.main_thread_caller,
+                    })
+            })
+        };
+
+        let window = baseview::Window::create_with_host(
+            WindowSettings::new()
                 .with_title("OpenGL Window")
-                .with_size(size)
-                .with_scale_policy(scale_policy)
+                .with_size(self.editor_state.logical_size())
+                .with_min_size::<LogicalSize<f32>>(Some(MIN_SIZE))
+                .with_resizable(RESIZE_HINT.can_resize)
+                .with_parent(parent.as_ref())
+                .with_wait_for_parent(wait_for_parent)
+                .with_fallback_scale_factor(fallback_scale_factor)
                 .with_gl_config(Some(GlConfig {
                     version: (3, 2),
                     red_bits: 8,
@@ -339,84 +390,187 @@ impl Editor for CustomGlEditor {
                     vsync: false,
                     ..Default::default()
                 })),
-            move |window: WindowContext| -> CustomGlWindow {
-                CustomGlWindow::new(window, gui_context, params, peak_meter)
-            },
-        );
+            move |window: WindowContext| -> Result<GlWindow, HandlerError> {
+                editor_state.scale_factor.store(window.size().scale_factor);
 
-        self.params.editor_state.open.store(true, Ordering::Release);
-        Box::new(CustomGlEditorHandle {
-            state: self.params.editor_state.clone(),
+                GlWindow::new(
+                    window,
+                    gui_context,
+                    params,
+                    editor_state,
+                    redraw_requested_2,
+                )
+                .map_err(|e| e.into())
+            },
+            host,
+        )?;
+
+        self.editor_state.open.store(true, Ordering::Release);
+
+        Ok(SpawnedEditor {
+            handle: GlEditorHandle {
+                state: Arc::clone(&self.editor_state),
+                redraw_requested,
+            },
             window,
         })
     }
 
-    fn size(&self) -> Size {
-        self.params.editor_state.size()
+    fn size(&self) -> PhysicalSize<u32> {
+        self.editor_state.physical_size()
     }
 
-    fn set_scale_factor(&self, factor: f64) -> bool {
-        // If the editor is currently open then the host must not change the current HiDPI scale as
-        // we don't have a way to handle that. Ableton Live does this.
-        if self.params.editor_state.is_open() {
-            return false;
-        }
+    fn resize_hint(&self) -> ResizeHint {
+        RESIZE_HINT
+    }
+}
 
-        self.params
-            .editor_state
-            .host_scale_factor
-            .store(Some(factor as f32));
-        true
+/// A handle to a spawned instance of our Editor.
+pub struct GlEditorHandle {
+    state: Arc<GlEditorState>,
+    redraw_requested: Arc<AtomicBool>,
+}
+
+impl EditorHandle for GlEditorHandle {
+    type Window = baseview::Window;
+    type Error = baseview::Error;
+
+    fn run_until_closed(window: Self::Window) -> Result<(), Self::Error> {
+        window.run_until_closed()
+    }
+
+    fn set_parent(
+        &self,
+        parent: ParentWindowHandle,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.set_parent(&parent)
+    }
+
+    fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        let res = window.show();
+
+        // TODO: This might be a baseview bug. the `baseview::WindowEvent::Focused`
+        // event does not always get called after `window.show()` is called. Either
+        // that, or baseview needs to add a `baseview::WindowEvent::Shown` event.
+        //
+        // For now, we must manually trigger a redraw.
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        res
+    }
+
+    fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.hide()
+    }
+
+    fn host_main_thread_callback(&self, window: &Self::Window) {
+        window.host_main_thread_callback();
+    }
+
+    fn set_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.resize(new_size)
+    }
+
+    fn set_fallback_scale_factor(
+        &self,
+        scale_factor: f64,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.suggest_fallback_scale_factor(scale_factor)
+    }
+
+    /// Return the closest supported size.
+    fn adjust_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Option<PhysicalSize<u32>> {
+        let current_size = window.size();
+        Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
+    }
+
+    fn on_virtual_key_from_host(
+        &self,
+        _key_code: VirtualKeyCode,
+        _is_down: bool,
+        _modifiers: Modifiers,
+    ) -> bool {
+        false
+    }
+
+    fn state_changed(&self) {
+        self.redraw_requested.store(true, Ordering::Relaxed);
     }
 
     fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
-        // As mentioned above, for now we'll always force a redraw to allow meter widgets to work
-        // correctly. In the future we can use an `Arc<AtomicBool>` and only force a redraw when
-        // that boolean is set.
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
     }
 
-    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {}
-
-    fn param_values_changed(&self) {
-        // Same
+    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
     }
 }
 
-/// The window handle used for [`CustomGlEditor`].
-struct CustomGlEditorHandle {
-    state: Arc<CustomGlEditorState>,
-    window: WindowHandle,
-}
-
-impl Drop for CustomGlEditorHandle {
+impl Drop for GlEditorHandle {
     fn drop(&mut self) {
         self.state.open.store(false, Ordering::Release);
-        // XXX: This should automatically happen when the handle gets dropped, but apparently not
-        self.window.close();
     }
 }
+
+#[derive(Debug)]
+pub struct GlEditorState {
+    /// The window's size in logical pixels before applying `scale_factor`.
+    logical_size: AtomicCell<LogicalSize<f32>>,
+    /// Whether the editor's window is currently open.
+    open: AtomicBool,
+    scale_factor: AtomicCell<f64>,
+}
+
+impl GlEditorState {
+    pub fn from_size(size: LogicalSize<f32>) -> Self {
+        Self {
+            logical_size: AtomicCell::new(size),
+            open: AtomicBool::new(false),
+            scale_factor: AtomicCell::new(1.0),
+        }
+    }
+
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        self.logical_size.load()
+    }
+
+    pub fn physical_size(&self) -> PhysicalSize<u32> {
+        let logical_size = self.logical_size();
+        let scale_factor = self.scale_factor();
+        logical_size.to_physical(scale_factor)
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor.load()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open.load(Ordering::Acquire)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------
 
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct MyPlugin {
     params: Arc<MyPluginParams>,
-
-    /// Needed to normalize the peak meter's response based on the sample rate.
-    peak_meter_decay_weight: f32,
-    /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
-    /// the GUI and the audio processing parts. If you have more state to share, then it's a good
-    /// idea to put all of that in a struct behind a single `Arc`.
-    ///
-    /// This is stored as voltage gain.
-    peak_meter: Arc<AtomicF32>,
+    editor_state: Arc<GlEditorState>,
 }
 
 #[derive(Params)]
 pub struct MyPluginParams {
-    /// The editor state, saved together with the parameter state so the custom scaling can be
-    /// restored.
-    #[persist = "editor-state"]
-    editor_state: Arc<CustomGlEditorState>,
-
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -428,9 +582,7 @@ impl Default for MyPlugin {
     fn default() -> Self {
         Self {
             params: Arc::new(MyPluginParams::default()),
-
-            peak_meter_decay_weight: 1.0,
-            peak_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
+            editor_state: Arc::new(GlEditorState::from_size(MIN_SIZE)),
         }
     }
 }
@@ -438,8 +590,6 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomGlEditorState::from_size(LogicalSize::new(400.0, 300.0)),
-
             // See the main gain example for more details
             gain: FloatParam::new(
                 "Gain",
@@ -482,6 +632,7 @@ impl Plugin for MyPlugin {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = GlEditor;
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -489,25 +640,19 @@ impl Plugin for MyPlugin {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(CustomGlEditor {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        Some(GlEditor {
             params: Arc::clone(&self.params),
-            peak_meter: Arc::clone(&self.peak_meter),
-        }))
+            editor_state: Arc::clone(&self.editor_state),
+        })
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        _buffer_config: &BufferConfig,
+        _context: &mut impl ActivateContext<Self>,
     ) -> bool {
-        // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
-        // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
-
         true
     }
 
@@ -518,29 +663,15 @@ impl Plugin for MyPlugin {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         for channel_samples in buffer.iter_samples() {
-            let mut amplitude = 0.0;
-            let num_samples = channel_samples.len();
-
             let gain = self.params.gain.smoothed.next();
             for sample in channel_samples {
                 *sample *= gain;
-                amplitude += *sample;
             }
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
-            if self.params.editor_state.is_open() {
-                amplitude = (amplitude / num_samples as f32).abs();
-                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
-                let new_peak_meter = if amplitude > current_peak_meter {
-                    amplitude
-                } else {
-                    current_peak_meter * self.peak_meter_decay_weight
-                        + amplitude * (1.0 - self.peak_meter_decay_weight)
-                };
-
-                self.peak_meter
-                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+            if self.editor_state.is_open() {
+                // Put stuff here
             }
         }
 

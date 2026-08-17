@@ -60,6 +60,9 @@ impl Plugin for SysEx {
     const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::Basic;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     type SysExMessage = CoolSysExMessage;
     type BackgroundTask = ();
 

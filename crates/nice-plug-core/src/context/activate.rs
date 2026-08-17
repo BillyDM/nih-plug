@@ -3,14 +3,14 @@
 use super::PluginApi;
 use crate::plugin::Plugin;
 
-/// Callbacks the plugin can make while it is being initialized. This is passed to the plugin during
-/// [`Plugin::initialize()`][crate::plugin::Plugin::initialize()].
+/// Callbacks the plugin can make while it is being activated. This is passed to the plugin during
+/// [`Plugin::activate()`][crate::plugin::Plugin::activate()].
 //
 // # Safety
 //
 // The implementing wrapper needs to be able to handle concurrent requests, and it should perform
 // the actual callback within [MainThreadQueue::schedule_gui].
-pub trait InitContext<P: Plugin> {
+pub trait ActivateContext<P: Plugin> {
     /// Get the current plugin API.
     fn plugin_api(&self) -> PluginApi;
 

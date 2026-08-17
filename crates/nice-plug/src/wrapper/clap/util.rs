@@ -58,6 +58,7 @@ pub(crate) use check_null_ptr_msg;
 pub(crate) use clap_call;
 
 /// Send+Sync wrapper around CLAP host extension pointers.
+#[derive(Clone)]
 pub struct ClapPtr<T> {
     inner: *const T,
 }

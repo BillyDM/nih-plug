@@ -12,23 +12,95 @@ use super::PluginApi;
 /// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
 /// values. This is passed to the plugin during [`Editor::spawn()`][crate::editor::Editor::spawn()].
 /// All of these functions assume they're being called from the main GUI thread.
+#[derive(Clone)]
+pub struct GuiContext {
+    inner: Arc<dyn GuiContextInner>,
+}
+
+impl GuiContext {
+    pub fn new(inner: Arc<dyn GuiContextInner>) -> Self {
+        Self { inner }
+    }
+
+    /// Get the current plugin API. This may be useful to display in the plugin's GUI as part of an
+    /// about screen.
+    pub fn plugin_api(&self) -> PluginApi {
+        self.inner.plugin_api()
+    }
+
+    pub fn param_setter<'a>(&'a self) -> ParamSetter<'a> {
+        ParamSetter {
+            raw_context: &*self.inner,
+        }
+    }
+
+    /// Inform the host a parameter will be automated. Create a [`ParamSetter`] and use
+    /// [`ParamSetter::begin_set_parameter()`] instead for a safe, user friendly API.
+    ///
+    /// # Safety
+    ///
+    /// The implementing function still needs to check if `param` actually exists. This function is
+    /// mostly marked as unsafe for API reasons.
+    pub unsafe fn raw_begin_set_parameter(&self, param: ParamPtr) {
+        unsafe {
+            self.inner.raw_begin_set_parameter(param);
+        }
+    }
+
+    /// Inform the host a parameter is being automated with an already normalized value. Create a
+    /// [`ParamSetter`] and use [`ParamSetter::set_parameter()`] instead for a safe, user friendly
+    /// API.
+    ///
+    /// # Safety
+    ///
+    /// The implementing function still needs to check if `param` actually exists. This function is
+    /// mostly marked as unsafe for API reasons.
+    pub unsafe fn raw_set_parameter_normalized(&self, param: ParamPtr, normalized: f32) {
+        unsafe {
+            self.inner.raw_set_parameter_normalized(param, normalized);
+        }
+    }
+
+    /// Inform the host a parameter has been automated. Create a [`ParamSetter`] and use
+    /// [`ParamSetter::end_set_parameter()`] instead for a safe, user friendly API.
+    ///
+    /// # Safety
+    ///
+    /// The implementing function still needs to check if `param` actually exists. This function is
+    /// mostly marked as unsafe for API reasons.
+    pub unsafe fn raw_end_set_parameter(&self, param: ParamPtr) {
+        unsafe {
+            self.inner.raw_end_set_parameter(param);
+        }
+    }
+
+    /// Serialize the plugin's current state to a serde-serializable object. Useful for implementing
+    /// preset handling within a plugin's GUI.
+    pub fn get_state(&self) -> PluginState {
+        self.inner.get_state()
+    }
+
+    /// Restore the state from a previously serialized state object. This will block the GUI thread
+    /// until the state has been restored and a parameter value rescan has been requested from the
+    /// host. If the plugin is currently processing audio, then the parameter values will be
+    /// restored at the end of the current processing cycle.
+    pub fn set_state(&self, state: PluginState) {
+        self.inner.set_state(state);
+    }
+}
+
+/// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
+/// values. This is passed to the plugin during [`Editor::spawn()`][crate::editor::Editor::spawn()].
+/// All of these functions assume they're being called from the main GUI thread.
 //
 // # Safety
 //
 // The implementing wrapper can assume that everything is being called from the main thread. Since
 // nice-plug doesn't own the GUI event loop, this invariant cannot be part of the interface.
-pub trait GuiContext: Send + Sync + 'static {
+pub trait GuiContextInner: Send + Sync + 'static {
     /// Get the current plugin API. This may be useful to display in the plugin's GUI as part of an
     /// about screen.
     fn plugin_api(&self) -> PluginApi;
-
-    /// Ask the host to resize the editor window to the size specified by
-    /// [`Editor::size()`][crate::editor::Editor::size()]. This will return false if the host
-    /// somehow didn't like this and rejected the resize, in which case the window should revert to
-    /// its old size. You should only actually resize your embedded window once this returns `true`.
-    ///
-    /// TODO: Host->Plugin resizing has not been implemented yet
-    fn request_resize(&self) -> bool;
 
     /// Inform the host a parameter will be automated. Create a [`ParamSetter`] and use
     /// [`ParamSetter::begin_set_parameter()`] instead for a safe, user friendly API.
@@ -78,8 +150,8 @@ pub trait GuiContext: Send + Sync + 'static {
 /// # Note
 ///
 /// This is only intended to be used from the GUI. Use the methods on
-/// [`InitContext`][crate::context::init::InitContext] and
-/// [`ProcessContext`][crate::context::process::ProcessContext] to run tasks during the `initialize()`
+/// [`ActivateContext`][crate::context::activate::ActivateContext] and
+/// [`ProcessContext`][crate::context::process::ProcessContext] to run tasks during the `activate()`
 /// and `process()` functions.
 //
 // NOTE: This is separate from `GuiContext` because adding a type parameter there would clutter up a
@@ -115,7 +187,7 @@ impl<P: Plugin> Clone for AsyncExecutor<P> {
 /// the host and reflected in the plugin's [`Params`][crate::params::Params] object. These
 /// functions should only be called from the main thread.
 pub struct ParamSetter<'a> {
-    pub raw_context: &'a dyn GuiContext,
+    pub raw_context: &'a dyn GuiContextInner,
 }
 
 impl<P: Plugin> AsyncExecutor<P> {
@@ -145,7 +217,7 @@ impl<P: Plugin> AsyncExecutor<P> {
 }
 
 impl<'a> ParamSetter<'a> {
-    pub fn new(context: &'a dyn GuiContext) -> Self {
+    pub fn new(context: &'a dyn GuiContextInner) -> Self {
         Self {
             raw_context: context,
         }

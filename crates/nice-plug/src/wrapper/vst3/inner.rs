@@ -1,34 +1,44 @@
 use atomic_refcell::AtomicRefCell;
 use crossbeam::atomic::AtomicCell;
-use crossbeam::channel::{self, SendTimeoutError};
+use crossbeam::channel;
 use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
-use nice_plug_core::context::gui::AsyncExecutor;
+#[cfg(feature = "editor")]
+use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
-use nice_plug_core::editor::Editor;
+#[cfg(feature = "editor")]
+use nice_plug_core::editor::dpi::Size;
+#[cfg(feature = "editor")]
+use nice_plug_core::editor::{Editor, SpawnedEditor};
 use nice_plug_core::midi::{MidiConfig, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
 use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor, TrackInfo};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
+#[cfg(feature = "editor")]
+use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use vst3::ComPtr;
+#[cfg(feature = "editor")]
+use vst3::ComWrapper;
 use vst3::Steinberg::Vst::{IComponentHandler, IComponentHandlerTrait, RestartFlags_};
 use vst3::Steinberg::{kInvalidArgument, kResultOk, tresult};
-use vst3::{ComPtr, ComWrapper};
 
-use super::context::{WrapperGuiContext, WrapperInitContext, WrapperProcessContext};
+use super::context::{WrapperActivateContext, WrapperProcessContext};
 use super::note_expressions::NoteExpressionController;
 use super::param_units::ParamUnits;
 use super::util::{VST3_MIDI_PARAMS_END, VST3_MIDI_PARAMS_START};
-use super::view::WrapperView;
 use crate::event_loop::{EventLoop, MainThreadExecutor, OsEventLoop};
 use crate::util::permit_alloc;
 use crate::wrapper::state;
 use crate::wrapper::util::buffer_management::BufferManager;
 use crate::wrapper::util::{hash_param_id, process_wrapper};
 use crate::wrapper::vst3::Vst3Plugin;
+#[cfg(feature = "editor")]
+use crate::wrapper::vst3::context::WrapperGuiContext;
+#[cfg(feature = "editor")]
+use crate::wrapper::vst3::view::WrapperView;
 
 /// The actual wrapper bits. We need this as an `Arc<T>` so we can safely use our event loop API.
 /// Since we can't combine that with VST3's interior reference counting this just has to be moved to
@@ -46,16 +56,24 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
     #[allow(clippy::type_complexity)]
-    pub editor: AtomicRefCell<Option<Arc<Mutex<Box<dyn Editor>>>>>,
+    #[cfg(feature = "editor")]
+    pub editor: AtomicRefCell<Option<Arc<Mutex<P::Editor>>>>,
+    #[allow(clippy::type_complexity)]
+    // My personal record for craziest Rust type!!!!
+    #[cfg(feature = "editor")]
+    pub editor_window:
+        Arc<AtomicRefCell<Option<fragile::Fragile<SpawnedEditor<<P::Editor as Editor>::Handle>>>>>,
 
     /// The host's [`IComponentHandler`] instance, if passed through
     /// [`IEditController::set_component_handler`].
     pub component_handler: AtomicRefCell<Option<ComPtr<IComponentHandler>>>,
 
     /// Our own [`IPlugView`] instance.
+    #[cfg(feature = "editor")]
     pub plug_view: RwLock<Option<ComWrapper<WrapperView<P>>>>,
 
     /// Whether the editor is currently open. This is changed by the attached and removed functions on IPlugViewTrait
+    #[cfg(feature = "editor")]
     pub is_editor_open: AtomicBool,
 
     /// A realtime-safe task queue so the plugin can schedule tasks that need to be run later on the
@@ -89,7 +107,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
 
     /// The last process status returned by the plugin. This is used for tail handling.
     pub last_process_status: AtomicCell<ProcessStatus>,
-    /// The current latency in samples, as set by the plugin through the [`InitContext`] and the
+    /// The current latency in samples, as set by the plugin through the [`ActivateContext`] and the
     /// [`ProcessContext`].
     pub current_latency: AtomicU32,
     /// A data structure that helps manage and create buffers for all of the plugin's inputs and
@@ -161,16 +179,21 @@ pub enum Task<P: Plugin> {
     /// Execute one of the plugin's background tasks.
     PluginTask(P::BackgroundTask),
     /// Inform the plugin that one or more parameter values have changed.
-    ParameterValuesChanged,
+    #[cfg(feature = "editor")]
+    StateChanged,
     /// Inform the plugin that one parameter's value has changed. This uses the parameter hashes
     /// since the task will be created from the audio thread.
+    #[cfg(feature = "editor")]
     ParameterValueChanged(u32, f32),
     /// Trigger a restart with the given restart flags. This is a bit set of the flags from
     /// [`vst3::Steinberg::Vst::RestartFlags`].
     TriggerRestart(i32),
-    /// Request the editor to be resized according to its current size. Right now there is no way to
-    /// handle "denied resize" requests yet.
-    RequestResize,
+    // Request the editor to be resized according to its current size. Right now there is no way to
+    // handle "denied resize" requests yet.
+    #[cfg(feature = "editor")]
+    RequestResize { size: Size, scale_factor: f64 },
+    #[cfg(feature = "editor")]
+    CallMainThread,
 }
 
 /// VST3 makes audio processing pretty complicated. In order to support both block splitting for
@@ -293,12 +316,17 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             task_executor,
             params,
             // Initialized later as it needs a reference to the wrapper for the async executor
+            #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
+            editor_window: Arc::new(AtomicRefCell::new(None)),
 
             component_handler: AtomicRefCell::new(None),
 
+            #[cfg(feature = "editor")]
             plug_view: RwLock::new(None),
 
+            #[cfg(feature = "editor")]
             is_editor_open: AtomicBool::new(false),
 
             event_loop: AtomicRefCell::new(None),
@@ -316,7 +344,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             current_track_info: AtomicRefCell::new(TrackInfo::default()),
             last_process_status: AtomicCell::new(ProcessStatus::Normal),
             current_latency: AtomicU32::new(0),
-            // This is initialized just before calling `Plugin::initialize()` so that during the
+            // This is initialized just before calling `Plugin::activate()` so that during the
             // process call buffers can be initialized without any allocations
             buffer_manager: AtomicRefCell::new(BufferManager::for_audio_io_layout(
                 0,
@@ -344,60 +372,65 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             Some(OsEventLoop::new_and_spawn(Arc::downgrade(&wrapper)));
 
         // The editor also needs to be initialized later so the Async executor can work.
-        *wrapper.editor.borrow_mut() = wrapper
-            .plugin
-            .lock()
-            .editor(AsyncExecutor::new(
-                Arc::new({
-                    let wrapper = Arc::downgrade(&wrapper);
-                    move |task| {
-                        let wrapper = match wrapper.upgrade() {
-                            Some(wrapper) => wrapper,
-                            None => return,
-                        };
 
-                        let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-                Arc::new({
-                    let wrapper = Arc::downgrade(&wrapper);
-                    move |task| {
-                        let wrapper = match wrapper.upgrade() {
-                            Some(wrapper) => wrapper,
-                            None => return,
-                        };
+        #[cfg(feature = "editor")]
+        {
+            *wrapper.editor.borrow_mut() = wrapper
+                .plugin
+                .lock()
+                .editor(nice_plug_core::context::gui::AsyncExecutor::new(
+                    Arc::new({
+                        let wrapper = Arc::downgrade(&wrapper);
+                        move |task| {
+                            let wrapper = match wrapper.upgrade() {
+                                Some(wrapper) => wrapper,
+                                None => return,
+                            };
 
-                        let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-            ))
-            .map(|editor| Arc::new(Mutex::new(editor)));
+                            let task_posted = wrapper.schedule_background(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                    Arc::new({
+                        let wrapper = Arc::downgrade(&wrapper);
+                        move |task| {
+                            let wrapper = match wrapper.upgrade() {
+                                Some(wrapper) => wrapper,
+                                None => return,
+                            };
+
+                            let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                ))
+                .map(|editor| Arc::new(Mutex::new(editor)));
+        }
 
         wrapper
     }
 
-    pub fn make_gui_context(self: Arc<Self>) -> Arc<WrapperGuiContext<P>> {
-        Arc::new(WrapperGuiContext {
-            inner: self,
+    #[cfg(feature = "editor")]
+    pub fn make_gui_context(self: Arc<Self>) -> GuiContext {
+        GuiContext::new(Arc::new(WrapperGuiContext {
+            inner: Arc::downgrade(&self),
             #[cfg(debug_assertions)]
             param_gesture_checker: Default::default(),
-        })
+        }))
     }
 
     /// # Note
     ///
     /// The lock on the plugin must be dropped before this object is dropped to avoid deadlocks
     /// caused by reentrant function calls.
-    pub fn make_init_context(&self) -> WrapperInitContext<'_, P> {
-        WrapperInitContext {
+    pub fn make_activate_context(&self) -> WrapperActivateContext<'_, P> {
+        WrapperActivateContext {
             inner: self,
             pending_requests: Default::default(),
         }
@@ -441,6 +474,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             // regular event loop. If the editor gets dropped while there's still outstanding work
             // left in the run loop task queue, then those tasks will be posted to the regular event
             // loop so no work is lost.
+            #[cfg(feature = "editor")]
             if self.is_editor_open.load(Ordering::Relaxed) {
                 match self
                     .plug_view
@@ -455,6 +489,9 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             } else {
                 event_loop.schedule_gui(task)
             }
+
+            #[cfg(not(feature = "editor"))]
+            event_loop.schedule_gui(task)
         }
     }
 
@@ -488,12 +525,15 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                         unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                     }
 
-                    let task_posted =
-                        self.schedule_gui(Task::ParameterValueChanged(hash, normalized_value));
-                    crate::nice_debug_assert!(
-                        task_posted,
-                        "The task queue is full, dropping task..."
-                    );
+                    #[cfg(feature = "editor")]
+                    {
+                        let task_posted =
+                            self.schedule_gui(Task::ParameterValueChanged(hash, normalized_value));
+                        crate::nice_debug_assert!(
+                            task_posted,
+                            "The task queue is full, dropping task..."
+                        );
+                    }
                 }
 
                 kResultOk
@@ -505,6 +545,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
     /// Get the plugin's state object, may be called by the plugin's GUI as part of its own preset
     /// management. The wrapper doesn't use these functions and serializes and deserializes directly
     /// the JSON in the relevant plugin API methods instead.
+    #[cfg(feature = "editor")]
     pub fn get_state_object(&self) -> PluginState {
         unsafe {
             state::serialize_object::<P>(
@@ -517,7 +558,10 @@ impl<P: Vst3Plugin> WrapperInner<P> {
     /// Update the plugin's internal state, called by the plugin itself from the GUI thread. To
     /// prevent corrupting data and changing parameters during processing the actual state is only
     /// updated at the end of the audio processing cycle.
+    #[cfg(feature = "editor")]
     pub fn set_state_object_from_gui(&self, mut state: PluginState) {
+        use crossbeam::channel::SendTimeoutError;
+
         // Use a loop and timeouts to handle the super rare edge case when this function gets called
         // between a process call and the host disabling the plugin
         loop {
@@ -529,7 +573,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 // deallocated without blocking the audio thread.
                 match self
                     .updated_state_sender
-                    .send_timeout(state, Duration::from_secs(1))
+                    .send_timeout(state, std::time::Duration::from_secs(1))
                 {
                     Ok(_) => {
                         // As mentioned above, the state object will be passed back to this thread
@@ -591,7 +635,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
 
         // FIXME: This is obviously not realtime-safe, but loading presets without doing this could
         //        lead to inconsistencies. It's the plugin's responsibility to not perform any
-        //        realtime-unsafe work when the initialize function is called a second time if it
+        //        realtime-unsafe work when the activate function is called a second time if it
         //        supports runtime preset loading.  `state::deserialize_object()` normally never
         //        allocates, but if the plugin has persistent non-parameter data then its
         //        `deserialize_fields()` implementation may still allocate.
@@ -610,15 +654,15 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             return false;
         }
 
-        // If the plugin was already initialized then it needs to be reinitialized
+        // If the plugin was already activated then it needs to be reactivated
         if let Some(buffer_config) = buffer_config {
             // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-            let mut init_context = self.make_init_context();
+            let mut activate_context = self.make_activate_context();
             let mut plugin = self.plugin.lock();
 
             // See above
             success = permit_alloc(|| {
-                plugin.initialize(&audio_io_layout, &buffer_config, &mut init_context)
+                plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context)
             });
             if success {
                 process_wrapper(|| plugin.reset());
@@ -630,15 +674,10 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             "Plugin returned false when reinitializing after loading state"
         );
 
-        // Reinitialize the plugin after loading state so it can respond to the new parameter values
-        let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-
-        // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
-        //       could keep track of the last known size and compare the GUI's current size against
-        //       that but that also seems brittle.
-        if self.is_editor_open.load(Ordering::SeqCst) {
-            let task_posted = self.schedule_gui(Task::RequestResize);
+        #[cfg(feature = "editor")]
+        {
+            // Reinitialize the plugin after loading state so it can respond to the new parameter values
+            let task_posted = self.schedule_gui(Task::StateChanged);
             crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
 
@@ -651,21 +690,24 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
         // This function is always called from the main thread
         match task {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
-            Task::ParameterValuesChanged => {
-                if self.is_editor_open.load(Ordering::SeqCst) {
-                    if let Some(editor) = self.editor.borrow().as_ref() {
-                        editor.lock().param_values_changed();
-                    }
+            #[cfg(feature = "editor")]
+            Task::StateChanged => {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    editor_window.get().handle.state_changed();
                 }
             }
+            #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_hash, normalized_value) => {
-                if self.is_editor_open.load(Ordering::SeqCst) {
-                    if let Some(editor) = self.editor.borrow().as_ref() {
-                        let param_id = &self.param_id_by_hash[&param_hash];
-                        editor
-                            .lock()
-                            .param_value_changed(param_id, normalized_value);
-                    }
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    let param_id = &self.param_id_by_hash[&param_hash];
+                    editor_window
+                        .get()
+                        .handle
+                        .param_value_changed(param_id, normalized_value);
                 }
             }
             Task::TriggerRestart(flags) => match &*self.component_handler.borrow() {
@@ -681,16 +723,30 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                 },
                 None => crate::nice_debug_assert_failure!("Component handler not yet set"),
             },
-            Task::RequestResize => {
+            #[cfg(feature = "editor")]
+            Task::RequestResize { size, scale_factor } => {
                 if self.is_editor_open.load(Ordering::SeqCst) {
                     unsafe {
                         crate::nice_debug_assert!(is_gui_thread);
-                        let success =
-                            WrapperView::request_resize(&self.plug_view.read().clone().unwrap());
-                        crate::nice_debug_assert!(success, "Failed requesting a window resize");
+                        let _success = WrapperView::request_resize(
+                            &self.plug_view.read().clone().unwrap(),
+                            size,
+                            scale_factor,
+                        );
                     }
                 } else {
                     crate::nice_debug_assert_failure!("Can't resize a closed editor");
+                }
+            }
+            #[cfg(feature = "editor")]
+            Task::CallMainThread => {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(editor_window) = self.editor_window.borrow().as_ref() {
+                    let editor_window = editor_window.get();
+                    editor_window
+                        .handle
+                        .host_main_thread_callback(&editor_window.window)
                 }
             }
         }

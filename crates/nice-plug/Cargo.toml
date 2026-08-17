@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug"
-version = "0.2.3"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -16,7 +16,9 @@ readme = "../../README.md"
 all-features = true
 
 [features]
-default = ["vst3", "tracing-subscriber"]
+default = ["editor", "vst3", "tracing-subscriber"]
+# Enables editor (GUI) support.
+editor = ["dep:fragile", "nice-plug-core/editor"]
 # Enabling this feature will cause the plugin to terminate when allocations
 # occur in the processing function during debug builds. Keep in mind that panics
 # may also allocate if they use string formatting, so temporarily disabling this
@@ -26,14 +28,14 @@ assert_process_allocs = ["dep:nice-assert-no-alloc", "nice-plug-core/assert_proc
 # `nice_export_standalone()` function. Disabled by default as this requires
 # building additional dependencies for audio and MIDI handling.
 standalone = [
-  "dep:baseview",
   "dep:clap",
   "dep:cpal",
   "dep:jack",
   "dep:midir",
   "dep:rtrb",
   "dep:fixed-resample",
-  "dep:audioadapter-buffers"
+  "dep:audioadapter-buffers",
+  "dep:ctrlc"
 ]
 # Enables the `nice_export_vst3!()` macro. Enabled by default.
 vst3 = ["dep:vst3", "dep:widestring"]
@@ -70,7 +72,7 @@ unsafe_flush_denormals = []
 
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.2" }
-nice-plug-core = { path = "../nice-plug-core", version = "0.2.0" }
+nice-plug-core = { path = "../nice-plug-core", version = "0.3.0", default-features = false }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 nice-log = { path = "../nice-log", version = "0.3.1" }
 clap-sys = "0.5.0"
@@ -84,6 +86,7 @@ atomic_refcell.workspace = true
 crossbeam.workspace = true
 anymap3 = "1.0.1"
 anyhow.workspace = true
+thiserror.workspace = true
 serde_json.workspace = true
 backtrace = "0.3.76"
 tracing.workspace = true
@@ -91,8 +94,7 @@ tracing-subscriber = { workspace = true, optional = true }
 raw-window-handle.workspace = true
 atomic_float.workspace = true
 zstd = { version = "0.13.3", optional = true }
-baseview = { workspace = true, optional = true }
-cpal = { version = "0.18.1", optional = true }
+cpal = { version = "0.18.2", optional = true }
 jack = { version = "0.13.5", optional = true }
 midir = { version = "0.11.0", optional = true }
 fixed-resample = { version = "0.12.0", default-features = false, features = ["channel"], optional = true }
@@ -101,7 +103,8 @@ rtrb = { workspace = true, optional = true }
 # Used for the `vst3` feature
 vst3 = { version = "0.3.0", optional = true }
 widestring = { version = "1.2.1", optional = true }
-fragile = { version = "2.1", default-features = false }
+fragile = { version = "2.1", default-features = false, optional = true }
+ctrlc = { version = "3.5.2", optional = true }
 
 [target.'cfg(all(target_family = "unix", not(target_os = "macos")))'.dependencies]
 libc = "0.2.124"

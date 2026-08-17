@@ -1,4 +1,3 @@
-use atomic_float::AtomicF64;
 use atomic_refcell::{AtomicRefCell, AtomicRefMut};
 use clap_sys::events::{
     CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_IS_LIVE, CLAP_EVENT_MIDI, CLAP_EVENT_MIDI_SYSEX,
@@ -22,10 +21,9 @@ use clap_sys::ext::audio_ports::{
 use clap_sys::ext::audio_ports_config::{
     CLAP_EXT_AUDIO_PORTS_CONFIG, clap_audio_ports_config, clap_plugin_audio_ports_config,
 };
-use clap_sys::ext::gui::{
-    CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
-    clap_gui_resize_hints, clap_host_gui, clap_plugin_gui, clap_window,
-};
+use clap_sys::ext::gui::CLAP_EXT_GUI;
+#[cfg(feature = "editor")]
+use clap_sys::ext::gui::{clap_host_gui, clap_plugin_gui};
 use clap_sys::ext::latency::{CLAP_EXT_LATENCY, clap_host_latency, clap_plugin_latency};
 use clap_sys::ext::note_ports::{
     CLAP_EXT_NOTE_PORTS, CLAP_NOTE_DIALECT_CLAP, CLAP_NOTE_DIALECT_MIDI, clap_note_port_info,
@@ -67,11 +65,12 @@ use clap_sys::stream::{clap_istream, clap_ostream};
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::{self, SendTimeoutError};
 use crossbeam::queue::ArrayQueue;
-use fragile::Fragile;
 use nice_plug_core::audio_setup::{AudioIOLayout, AuxiliaryBuffers, BufferConfig, ProcessMode};
-use nice_plug_core::context::gui::AsyncExecutor;
+#[cfg(feature = "editor")]
+use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
-use nice_plug_core::editor::{Editor, ParentWindowHandle, dpi::PhysicalSize};
+#[cfg(feature = "editor")]
+use nice_plug_core::editor::{Editor, SpawnedEditor};
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
@@ -80,12 +79,11 @@ use nice_plug_core::plugin::{
     Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo,
 };
 use parking_lot::Mutex;
-use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::{CStr, c_ulong, c_void};
+use std::ffi::{CStr, c_void};
 use std::mem;
-use std::num::{NonZeroIsize, NonZeroU32};
+use std::num::NonZeroU32;
 use std::os::raw::c_char;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -93,7 +91,7 @@ use std::sync::{Arc, Weak};
 use std::thread::{self, ThreadId};
 use std::time::Duration;
 
-use super::context::{WrapperGuiContext, WrapperInitContext, WrapperProcessContext};
+use super::context::{WrapperActivateContext, WrapperProcessContext};
 use super::descriptor::PluginDescriptor;
 use super::util::ClapPtr;
 use crate::event_loop::{BackgroundThread, EventLoop, MainThreadExecutor, TASK_QUEUE_CAPACITY};
@@ -101,6 +99,8 @@ use crate::midi::MidiResult;
 use crate::util::permit_alloc;
 use crate::wrapper::clap::ClapPlugin;
 use crate::wrapper::clap::context::RemoteControlPages;
+#[cfg(feature = "editor")]
+use crate::wrapper::clap::context::WrapperGuiContext;
 use crate::wrapper::clap::util::{read_stream, write_stream};
 use crate::wrapper::state::{self};
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
@@ -127,16 +127,20 @@ pub struct Wrapper<P: ClapPlugin> {
     /// The plugin's editor, if it has one. This object does not do anything on its own, but we need
     /// to instantiate this in advance so we don't need to lock the entire [`Plugin`] object when
     /// creating an editor. Wrapped in an `AtomicRefCell` because it needs to be initialized late.
-    editor: AtomicRefCell<Option<Mutex<Box<dyn Editor>>>>,
+    #[cfg(feature = "editor")]
+    editor: AtomicRefCell<Option<Mutex<P::Editor>>>,
     /// A handle for the currently active editor instance. The plugin should implement `Drop` on
     /// this handle for its closing behavior.
-    editor_handle: Mutex<Option<Fragile<Box<dyn Any>>>>,
+    #[cfg(feature = "editor")]
+    #[allow(clippy::type_complexity)]
+    editor_window:
+        AtomicRefCell<Option<fragile::Fragile<SpawnedEditor<<P::Editor as Editor>::Handle>>>>,
     /// The DPI scaling factor as passed to the [IPlugViewContentScaleSupport::set_scale_factor()]
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
-    scale_factor: AtomicF64,
-
+    #[cfg(feature = "editor")]
+    fallback_scale_factor: AtomicCell<Option<f64>>,
     is_activated: AtomicBool,
     is_processing: AtomicBool,
     /// The current IO configuration, modified through the `clap_plugin_audio_ports_config`
@@ -195,7 +199,9 @@ pub struct Wrapper<P: ClapPlugin> {
 
     clap_plugin_audio_ports: clap_plugin_audio_ports,
 
+    #[cfg(feature = "editor")]
     clap_plugin_gui: clap_plugin_gui,
+    #[cfg(feature = "editor")]
     host_gui: AtomicRefCell<Option<ClapPtr<clap_host_gui>>>,
 
     clap_plugin_latency: clap_plugin_latency,
@@ -289,14 +295,16 @@ pub struct Wrapper<P: ClapPlugin> {
 pub enum Task<P: Plugin> {
     /// Execute one of the plugin's background tasks.
     PluginTask(P::BackgroundTask),
-    /// Inform the plugin that one or more parameter values have changed.
-    ParameterValuesChanged,
     /// Inform the plugin that one parameter's value has changed. This uses the parameter hashes
     /// since the task will be created from the audio thread.
+    #[cfg(feature = "editor")]
     ParameterValueChanged(u32, f32),
     /// Inform the plugin that one parameter's modulation offset has changed. This uses the
     /// parameter hashes since the task will be created from the audio thread.
+    #[cfg(feature = "editor")]
     ParameterModulationChanged(u32, f32),
+    #[cfg(feature = "editor")]
+    StateChanged,
     /// Inform the host that the latency has changed.
     LatencyChanged,
     /// Inform the host that the voice info has changed.
@@ -386,31 +394,36 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
         // This function is always called from the main thread, from [Self::on_main_thread].
         match task {
             Task::PluginTask(task) => (self.task_executor.lock())(task),
-            Task::ParameterValuesChanged => {
-                if self.editor_handle.lock().is_some() {
-                    if let Some(editor) = self.editor.borrow().as_ref() {
-                        editor.lock().param_values_changed();
-                    }
-                }
-            }
+            #[cfg(feature = "editor")]
             Task::ParameterValueChanged(param_hash, normalized_value) => {
-                if self.editor_handle.lock().is_some() {
-                    if let Some(editor) = self.editor.borrow().as_ref() {
-                        let param_id = &self.param_id_by_hash[&param_hash];
-                        editor
-                            .lock()
-                            .param_value_changed(param_id, normalized_value);
-                    }
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
+                    let param_id = &self.param_id_by_hash[&param_hash];
+                    window
+                        .get()
+                        .handle
+                        .param_value_changed(param_id, normalized_value);
                 }
             }
+            #[cfg(feature = "editor")]
+            Task::StateChanged => {
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
+                    window.get().handle.state_changed();
+                }
+            }
+            #[cfg(feature = "editor")]
             Task::ParameterModulationChanged(param_hash, modulation_offset) => {
-                if self.editor_handle.lock().is_some() {
-                    if let Some(editor) = self.editor.borrow().as_ref() {
-                        let param_id = &self.param_id_by_hash[&param_hash];
-                        editor
-                            .lock()
-                            .param_modulation_changed(param_id, modulation_offset);
-                    }
+                use nice_plug_core::editor::EditorHandle;
+
+                if let Some(window) = self.editor_window.borrow().as_ref() {
+                    let param_id = &self.param_id_by_hash[&param_hash];
+                    window
+                        .get()
+                        .handle
+                        .param_modulation_changed(param_id, modulation_offset);
                 }
             }
             Task::LatencyChanged => match &*self.host_latency.borrow() {
@@ -573,9 +586,12 @@ impl<P: ClapPlugin> Wrapper<P> {
             task_executor,
             params,
             // Initialized later as it needs a reference to the wrapper for the async executor
+            #[cfg(feature = "editor")]
             editor: AtomicRefCell::new(None),
-            editor_handle: Mutex::new(None),
-            scale_factor: AtomicF64::new(1.0),
+            #[cfg(feature = "editor")]
+            editor_window: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
+            fallback_scale_factor: AtomicCell::new(None),
 
             is_activated: AtomicBool::new(false),
             is_processing: AtomicBool::new(false),
@@ -589,7 +605,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             last_process_status: AtomicCell::new(ProcessStatus::Normal),
             latency_changed: AtomicBool::new(false),
             current_latency: AtomicU32::new(0),
-            // This is initialized just before calling `Plugin::initialize()` so that during the
+            // This is initialized just before calling `Plugin::activate()` so that during the
             // process call buffers can be initialized without any allocations
             buffer_manager: AtomicRefCell::new(BufferManager::for_audio_io_layout(
                 0,
@@ -632,7 +648,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                 get: Some(Self::ext_audio_ports_get),
             },
 
-            clap_plugin_gui: clap_plugin_gui {
+            #[cfg(feature = "editor")]
+            clap_plugin_gui: clap_sys::ext::gui::clap_plugin_gui {
                 is_api_supported: Some(Self::ext_gui_is_api_supported),
                 get_preferred_api: Some(Self::ext_gui_get_preferred_api),
                 create: Some(Self::ext_gui_create),
@@ -649,6 +666,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 show: Some(Self::ext_gui_show),
                 hide: Some(Self::ext_gui_hide),
             },
+            #[cfg(feature = "editor")]
             host_gui: AtomicRefCell::new(None),
 
             clap_plugin_latency: clap_plugin_latency {
@@ -743,60 +761,64 @@ impl<P: ClapPlugin> Wrapper<P> {
             Some(BackgroundThread::get_or_create(Arc::downgrade(&wrapper)));
 
         // The editor also needs to be initialized later so the Async executor can work.
-        *wrapper.editor.borrow_mut() = wrapper
-            .plugin
-            .lock()
-            .editor(AsyncExecutor::new(
-                Arc::new({
-                    let wrapper = Arc::downgrade(&wrapper);
-                    move |task| {
-                        let wrapper = match wrapper.upgrade() {
-                            Some(wrapper) => wrapper,
-                            None => return,
-                        };
+        #[cfg(feature = "editor")]
+        {
+            *wrapper.editor.borrow_mut() = wrapper
+                .plugin
+                .lock()
+                .editor(nice_plug_core::context::gui::AsyncExecutor::new(
+                    Arc::new({
+                        let wrapper = Arc::downgrade(&wrapper);
+                        move |task| {
+                            let wrapper = match wrapper.upgrade() {
+                                Some(wrapper) => wrapper,
+                                None => return,
+                            };
 
-                        let task_posted = wrapper.schedule_background(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-                Arc::new({
-                    let wrapper = Arc::downgrade(&wrapper);
-                    move |task| {
-                        let wrapper = match wrapper.upgrade() {
-                            Some(wrapper) => wrapper,
-                            None => return,
-                        };
+                            let task_posted = wrapper.schedule_background(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                    Arc::new({
+                        let wrapper = Arc::downgrade(&wrapper);
+                        move |task| {
+                            let wrapper = match wrapper.upgrade() {
+                                Some(wrapper) => wrapper,
+                                None => return,
+                            };
 
-                        let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
-                        crate::nice_debug_assert!(
-                            task_posted,
-                            "The task queue is full, dropping task..."
-                        );
-                    }
-                }),
-            ))
-            .map(Mutex::new);
+                            let task_posted = wrapper.schedule_gui(Task::PluginTask(task));
+                            crate::nice_debug_assert!(
+                                task_posted,
+                                "The task queue is full, dropping task..."
+                            );
+                        }
+                    }),
+                ))
+                .map(Mutex::new);
+        }
 
         wrapper
     }
 
-    fn make_gui_context(self: Arc<Self>) -> Arc<WrapperGuiContext<P>> {
-        Arc::new(WrapperGuiContext {
-            wrapper: self,
+    #[cfg(feature = "editor")]
+    fn make_gui_context(self: Arc<Self>) -> GuiContext {
+        GuiContext::new(Arc::new(WrapperGuiContext {
+            wrapper: Arc::downgrade(&self),
             #[cfg(debug_assertions)]
             param_gesture_checker: Default::default(),
-        })
+        }))
     }
 
     /// # Note
     ///
     /// The lock on the plugin must be dropped before this object is dropped to avoid deadlocks
     /// caused by reentrant function calls.
-    fn make_init_context(&self) -> WrapperInitContext<'_, P> {
-        WrapperInitContext {
+    fn make_activate_context(&self) -> WrapperActivateContext<'_, P> {
+        WrapperActivateContext {
             wrapper: self,
             pending_requests: Default::default(),
         }
@@ -844,30 +866,6 @@ impl<P: ClapPlugin> Wrapper<P> {
         result
     }
 
-    /// Request a resize based on the editor's current reported size. As of CLAP 0.24 this can
-    /// safely be called from any thread. If this returns `false`, then the plugin should reset its
-    /// size back to the previous value.
-    pub fn request_resize(&self) -> bool {
-        match (
-            self.host_gui.borrow().as_ref(),
-            self.editor.borrow().as_ref(),
-        ) {
-            (Some(host_gui), Some(editor)) => {
-                let scale_factor = self.scale_factor.load(Ordering::Relaxed);
-                let size: PhysicalSize<u32> = editor.lock().size().to_physical(scale_factor);
-
-                unsafe_clap_call! {
-                    host_gui=>request_resize(
-                        &*self.host_callback,
-                        size.width,
-                        size.height,
-                    )
-                }
-            }
-            _ => false,
-        }
-    }
-
     /// Convenience function for setting a value for a parameter as triggered by a CLAP parameter
     /// update. The same rate is for updating parameter smoothing.
     ///
@@ -893,14 +891,19 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                             }
 
-                            // The GUI needs to be informed about the changed parameter value. This
-                            // triggers an `Editor::param_value_changed()` call on the GUI thread.
-                            let task_posted = self
-                                .schedule_gui(Task::ParameterValueChanged(hash, normalized_value));
-                            crate::nice_debug_assert!(
-                                task_posted,
-                                "The task queue is full, dropping task..."
-                            );
+                            #[cfg(feature = "editor")]
+                            {
+                                // The GUI needs to be informed about the changed parameter value. This
+                                // triggers an `Editor::param_value_changed()` call on the GUI thread.
+                                let task_posted = self.schedule_gui(Task::ParameterValueChanged(
+                                    hash,
+                                    normalized_value,
+                                ));
+                                crate::nice_debug_assert!(
+                                    task_posted,
+                                    "The task queue is full, dropping task..."
+                                );
+                            }
                         }
 
                         true
@@ -914,14 +917,16 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 unsafe { param_ptr._internal_update_smoother(sample_rate, false) };
                             }
 
-                            let task_posted = self.schedule_gui(Task::ParameterModulationChanged(
-                                hash,
-                                normalized_delta,
-                            ));
-                            crate::nice_debug_assert!(
-                                task_posted,
-                                "The task queue is full, dropping task..."
-                            );
+                            #[cfg(feature = "editor")]
+                            {
+                                let task_posted = self.schedule_gui(
+                                    Task::ParameterModulationChanged(hash, normalized_delta),
+                                );
+                                crate::nice_debug_assert!(
+                                    task_posted,
+                                    "The task queue is full, dropping task..."
+                                );
+                            }
                         }
 
                         true
@@ -1936,7 +1941,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // FIXME: This is obviously not realtime-safe, but loading presets without doing this could
         //        lead to inconsistencies. It's the plugin's responsibility to not perform any
-        //        realtime-unsafe work when the initialize function is called a second time if it
+        //        realtime-unsafe work when the activate function is called a second time if it
         //        supports runtime preset loading.  `state::deserialize_object()` normally never
         //        allocates, but if the plugin has persistent non-parameter data then its
         //        `deserialize_fields()` implementation may still allocate.
@@ -1955,19 +1960,22 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        // If the plugin was already initialized then it needs to be reinitialized
+        // If the plugin was already activated then it needs to be reactivated
         if let Some(buffer_config) = buffer_config {
-            // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-            let mut init_context = self.make_init_context();
+            let mut activate_context = self.make_activate_context();
             let mut plugin = self.plugin.lock();
 
             // See above
             success = permit_alloc(|| {
-                plugin.initialize(&audio_io_layout, &buffer_config, &mut init_context)
+                plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context)
             });
             if success {
                 process_wrapper(|| plugin.reset());
             }
+
+            // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
+            drop(activate_context);
+            drop(plugin);
         }
 
         crate::nice_debug_assert!(
@@ -1975,17 +1983,11 @@ impl<P: ClapPlugin> Wrapper<P> {
             "Plugin returned false when reinitializing after loading state"
         );
 
-        // Reinitialize the plugin after loading state so it can respond to the new parameter values
-        let task_posted = self.schedule_gui(Task::RescanParamValues);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-        let task_posted = self.schedule_gui(Task::ParameterValuesChanged);
-        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-
-        // TODO: Right now there's no way to know if loading the state changed the GUI's size. We
-        //       could keep track of the last known size and compare the GUI's current size against
-        //       that but that also seems brittle.
-        if self.editor_handle.lock().is_some() {
-            self.request_resize();
+        #[cfg(feature = "editor")]
+        {
+            // Reinitialize the plugin after loading state so it can respond to the new parameter values
+            let task_posted = self.schedule_gui(Task::StateChanged);
+            crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
         }
 
         success
@@ -1997,8 +1999,14 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // We weren't allowed to query these in the constructor, so we need to do it now instead.
         unsafe {
-            *wrapper.host_gui.borrow_mut() =
-                query_host_extension::<clap_host_gui>(&wrapper.host_callback, CLAP_EXT_GUI);
+            #[cfg(feature = "editor")]
+            {
+                *wrapper.host_gui.borrow_mut() = query_host_extension::<
+                    clap_sys::ext::gui::clap_host_gui,
+                >(
+                    &wrapper.host_callback, CLAP_EXT_GUI
+                );
+            }
             *wrapper.host_latency.borrow_mut() =
                 query_host_extension::<clap_host_latency>(&wrapper.host_callback, CLAP_EXT_LATENCY);
             *wrapper.host_params.borrow_mut() =
@@ -2061,9 +2069,9 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
 
         // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-        let mut init_context = wrapper.make_init_context();
+        let mut activate_context = wrapper.make_activate_context();
         let mut plugin = wrapper.plugin.lock();
-        if plugin.initialize(&audio_io_layout, &buffer_config, &mut init_context) {
+        if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context) {
             // NOTE: `Plugin::reset()` is called in `clap_plugin::start_processing()` instead of in
             //       this function
 
@@ -2506,33 +2514,47 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         let id = unsafe { CStr::from_ptr(id) };
 
-        if id == CLAP_EXT_AUDIO_PORTS_CONFIG {
+        if id == CLAP_EXT_PARAMS {
+            &wrapper.clap_plugin_params as *const _ as *const c_void
+        } else if id == CLAP_EXT_TAIL {
+            &wrapper.clap_plugin_tail as *const _ as *const c_void
+        } else if id == CLAP_EXT_GUI {
+            #[cfg(not(feature = "editor"))]
+            return std::ptr::null();
+
+            #[cfg(feature = "editor")]
+            if wrapper.editor.borrow().is_some() {
+                // Only report that we support this extension if the plugin has an editor
+                &wrapper.clap_plugin_gui as *const _ as *const c_void
+            } else {
+                std::ptr::null()
+            }
+        } else if id == CLAP_EXT_AUDIO_PORTS_CONFIG {
             &wrapper.clap_plugin_audio_ports_config as *const _ as *const c_void
         } else if id == CLAP_EXT_AUDIO_PORTS {
             &wrapper.clap_plugin_audio_ports as *const _ as *const c_void
-        } else if id == CLAP_EXT_GUI && wrapper.editor.borrow().is_some() {
-            // Only report that we support this extension if the plugin has an editor
-            &wrapper.clap_plugin_gui as *const _ as *const c_void
         } else if id == CLAP_EXT_LATENCY {
             &wrapper.clap_plugin_latency as *const _ as *const c_void
-        } else if id == CLAP_EXT_NOTE_PORTS
-            && (P::MIDI_INPUT >= MidiConfig::Basic || P::MIDI_OUTPUT >= MidiConfig::Basic)
-        {
-            &wrapper.clap_plugin_note_ports as *const _ as *const c_void
-        } else if id == CLAP_EXT_PARAMS {
-            &wrapper.clap_plugin_params as *const _ as *const c_void
+        } else if id == CLAP_EXT_NOTE_PORTS {
+            if P::MIDI_INPUT >= MidiConfig::Basic || P::MIDI_OUTPUT >= MidiConfig::Basic {
+                &wrapper.clap_plugin_note_ports as *const _ as *const c_void
+            } else {
+                std::ptr::null()
+            }
         } else if id == CLAP_EXT_REMOTE_CONTROLS {
             &wrapper.clap_plugin_remote_controls as *const _ as *const c_void
         } else if id == CLAP_EXT_RENDER {
             &wrapper.clap_plugin_render as *const _ as *const c_void
         } else if id == CLAP_EXT_STATE {
             &wrapper.clap_plugin_state as *const _ as *const c_void
-        } else if id == CLAP_EXT_TAIL {
-            &wrapper.clap_plugin_tail as *const _ as *const c_void
         } else if id == CLAP_EXT_TRACK_INFO {
             &wrapper.clap_plugin_track_info as *const _ as *const c_void
-        } else if id == CLAP_EXT_VOICE_INFO && P::CLAP_POLY_MODULATION_CONFIG.is_some() {
-            &wrapper.clap_plugin_voice_info as *const _ as *const c_void
+        } else if id == CLAP_EXT_VOICE_INFO {
+            if P::CLAP_POLY_MODULATION_CONFIG.is_some() {
+                &wrapper.clap_plugin_voice_info as *const _ as *const c_void
+            } else {
+                std::ptr::null()
+            }
         } else {
             crate::nice_trace!("Host tried to query unknown extension {:?}", id);
             std::ptr::null()
@@ -2542,6 +2564,18 @@ impl<P: ClapPlugin> Wrapper<P> {
     unsafe extern "C" fn on_main_thread(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        #[cfg(feature = "editor")]
+        {
+            use nice_plug_core::editor::EditorHandle;
+
+            if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+                let editor_window = editor_window.get();
+                editor_window
+                    .handle
+                    .host_main_thread_callback(&editor_window.window);
+            }
+        }
 
         // [Self::schedule_gui] posts a task to the queue and asks the host to call this function
         // on the main thread, so once that's done we can just handle all requests here
@@ -2771,6 +2805,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         true
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_is_api_supported(
         _plugin: *const clap_plugin,
         api: *const c_char,
@@ -2783,15 +2818,15 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         unsafe {
             #[cfg(all(target_family = "unix", not(target_os = "macos")))]
-            if CStr::from_ptr(api) == CLAP_WINDOW_API_X11 {
+            if CStr::from_ptr(api) == clap_sys::ext::gui::CLAP_WINDOW_API_X11 {
                 return true;
             }
             #[cfg(target_os = "macos")]
-            if CStr::from_ptr(api) == CLAP_WINDOW_API_COCOA {
+            if CStr::from_ptr(api) == clap_sys::ext::gui::CLAP_WINDOW_API_COCOA {
                 return true;
             }
             #[cfg(target_os = "windows")]
-            if CStr::from_ptr(api) == CLAP_WINDOW_API_WIN32 {
+            if CStr::from_ptr(api) == clap_sys::ext::gui::CLAP_WINDOW_API_WIN32 {
                 return true;
             }
         }
@@ -2799,6 +2834,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         false
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_get_preferred_api(
         _plugin: *const clap_plugin,
         api: *mut *const c_char,
@@ -2809,15 +2845,15 @@ impl<P: ClapPlugin> Wrapper<P> {
         unsafe {
             #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             {
-                *api = CLAP_WINDOW_API_X11.as_ptr();
+                *api = clap_sys::ext::gui::CLAP_WINDOW_API_X11.as_ptr();
             }
             #[cfg(target_os = "macos")]
             {
-                *api = CLAP_WINDOW_API_COCOA.as_ptr();
+                *api = clap_sys::ext::gui::CLAP_WINDOW_API_COCOA.as_ptr();
             }
             #[cfg(target_os = "windows")]
             {
-                *api = CLAP_WINDOW_API_WIN32.as_ptr();
+                *api = clap_sys::ext::gui::CLAP_WINDOW_API_WIN32.as_ptr();
             }
 
             // We don't do standalone floating windows yet
@@ -2827,6 +2863,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         true
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_create(
         plugin: *const clap_plugin,
         api: *const c_char,
@@ -2837,28 +2874,191 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        // In CLAP creating the editor window and embedding it in another window are separate, and
-        // those things are one and the same in our framework. So we'll just pretend we did
-        // something here.
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
-        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+        // For this function we need the underlying Arc so we can pass it to the editor
+        let wrapper = unsafe { Arc::from_raw((*plugin).plugin_data as *const Self) };
 
-        let editor_handle = wrapper.editor_handle.lock();
-        if editor_handle.is_none() {
-            true
+        let result = {
+            if wrapper.editor_window.borrow().is_none() {
+                use std::error::Error;
+
+                use nice_plug_core::editor::{
+                    HostCallbacks, HostMainThreadCaller, HostMethods, dpi::Size,
+                };
+
+                #[derive(Debug, thiserror::Error)]
+                enum ResizeError {
+                    #[error("Host refused window size: {0:?}")]
+                    HostRefusedSize(Size),
+                    #[error("Attempted to close window when plugin was closed")]
+                    PluginClosed,
+                }
+
+                struct ClapHostCallbacks<P: ClapPlugin> {
+                    wrapper: Weak<Wrapper<P>>,
+                    host_gui: ClapPtr<clap_host_gui>,
+                }
+
+                impl<P: ClapPlugin> HostCallbacks for ClapHostCallbacks<P> {
+                    fn request_resize(
+                        &mut self,
+                        new_size: Size,
+                        scale_factor: f64,
+                    ) -> Result<(), Box<dyn Error>> {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            use nice_plug_core::editor::dpi::PhysicalSize;
+
+                            let physical_size: PhysicalSize<u32> =
+                                new_size.to_physical(scale_factor);
+
+                            if unsafe_clap_call! {
+                                &*self.host_gui=>request_resize(
+                                    &*wrapper.host_callback,
+                                    physical_size.width,
+                                    physical_size.height,
+                                )
+                            } {
+                                Ok(())
+                            } else {
+                                Err(ResizeError::HostRefusedSize(new_size).into())
+                            }
+                        } else {
+                            Err(ResizeError::PluginClosed.into())
+                        }
+                    }
+
+                    fn destroyed(&mut self) {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            unsafe_clap_call! {
+                                &*self.host_gui=>closed(
+                                    &*wrapper.host_callback,
+                                    true,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                let callbacks: Box<dyn HostCallbacks> = Box::new(ClapHostCallbacks {
+                    wrapper: wrapper.this.borrow().clone(),
+                    host_gui: ClapPtr::clone(wrapper.host_gui.borrow().as_ref().unwrap()),
+                });
+
+                struct ClapHostMainThreadCaller<P: ClapPlugin> {
+                    wrapper: Weak<Wrapper<P>>,
+                }
+
+                impl<P: ClapPlugin> HostMainThreadCaller for ClapHostMainThreadCaller<P> {
+                    fn call_main_thread(&mut self) {
+                        if let Some(wrapper) = self.wrapper.upgrade() {
+                            unsafe_clap_call! { &*wrapper.host_callback=>request_callback(&*wrapper.host_callback) };
+                        }
+                    }
+                }
+
+                let main_thread_caller: Box<dyn HostMainThreadCaller> =
+                    Box::new(ClapHostMainThreadCaller {
+                        wrapper: wrapper.this.borrow().clone(),
+                    });
+
+                let fallback_scale_factor = wrapper.fallback_scale_factor.load();
+
+                match wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
+                    None,
+                    true,
+                    fallback_scale_factor,
+                    wrapper.clone().make_gui_context(),
+                    Some(HostMethods {
+                        callbacks,
+                        main_thread_caller,
+                    }),
+                ) {
+                    Ok(editor_window) => {
+                        *wrapper.editor_window.borrow_mut() =
+                            Some(fragile::Fragile::new(editor_window));
+                        true
+                    }
+                    Err(e) => {
+                        crate::nice_error!("Failed to open editor: {}", e);
+                        false
+                    }
+                }
+            } else {
+                crate::nice_debug_assert_failure!(
+                    "Host tried to create editor while editor is already open"
+                );
+
+                false
+            }
+        };
+
+        // Leak the Arc again since we only needed a clone to pass to the GuiContext
+        let _ = Arc::into_raw(wrapper);
+
+        result
+    }
+
+    #[cfg(feature = "editor")]
+    unsafe extern "C" fn ext_gui_set_parent(
+        plugin: *const clap_plugin,
+        window: *const clap_sys::ext::gui::clap_window,
+    ) -> bool {
+        use nice_plug_core::editor::{EditorHandle, ParentWindowHandle};
+        use std::ffi::c_ulong;
+        use std::num::NonZeroIsize;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, window);
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+        let window = unsafe { &*window };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            let api = unsafe { CStr::from_ptr(window.api) };
+            let parent_handle = unsafe {
+                if api == clap_sys::ext::gui::CLAP_WINDOW_API_X11 {
+                    #[allow(clippy::unnecessary_cast)]
+                    let w = window.specific.x11 as c_ulong;
+                    ParentWindowHandle::XlibWindow(w)
+                } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_COCOA {
+                    check_null_ptr!(false, window.specific.cocoa);
+                    let w = NonNull::new(window.specific.cocoa).unwrap();
+                    ParentWindowHandle::AppKitNsView(w)
+                } else if api == clap_sys::ext::gui::CLAP_WINDOW_API_WIN32 {
+                    check_null_ptr!(false, window.specific.win32);
+                    let w = NonZeroIsize::new(window.specific.win32 as isize).unwrap();
+                    ParentWindowHandle::Win32Hwnd(w)
+                } else {
+                    crate::nice_debug_assert_failure!("Host passed an invalid API");
+                    return false;
+                }
+            };
+
+            if let Err(e) = editor_window
+                .handle
+                .set_parent(parent_handle, editor_window.window.borrow())
+            {
+                crate::nice_error!("Failed to set editor parent window: {}", e);
+
+                false
+            } else {
+                true
+            }
         } else {
             crate::nice_debug_assert_failure!(
-                "Tried creating editor while the editor was already active"
+                "Host tried to set parent window while editor is not open"
             );
+
             false
         }
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_destroy(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        let mut editor_handle = wrapper.editor_handle.lock();
+        let mut editor_handle = wrapper.editor_window.borrow_mut();
         if editor_handle.is_some() {
             *editor_handle = None;
         } else {
@@ -2868,35 +3068,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
-    unsafe extern "C" fn ext_gui_set_scale(plugin: *const clap_plugin, scale: f64) -> bool {
-        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
-        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
-
-        // On macOS scaling is done by the OS, and all window sizes are in logical pixels
-        if cfg!(target_os = "macos") {
-            crate::nice_debug_assert_failure!(
-                "Ignoring host request to set explicit DPI scaling factor"
-            );
-            return false;
-        }
-
-        if wrapper
-            .editor
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .lock()
-            .set_scale_factor(scale)
-        {
-            wrapper
-                .scale_factor
-                .store(scale, std::sync::atomic::Ordering::Relaxed);
-            true
-        } else {
-            false
-        }
-    }
-
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_get_size(
         plugin: *const clap_plugin,
         width: *mut u32,
@@ -2911,25 +3083,21 @@ impl<P: ClapPlugin> Wrapper<P> {
         );
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        // For macOS the scaling factor is always 1
-        let scale_factor = wrapper.scale_factor.load(Ordering::Relaxed);
-        let size: PhysicalSize<u32> = wrapper
-            .editor
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .lock()
-            .size()
-            .to_physical(scale_factor);
+        if let Some(editor) = wrapper.editor.borrow().as_ref() {
+            let size: nice_plug_core::editor::dpi::PhysicalSize<u32> = editor.lock().size();
 
-        unsafe {
-            *width = size.width;
-            *height = size.height;
+            unsafe {
+                *width = size.width;
+                *height = size.height;
+            }
+
+            true
+        } else {
+            false
         }
-
-        true
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_can_resize(plugin: *const clap_plugin) -> bool {
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
@@ -2941,9 +3109,10 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_get_resize_hints(
         plugin: *const clap_plugin,
-        hints: *mut clap_gui_resize_hints,
+        hints: *mut clap_sys::ext::gui::clap_gui_resize_hints,
     ) -> bool {
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, hints);
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
@@ -2966,22 +3135,74 @@ impl<P: ClapPlugin> Wrapper<P> {
         true
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_adjust_size(
-        _plugin: *const clap_plugin,
-        _width: *mut u32,
-        _height: *mut u32,
+        plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
     ) -> bool {
-        // We accept whatever size the host proposes as-is (no snapping). The
-        // width/height are left untouched, signalling that the requested size is
-        // acceptable.
-        true
+        use nice_plug_core::editor::EditorHandle;
+        use nice_plug_core::editor::dpi::PhysicalSize;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            let size = unsafe { PhysicalSize::new(*width, *height) };
+
+            if let Some(new_size) = editor_window
+                .handle
+                .adjust_size(size, editor_window.window.borrow())
+            {
+                unsafe {
+                    *width = new_size.width;
+                    *height = new_size.height;
+                }
+
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
     }
 
+    #[cfg(feature = "editor")]
+    unsafe extern "C" fn ext_gui_set_scale(plugin: *const clap_plugin, scale: f64) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window
+                .handle
+                .set_fallback_scale_factor(scale, editor_window.window.borrow())
+            {
+                crate::nice_error!("Failed to set suggested scale factor: {}", e);
+                false
+            } else {
+                wrapper.fallback_scale_factor.store(Some(scale));
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_set_size(
         plugin: *const clap_plugin,
         width: u32,
         height: u32,
     ) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
         // The host calls this after honoring an earlier `request_resize()`, when
         // the user drags a host-drawn resize handle, and (on Linux) if an
         // asynchronous resize request fails.
@@ -2990,93 +3211,77 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // Hand the new size to the editor. If there is no editor open, or the
         // editor doesn't support being resized, this fails and we tell the host so.
-        match wrapper.editor.borrow().as_ref() {
-            Some(editor) => editor.lock().set_size(PhysicalSize { width, height }),
-            None => false,
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.set_size(
+                nice_plug_core::editor::dpi::PhysicalSize { width, height },
+                editor_window.window.borrow(),
+            ) {
+                crate::nice_error!("Failed to resize window to ({}, {}): {}", width, height, e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
         }
     }
 
-    unsafe extern "C" fn ext_gui_set_parent(
-        plugin: *const clap_plugin,
-        window: *const clap_window,
-    ) -> bool {
-        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data }, window);
-        // For this function we need the underlying Arc so we can pass it to the editor
-        let wrapper = unsafe { Arc::from_raw((*plugin).plugin_data as *const Self) };
-
-        let window = unsafe { &*window };
-
-        let result = {
-            let mut editor_handle = wrapper.editor_handle.lock();
-            if editor_handle.is_none() {
-                let api = unsafe { CStr::from_ptr(window.api) };
-                let parent_handle = unsafe {
-                    if api == CLAP_WINDOW_API_X11 {
-                        #[allow(clippy::unnecessary_cast)]
-                        let w = window.specific.x11 as c_ulong;
-                        ParentWindowHandle::XlibWindow(w)
-                    } else if api == CLAP_WINDOW_API_COCOA {
-                        check_null_ptr!(false, window.specific.cocoa);
-                        let w = NonNull::new(window.specific.cocoa).unwrap();
-                        ParentWindowHandle::AppKitNsView(w)
-                    } else if api == CLAP_WINDOW_API_WIN32 {
-                        check_null_ptr!(false, window.specific.win32);
-                        let w = NonZeroIsize::new(window.specific.win32 as isize).unwrap();
-                        ParentWindowHandle::Win32Hwnd(w)
-                    } else {
-                        crate::nice_debug_assert_failure!("Host passed an invalid API");
-                        return false;
-                    }
-                };
-
-                // This extension is only exposed when we have an editor
-                *editor_handle = Some(Fragile::new(
-                    wrapper
-                        .editor
-                        .borrow()
-                        .as_ref()
-                        .unwrap()
-                        .lock()
-                        .spawn(parent_handle, wrapper.clone().make_gui_context()),
-                ));
-
-                true
-            } else {
-                crate::nice_debug_assert_failure!(
-                    "Host tried to attach editor while the editor is already attached"
-                );
-
-                false
-            }
-        };
-
-        // Leak the Arc again since we only needed a clone to pass to the GuiContext
-        let _ = Arc::into_raw(wrapper);
-
-        result
-    }
-
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_set_transient(
         _plugin: *const clap_plugin,
-        _window: *const clap_window,
+        _window: *const clap_sys::ext::gui::clap_window,
     ) -> bool {
         // This is only relevant for floating windows
         false
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_gui_suggest_title(_plugin: *const clap_plugin, _title: *const c_char) {
         // This is only relevant for floating windows
     }
 
-    unsafe extern "C" fn ext_gui_show(_plugin: *const clap_plugin) -> bool {
-        // TODO: Does this get used? Is this only for the free-standing window extension? (which we
-        //       don't implement) This wouldn't make any sense for embedded editors.
-        false
+    #[cfg(feature = "editor")]
+    unsafe extern "C" fn ext_gui_show(plugin: *const clap_plugin) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.show(editor_window.window.borrow()) {
+                crate::nice_error!("Failed to show editor window: {}", e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
-    unsafe extern "C" fn ext_gui_hide(_plugin: *const clap_plugin) -> bool {
-        // TODO: Same as the above
-        false
+    #[cfg(feature = "editor")]
+    unsafe extern "C" fn ext_gui_hide(plugin: *const clap_plugin) -> bool {
+        use nice_plug_core::editor::EditorHandle;
+
+        check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
+        let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
+
+        if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.hide(editor_window.window.borrow()) {
+                crate::nice_error!("Failed to hide editor window: {}", e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     unsafe extern "C" fn ext_latency_get(plugin: *const clap_plugin) -> u32 {
@@ -3371,7 +3576,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             && wrapper.is_activated.load(Ordering::SeqCst)
         {
             // We may change process mode while activated. In that case, restart the audio processor
-            // so the plugin can react to the process mode change in `Plugin::initialize`.
+            // so the plugin can react to the process mode change in `Plugin::activate`.
             unsafe_clap_call! { &*wrapper.host_callback=>request_restart(&*wrapper.host_callback) };
         }
 

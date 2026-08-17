@@ -8,7 +8,7 @@ use crate::buffer::Buffer;
 /// defines a list of supported audio IO configs, with the first one acting as the default layout.
 /// Depending on the plugin API, the host may pick a different configuration from the list and use
 /// that instead. The final chosen configuration is passed as an argument to the
-/// [`Plugin::initialize()`][crate::plugin::Plugin::initialize] function so the plugin can allocate
+/// [`Plugin::activate()`][crate::plugin::Plugin::activate] function so the plugin can allocate
 /// its data structures based on the number of audio channels it needs to process.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AudioIOLayout {
@@ -85,12 +85,12 @@ pub struct BufferConfig {
     /// sized buffers up to this size, or between the minimum and the maximum buffer size if both
     /// are set.
     pub max_buffer_size: u32,
-    /// The current processing mode. The host will reinitialize the plugin any time this changes.
+    /// The current processing mode. The host will reactivate the plugin any time this changes.
     pub process_mode: ProcessMode,
 }
 
 /// The plugin's current processing mode. Exposed through [`BufferConfig::process_mode`]. The host
-/// will reinitialize the plugin whenever this changes.
+/// will reactivate the plugin whenever this changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
     /// The plugin is processing audio in real time at a fixed rate.

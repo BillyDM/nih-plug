@@ -122,6 +122,9 @@ impl Plugin for Sine {
     const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -129,11 +132,11 @@ impl Plugin for Sine {
         self.params.clone()
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        _context: &mut impl ActivateContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
 

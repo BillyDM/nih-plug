@@ -1,34 +1,38 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw Softbuffer rendering context.
 
 use baseview::{
-    WindowContext, WindowHandle, WindowOpenOptions, WindowScalePolicy,
-    dpi::{LogicalSize, Size},
+    HandlerError, WindowContext, WindowSettings,
+    dpi::{LogicalSize, PhysicalSize},
 };
 use crossbeam::atomic::AtomicCell;
-use nice_plug::params::persist::PersistentField;
-use nice_plug::prelude::*;
-use serde::{Deserialize, Serialize};
+use nice_plug::{
+    context::gui::GuiContext,
+    editor::{EditorHandle, HostMethods, SpawnedEditor},
+    prelude::*,
+};
+use softbuffer::SoftBufferError;
 use std::{
     cell::RefCell,
+    error::Error,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 
-/// The time it takes for the peak meter to decay by 12 dB after switching to complete silence.
-const PEAK_METER_DECAY_MS: f64 = 150.0;
+const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(200.0, 150.0);
+const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_SIZE);
 
-pub struct CustomSoftbufferWindow {
-    gui_context: Arc<dyn GuiContext>,
+pub struct SoftbufferWindow {
+    _gui_context: GuiContext,
     _window: WindowContext,
 
     surface: RefCell<Surface>,
 
     #[allow(unused)]
     params: Arc<MyPluginParams>,
-    #[allow(unused)]
-    peak_meter: Arc<AtomicF32>,
+    editor_state: Arc<SoftbufferEditorState>,
+    redraw_requested: Arc<AtomicBool>,
 }
 
 struct Surface {
@@ -36,42 +40,44 @@ struct Surface {
     sb_surface: softbuffer::Surface<WindowContext, WindowContext>,
 }
 
-impl CustomSoftbufferWindow {
+impl SoftbufferWindow {
     fn new(
         window: WindowContext,
-        gui_context: Arc<dyn GuiContext>,
+        gui_context: GuiContext,
         params: Arc<MyPluginParams>,
-        peak_meter: Arc<AtomicF32>,
-    ) -> Self {
+        editor_state: Arc<SoftbufferEditorState>,
+        redraw_requested: Arc<AtomicBool>,
+    ) -> Result<Self, SoftBufferError> {
         let size = window.size();
 
-        let sb_context =
-            softbuffer::Context::new(window.clone()).expect("could not get softbuffer context");
-        let mut sb_surface = softbuffer::Surface::new(&sb_context, window.clone())
-            .expect("could not create softbuffer surface");
+        let sb_context = softbuffer::Context::new(window.clone())?;
+        let mut sb_surface = softbuffer::Surface::new(&sb_context, window.clone())?;
 
-        sb_surface
-            .resize(
-                NonZeroU32::new(size.physical.width).unwrap(),
-                NonZeroU32::new(size.physical.height).unwrap(),
-            )
-            .unwrap();
+        sb_surface.resize(
+            NonZeroU32::new(size.physical.width).unwrap(),
+            NonZeroU32::new(size.physical.height).unwrap(),
+        )?;
 
-        Self {
-            gui_context,
+        Ok(Self {
+            _gui_context: gui_context,
             _window: window,
             surface: RefCell::new(Surface {
                 _sb_context: sb_context,
                 sb_surface,
             }),
             params,
-            peak_meter,
-        }
+            editor_state,
+            redraw_requested,
+        })
     }
 }
 
-impl baseview::WindowHandler for CustomSoftbufferWindow {
-    fn on_frame(&self) {
+impl baseview::WindowHandler for SoftbufferWindow {
+    fn on_frame(&self) -> Result<(), HandlerError> {
+        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
+            return Ok(());
+        }
+
         // Do rendering here.
 
         let mut surface = self.surface.borrow_mut();
@@ -80,7 +86,7 @@ impl baseview::WindowHandler for CustomSoftbufferWindow {
             sb_surface,
         } = &mut *surface;
 
-        let mut buffer = sb_surface.buffer_mut().unwrap();
+        let mut buffer = sb_surface.buffer_mut()?;
 
         let width = buffer.width().get();
         let height = buffer.height().get();
@@ -97,206 +103,302 @@ impl baseview::WindowHandler for CustomSoftbufferWindow {
             }
         }
 
-        buffer.present().unwrap();
+        if let Err(e) = buffer.present() {
+            nice_plug::nice_error!("{}", e);
+        }
+
+        Ok(())
     }
 
     fn on_event(&self, event: baseview::Event) -> baseview::EventStatus {
-        // Use this to set parameter values.
-        let _param_setter = ParamSetter::new(self.gui_context.as_ref());
-
         // Do event processing here.
-        #[allow(clippy::match_single_binding)]
+        #[allow(clippy::single_match)]
+        #[allow(clippy::collapsible_match)]
         match &event {
+            baseview::Event::Window(event) => match event {
+                baseview::WindowEvent::Focused => {
+                    self.redraw_requested.store(true, Ordering::Relaxed);
+                }
+                _ => {}
+            },
             _ => {}
         }
 
         baseview::EventStatus::Captured
     }
 
-    fn resized(&self, new_size: baseview::WindowSize) {
-        self.params
-            .editor_state
-            .window_scale_factor
-            .store(new_size.scale_factor as f32);
-        self.params.editor_state.size.store(new_size.logical.cast());
+    fn resized(&self, new_size: baseview::WindowSize) -> Result<(), HandlerError> {
+        self.surface.borrow_mut().sb_surface.resize(
+            NonZeroU32::new(new_size.physical.width).unwrap(),
+            NonZeroU32::new(new_size.physical.height).unwrap(),
+        )?;
 
-        self.surface
-            .borrow_mut()
-            .sb_surface
-            .resize(
-                NonZeroU32::new(new_size.physical.width).unwrap(),
-                NonZeroU32::new(new_size.physical.height).unwrap(),
-            )
-            .unwrap();
+        self.editor_state.scale_factor.store(new_size.scale_factor);
+        self.editor_state
+            .logical_size
+            .store(new_size.logical.cast());
+
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        Ok(())
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CustomSoftbufferEditorState {
-    /// The window's size in logical pixels before applying `scale_factor`.
-    #[serde(with = "nice_plug::params::persist::serialize_atomic_cell")]
-    size: AtomicCell<LogicalSize<f32>>,
-    #[serde(skip)]
-    window_scale_factor: AtomicCell<f32>,
-    #[serde(skip)]
-    /// The scaling factor reported by the host, if any. On macOS this will never be set and we
-    /// should use the system scaling factor instead.
-    host_scale_factor: AtomicCell<Option<f32>>,
-    /// Whether the editor's window is currently open.
-    #[serde(skip)]
-    open: AtomicBool,
+pub struct SoftbufferEditor {
+    params: Arc<MyPluginParams>,
+    editor_state: Arc<SoftbufferEditorState>,
 }
 
-impl CustomSoftbufferEditorState {
-    pub fn from_size(size: LogicalSize<f32>) -> Arc<Self> {
-        Arc::new(Self {
-            size: AtomicCell::new(size),
-            window_scale_factor: AtomicCell::new(1.0),
-            host_scale_factor: AtomicCell::new(None),
-            open: AtomicBool::new(false),
+impl Editor for SoftbufferEditor {
+    type Handle = SoftbufferEditorHandle;
+
+    fn spawn(
+        &self,
+        parent: Option<ParentWindowHandle>,
+        wait_for_parent: bool,
+        fallback_scale_factor: Option<f64>,
+        gui_context: GuiContext,
+        host: Option<HostMethods>,
+    ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>> {
+        let params = Arc::clone(&self.params);
+        let editor_state = Arc::clone(&self.editor_state);
+
+        let redraw_requested = Arc::new(AtomicBool::new(true));
+        let redraw_requested_2 = Arc::clone(&redraw_requested);
+
+        // The host is a re-implementation of
+        // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+        // and
+        // [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
+        // to avoid `nice-plug-core` from depending on `baseview` until it is stabilized.
+        //
+        // Create a small wrapper to adapt it to baseview's HostCallbacks traits.
+        let host = {
+            struct HostCallbackAdapter {
+                host: Box<dyn nice_plug::editor::HostCallbacks>,
+            }
+            impl baseview::host::HostCallbacks for HostCallbackAdapter {
+                fn request_resize(
+                    &mut self,
+                    new_size: baseview::WindowSize,
+                ) -> Result<(), HandlerError> {
+                    self.host
+                        .request_resize(new_size.physical.into(), new_size.scale_factor)
+                        .map_err(HandlerError::from_boxed)
+                }
+
+                fn destroyed(&mut self) {
+                    self.host.destroyed();
+                }
+            }
+            struct HostMainThreadCallerAdapter {
+                host: Box<dyn nice_plug::editor::HostMainThreadCaller>,
+            }
+            impl baseview::host::HostMainThreadCaller for HostMainThreadCallerAdapter {
+                fn call_main_thread(&mut self) {
+                    self.host.call_main_thread();
+                }
+            }
+            host.map(|host| {
+                baseview::host::Host::new()
+                    .with_callbacks(HostCallbackAdapter {
+                        host: host.callbacks,
+                    })
+                    .with_main_thread(HostMainThreadCallerAdapter {
+                        host: host.main_thread_caller,
+                    })
+            })
+        };
+
+        let window = baseview::Window::create_with_host(
+            WindowSettings::new()
+                .with_title("Softbuffer Window")
+                .with_size(self.editor_state.logical_size())
+                .with_min_size::<LogicalSize<f32>>(Some(MIN_SIZE))
+                .with_resizable(RESIZE_HINT.can_resize)
+                .with_parent(parent.as_ref())
+                .with_wait_for_parent(wait_for_parent)
+                .with_fallback_scale_factor(fallback_scale_factor),
+            move |window: WindowContext| -> Result<SoftbufferWindow, HandlerError> {
+                editor_state.scale_factor.store(window.size().scale_factor);
+
+                SoftbufferWindow::new(
+                    window,
+                    gui_context,
+                    params,
+                    editor_state,
+                    redraw_requested_2,
+                )
+                .map_err(|e| e.into())
+            },
+            host,
+        )?;
+
+        self.editor_state.open.store(true, Ordering::Release);
+
+        Ok(SpawnedEditor {
+            handle: SoftbufferEditorHandle {
+                state: Arc::clone(&self.editor_state),
+                redraw_requested,
+            },
+            window,
         })
     }
 
-    pub fn size(&self) -> LogicalSize<f32> {
-        self.size.load()
+    fn size(&self) -> PhysicalSize<u32> {
+        self.editor_state.physical_size()
     }
 
-    pub fn window_scale_factor(&self) -> f32 {
-        self.window_scale_factor.load()
+    fn resize_hint(&self) -> ResizeHint {
+        RESIZE_HINT
+    }
+}
+
+/// A handle to a spawned instance of our Editor.
+pub struct SoftbufferEditorHandle {
+    state: Arc<SoftbufferEditorState>,
+    redraw_requested: Arc<AtomicBool>,
+}
+
+impl EditorHandle for SoftbufferEditorHandle {
+    type Window = baseview::Window;
+    type Error = baseview::Error;
+
+    fn run_until_closed(window: Self::Window) -> Result<(), Self::Error> {
+        window.run_until_closed()
     }
 
-    pub fn host_scale_factor(&self) -> Option<f32> {
-        self.host_scale_factor.load()
+    fn set_parent(
+        &self,
+        parent: ParentWindowHandle,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.set_parent(&parent)
     }
 
-    /// Whether the GUI is currently visible.
-    // Called `is_open()` instead of `open()` to avoid the ambiguity.
+    fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        let res = window.show();
+
+        // TODO: This might be a baseview bug. the `baseview::WindowEvent::Focused`
+        // event does not always get called after `window.show()` is called. Either
+        // that, or baseview needs to add a `baseview::WindowEvent::Shown` event.
+        //
+        // For now, we must manually trigger a redraw.
+        self.redraw_requested.store(true, Ordering::Relaxed);
+
+        res
+    }
+
+    fn hide(&self, window: &Self::Window) -> Result<(), Self::Error> {
+        window.hide()
+    }
+
+    fn host_main_thread_callback(&self, window: &Self::Window) {
+        window.host_main_thread_callback();
+    }
+
+    fn set_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.resize(new_size)
+    }
+
+    fn set_fallback_scale_factor(
+        &self,
+        scale_factor: f64,
+        window: &Self::Window,
+    ) -> Result<(), Self::Error> {
+        window.suggest_fallback_scale_factor(scale_factor)
+    }
+
+    /// Return the closest supported size.
+    fn adjust_size(
+        &self,
+        new_size: PhysicalSize<u32>,
+        window: &Self::Window,
+    ) -> Option<PhysicalSize<u32>> {
+        let current_size = window.size();
+        Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
+    }
+
+    fn on_virtual_key_from_host(
+        &self,
+        _key_code: VirtualKeyCode,
+        _is_down: bool,
+        _modifiers: Modifiers,
+    ) -> bool {
+        false
+    }
+
+    fn state_changed(&self) {
+        self.redraw_requested.store(true, Ordering::Relaxed);
+    }
+
+    fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
+    }
+
+    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {
+        // The UI should generally be redrawn when a param is changed.
+        self.redraw_requested.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for SoftbufferEditorHandle {
+    fn drop(&mut self) {
+        self.state.open.store(false, Ordering::Release);
+    }
+}
+
+#[derive(Debug)]
+pub struct SoftbufferEditorState {
+    logical_size: AtomicCell<LogicalSize<f32>>,
+    /// Whether the editor's window is currently open.
+    open: AtomicBool,
+    scale_factor: AtomicCell<f64>,
+}
+
+impl SoftbufferEditorState {
+    pub fn from_size(size: LogicalSize<f32>) -> Self {
+        Self {
+            logical_size: AtomicCell::new(size),
+            open: AtomicBool::new(false),
+            scale_factor: AtomicCell::new(1.0),
+        }
+    }
+
+    pub fn logical_size(&self) -> LogicalSize<f32> {
+        self.logical_size.load()
+    }
+
+    pub fn physical_size(&self) -> PhysicalSize<u32> {
+        let logical_size = self.logical_size();
+        let scale_factor = self.scale_factor();
+        logical_size.to_physical(scale_factor)
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor.load()
+    }
+
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
     }
 }
 
-impl<'a> PersistentField<'a, CustomSoftbufferEditorState> for Arc<CustomSoftbufferEditorState> {
-    fn set(&self, new_value: CustomSoftbufferEditorState) {
-        self.size.store(new_value.size.load());
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&CustomSoftbufferEditorState) -> R,
-    {
-        f(self)
-    }
-}
-
-pub struct CustomSoftbufferEditor {
-    params: Arc<MyPluginParams>,
-    peak_meter: Arc<AtomicF32>,
-}
-
-impl Editor for CustomSoftbufferEditor {
-    fn spawn(
-        &self,
-        parent: ParentWindowHandle,
-        context: Arc<dyn GuiContext>,
-    ) -> Box<dyn std::any::Any> {
-        let host_scale_factor = self.params.editor_state.host_scale_factor();
-        let size = self.params.editor_state.size();
-
-        let gui_context = Arc::clone(&context);
-
-        let params = Arc::clone(&self.params);
-        let peak_meter = Arc::clone(&self.peak_meter);
-
-        let scale_policy = host_scale_factor
-            .map(|factor| WindowScalePolicy::ScaleFactor(factor as f64))
-            .unwrap_or(WindowScalePolicy::SystemScaleFactor);
-
-        let window = baseview::Window::open_parented(
-            &parent,
-            WindowOpenOptions::new()
-                .with_title("Softbuffer Window")
-                .with_size(size)
-                .with_scale_policy(scale_policy),
-            move |window: WindowContext| -> CustomSoftbufferWindow {
-                CustomSoftbufferWindow::new(window, gui_context, params, peak_meter)
-            },
-        );
-
-        self.params.editor_state.open.store(true, Ordering::Release);
-        Box::new(CustomSoftbufferEditorHandle {
-            state: self.params.editor_state.clone(),
-            window,
-        })
-    }
-
-    fn size(&self) -> Size {
-        self.params.editor_state.size().into()
-    }
-
-    fn set_scale_factor(&self, factor: f64) -> bool {
-        // If the editor is currently open then the host must not change the current HiDPI scale as
-        // we don't have a way to handle that. Ableton Live does this.
-        if self.params.editor_state.is_open() {
-            return false;
-        }
-
-        self.params
-            .editor_state
-            .host_scale_factor
-            .store(Some(factor as f32));
-
-        true
-    }
-
-    fn param_value_changed(&self, _id: &str, _normalized_value: f32) {
-        // As mentioned above, for now we'll always force a redraw to allow meter widgets to work
-        // correctly. In the future we can use an `Arc<AtomicBool>` and only force a redraw when
-        // that boolean is set.
-    }
-
-    fn param_modulation_changed(&self, _id: &str, _modulation_offset: f32) {}
-
-    fn param_values_changed(&self) {
-        // Same
-    }
-}
-
-/// The window handle used for [`CustomSoftbufferEditor`].
-struct CustomSoftbufferEditorHandle {
-    state: Arc<CustomSoftbufferEditorState>,
-    window: WindowHandle,
-}
-
-impl Drop for CustomSoftbufferEditorHandle {
-    fn drop(&mut self) {
-        self.state.open.store(false, Ordering::Release);
-        // XXX: This should automatically happen when the handle gets dropped, but apparently not
-        self.window.close();
-    }
-}
+// ---------------------------------------------------------------------------------------------------
 
 /// This is mostly identical to the gain example, minus some fluff, and with a GUI.
 pub struct MyPlugin {
     params: Arc<MyPluginParams>,
-
-    /// Needed to normalize the peak meter's response based on the sample rate.
-    peak_meter_decay_weight: f32,
-    /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
-    /// the GUI and the audio processing parts. If you have more state to share, then it's a good
-    /// idea to put all of that in a struct behind a single `Arc`.
-    ///
-    /// This is stored as voltage gain.
-    peak_meter: Arc<AtomicF32>,
+    editor_state: Arc<SoftbufferEditorState>,
 }
 
 #[derive(Params)]
 pub struct MyPluginParams {
-    /// The editor state, saved together with the parameter state so the custom scaling can be
-    /// restored.
-    #[persist = "editor-state"]
-    editor_state: Arc<CustomSoftbufferEditorState>,
-
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -308,9 +410,7 @@ impl Default for MyPlugin {
     fn default() -> Self {
         Self {
             params: Arc::new(MyPluginParams::default()),
-
-            peak_meter_decay_weight: 1.0,
-            peak_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
+            editor_state: Arc::new(SoftbufferEditorState::from_size(MIN_SIZE)),
         }
     }
 }
@@ -318,8 +418,6 @@ impl Default for MyPlugin {
 impl Default for MyPluginParams {
     fn default() -> Self {
         Self {
-            editor_state: CustomSoftbufferEditorState::from_size(LogicalSize::new(200.0, 150.0)),
-
             // See the main gain example for more details
             gain: FloatParam::new(
                 "Gain",
@@ -362,6 +460,7 @@ impl Plugin for MyPlugin {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    type Editor = SoftbufferEditor;
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -369,25 +468,19 @@ impl Plugin for MyPlugin {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(CustomSoftbufferEditor {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        Some(SoftbufferEditor {
             params: Arc::clone(&self.params),
-            peak_meter: Arc::clone(&self.peak_meter),
-        }))
+            editor_state: Arc::clone(&self.editor_state),
+        })
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        _buffer_config: &BufferConfig,
+        _context: &mut impl ActivateContext<Self>,
     ) -> bool {
-        // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
-        // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
-
         true
     }
 
@@ -398,29 +491,15 @@ impl Plugin for MyPlugin {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         for channel_samples in buffer.iter_samples() {
-            let mut amplitude = 0.0;
-            let num_samples = channel_samples.len();
-
             let gain = self.params.gain.smoothed.next();
             for sample in channel_samples {
                 *sample *= gain;
-                amplitude += *sample;
             }
 
             // To save resources, a plugin can (and probably should!) only perform expensive
             // calculations that are only displayed on the GUI while the GUI is open
-            if self.params.editor_state.is_open() {
-                amplitude = (amplitude / num_samples as f32).abs();
-                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
-                let new_peak_meter = if amplitude > current_peak_meter {
-                    amplitude
-                } else {
-                    current_peak_meter * self.peak_meter_decay_weight
-                        + amplitude * (1.0 - self.peak_meter_decay_weight)
-                };
-
-                self.peak_meter
-                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+            if self.editor_state.is_open() {
+                // Do things
             }
         }
 

@@ -37,14 +37,13 @@ use vst3::Steinberg::{
     FIDString, FUnknown, IBStream, IBStreamTrait, IPlugView, IPluginBaseTrait, TBool, TUID, int16,
     int32, kInvalidArgument, kNoInterface, kResultFalse, kResultOk, tresult, uint32,
 };
-use vst3::{Class, ComRef, ComWrapper};
+use vst3::{Class, ComRef};
 use widestring::U16CStr;
 
 use super::inner::{ProcessEvent, WrapperInner};
 use super::note_expressions::{self, NoteExpressionController};
 use super::util::{VST3_MIDI_CCS, VST3_MIDI_NUM_PARAMS, VST3_MIDI_PARAMS_START, u16strlcpy};
 use super::util::{VST3_MIDI_CHANNELS, VST3_MIDI_PARAMS_END};
-use super::view::WrapperView;
 use crate::util::permit_alloc;
 use crate::wrapper::state;
 use crate::wrapper::util::buffer_management::{BufferManager, ChannelPointers};
@@ -404,9 +403,9 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
     }
 
     unsafe fn setActive(&self, state: TBool) -> tresult {
-        // We could call initialize in `IAudioProcessor::setup_processing()`, but REAPER will set
+        // We could call activate in `IAudioProcessor::setup_processing()`, but REAPER will set
         // the bus arrangements between that function and this function. So to be able to handle
-        // custom channel layout overrides we need to initialize here.
+        // custom channel layout overrides we need to activate here.
         match (state != 0, self.inner.current_buffer_config.load()) {
             (true, Some(buffer_config)) => {
                 // Before initializing the plugin, make sure all smoothers are set the the default values
@@ -415,10 +414,10 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                 }
 
                 // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-                let mut init_context = self.inner.make_init_context();
+                let mut activate_context = self.inner.make_activate_context();
                 let audio_io_layout = self.inner.current_audio_io_layout.load();
                 let mut plugin = self.inner.plugin.lock();
-                if plugin.initialize(&audio_io_layout, &buffer_config, &mut init_context) {
+                if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context) {
                     // NOTE: We don't call `Plugin::reset()` here. The call is done in `set_process()`
                     //       instead. Otherwise we would call the function twice, and `set_process()` needs
                     //       to be called after this function before the plugin may process audio again.
@@ -732,11 +731,22 @@ impl<P: Vst3Plugin> IEditControllerTrait for Wrapper<P> {
     }
 
     unsafe fn createView(&self, _name: FIDString) -> *mut IPlugView {
+        #[cfg(not(feature = "editor"))]
+        return std::ptr::null_mut();
+
         // Without specialization this is the least redundant way to check if the plugin has an
         // editor. The default implementation returns a None here.
+        #[cfg(feature = "editor")]
         match self.inner.editor.borrow().as_ref() {
             Some(editor) => {
-                let view = ComWrapper::new(WrapperView::new(self.inner.clone(), editor.clone()));
+                use vst3::ComWrapper;
+
+                use crate::wrapper::vst3::view::WrapperView;
+
+                let view = ComWrapper::new(WrapperView::new(
+                    Arc::downgrade(&self.inner),
+                    Arc::downgrade(editor),
+                ));
                 let plug_view_ptr = view.to_com_ptr::<IPlugView>().unwrap().into_raw();
                 *self.inner.plug_view.write() = Some(view);
                 plug_view_ptr

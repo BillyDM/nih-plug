@@ -6,7 +6,7 @@ use nice_plug_core::plugin::Plugin;
 
 use self::backend::Backend;
 use self::config::WrapperConfig;
-use self::wrapper::{Wrapper, WrapperError};
+use self::wrapper::Wrapper;
 use super::util::setup_logger;
 
 mod backend;
@@ -183,7 +183,7 @@ fn run_wrapper<P: Plugin, B: Backend<P>>(backend: B, config: WrapperConfig) -> b
     let wrapper = match Wrapper::<P, _>::new(backend, config) {
         Ok(wrapper) => wrapper,
         Err(err) => {
-            print_error(err);
+            crate::nice_error!("Failed to open editor: {}", err);
             return false;
         }
     };
@@ -192,16 +192,8 @@ fn run_wrapper<P: Plugin, B: Backend<P>>(backend: B, config: WrapperConfig) -> b
     match wrapper.run() {
         Ok(()) => true,
         Err(err) => {
-            print_error(err);
+            crate::nice_error!("Failed to open editor: {}", err);
             false
-        }
-    }
-}
-
-fn print_error(error: WrapperError) {
-    match error {
-        WrapperError::InitializationFailed => {
-            crate::nice_error!("The plugin failed to initialize");
         }
     }
 }

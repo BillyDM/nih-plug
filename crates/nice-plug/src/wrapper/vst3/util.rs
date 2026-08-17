@@ -1,5 +1,7 @@
-use std::{cmp, ffi::CStr};
-use vst3::Steinberg::{FIDString, Vst::TChar};
+use std::cmp;
+#[cfg(feature = "editor")]
+use vst3::Steinberg::FIDString;
+use vst3::Steinberg::Vst::TChar;
 use widestring::U16CString;
 
 /// When `Plugin::MIDI_INPUT` is set to `MidiConfig::MidiCCs` or higher then we'll register 130*16
@@ -56,7 +58,10 @@ pub fn u16strlcpy(dest: &mut [TChar], src: &str) {
 
 /// Compare a host-provided [`FIDString`] to one of the SDK's string constants. These are plain C
 /// string pointers, so pointer equality is not sufficient.
+#[cfg(feature = "editor")]
 pub unsafe fn fid_matches(type_: FIDString, expected: FIDString) -> bool {
+    use std::ffi::CStr;
+
     unsafe { !type_.is_null() && CStr::from_ptr(type_) == CStr::from_ptr(expected) }
 }
 

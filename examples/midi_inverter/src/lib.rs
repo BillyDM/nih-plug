@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// A plugin that inverts all MIDI note numbers, channels, CCs, velocities, pressures, and
 /// everything else you don't want to be inverted.
-struct MidiInverter {
+pub struct MidiInverter {
     params: Arc<MidiInverterParams>,
 }
 
@@ -33,6 +33,9 @@ impl Plugin for MidiInverter {
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     type SysExMessage = ();
     type BackgroundTask = ();
 

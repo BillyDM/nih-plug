@@ -1,19 +1,23 @@
-use atomic_float::AtomicF64;
+use crossbeam::atomic::AtomicCell;
 use fragile::Fragile;
-use nice_plug_core::editor::{Editor, ParentWindowHandle, dpi::PhysicalSize};
+use nice_plug_core::editor::HostMainThreadCaller;
+use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::{
+    Editor, EditorHandle, HostCallbacks, HostMethods, ParentWindowHandle,
+};
 use parking_lot::{Mutex, RwLock};
-use std::any::Any;
+use std::error::Error;
 use std::ffi::{CStr, c_ulong, c_void};
 use std::num::NonZeroIsize;
 use std::ptr::NonNull;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use vst3::Steinberg::{
     FIDString, TBool, char16, int16, kInvalidArgument, kNotImplemented, kPlatformTypeHWND,
     kPlatformTypeNSView, kPlatformTypeX11EmbedWindowID, kResultFalse, kResultOk, tresult,
 };
 use vst3::Steinberg::{
-    IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewContentScaleSupport,
+    IPlugFrame, IPlugView, IPlugViewContentScaleSupport,
     IPlugViewContentScaleSupport_::ScaleFactor, IPlugViewContentScaleSupportTrait, IPlugViewTrait,
     ViewRect,
 };
@@ -147,9 +151,8 @@ use {
 /// The plugin's [`IPlugView`] instance created in [`IEditController::create_view()`] if `P` has an
 /// editor. This is managed separately so the lifetime bounds match up.
 pub(crate) struct WrapperView<P: Vst3Plugin> {
-    inner: Arc<WrapperInner<P>>,
-    editor: Arc<Mutex<Box<dyn Editor>>>,
-    editor_handle: Mutex<Option<Fragile<Box<dyn Any>>>>,
+    inner: Weak<WrapperInner<P>>,
+    editor: Weak<Mutex<P::Editor>>,
 
     /// The `IPlugFrame` instance passed by the host during [IPlugView::set_frame()].
     plug_frame: RwLock<Option<ComPtr<IPlugFrame>>>,
@@ -162,7 +165,7 @@ pub(crate) struct WrapperView<P: Vst3Plugin> {
     /// function. Defaults to 1.0, and will be kept there on macOS. When reporting and handling size
     /// the sizes communicated to and from the DAW should be scaled by this factor since nice-plug's
     /// APIs only deal in logical pixels.
-    scale_factor: AtomicF64,
+    fallback_scale_factor: AtomicCell<Option<f32>>,
 }
 
 impl<P: Vst3Plugin> Class for WrapperView<P> {
@@ -178,7 +181,7 @@ impl<P: Vst3Plugin> Class for WrapperView<P> {
 struct RunLoopEventHandler<P: Vst3Plugin> {
     /// We need access to the inner wrapper so we that we can post any outstanding tasks there when
     /// this object gets dropped so no work is lost.
-    inner: Arc<WrapperInner<P>>,
+    inner: Weak<WrapperInner<P>>,
 
     /// The host's run loop interface. This lets us run tasks on the same thread as the host's UI.
     run_loop: ComPtr<IRunLoop>,
@@ -220,15 +223,14 @@ impl<P: Vst3Plugin> Class for RunLoopEventHandler<P> {
 }
 
 impl<P: Vst3Plugin> WrapperView<P> {
-    pub fn new(inner: Arc<WrapperInner<P>>, editor: Arc<Mutex<Box<dyn Editor>>>) -> Self {
+    pub fn new(inner: Weak<WrapperInner<P>>, editor: Weak<Mutex<P::Editor>>) -> Self {
         Self {
             inner,
             editor,
-            editor_handle: Mutex::new(None),
             plug_frame: RwLock::new(None),
             #[cfg(all(target_family = "unix", not(target_os = "macos")))]
             run_loop_event_handler: RwLock::new(None),
-            scale_factor: AtomicF64::new(1.0),
+            fallback_scale_factor: AtomicCell::new(None),
         }
     }
 
@@ -239,24 +241,31 @@ impl<P: Vst3Plugin> WrapperView<P> {
     ///
     /// May cause memory corruption in Linux REAPER when called from outside of the `IRunLoop`.
     #[must_use]
-    pub unsafe fn request_resize(this: &ComWrapper<Self>) -> bool {
+    pub unsafe fn request_resize(
+        this: &ComWrapper<Self>,
+        new_size: Size,
+        scale_factor: f64,
+    ) -> bool {
+        use vst3::Steinberg::IPlugFrameTrait;
+
+        let Some(inner) = Weak::upgrade(&(**this).inner) else {
+            return false;
+        };
+
         // Don't do anything if the editor is not open, because that would be strange
-        if !this.inner.is_editor_open.load(Ordering::SeqCst) {
+        if !inner.is_editor_open.load(Ordering::SeqCst) {
             return false;
         }
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let size = this.editor.lock().size();
-                let scale_factor = this.scale_factor.load(Ordering::Relaxed);
-
-                let physical_size: PhysicalSize<i32> = size.to_physical(scale_factor);
+                let physical_size: PhysicalSize<u32> = new_size.to_physical(scale_factor);
 
                 let mut size = ViewRect {
                     left: 0,
                     top: 0,
-                    right: physical_size.width,
-                    bottom: physical_size.height,
+                    right: physical_size.width as i32,
+                    bottom: physical_size.height as i32,
                 };
 
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
@@ -265,8 +274,9 @@ impl<P: Vst3Plugin> WrapperView<P> {
                 #[cfg(debug_assertions)]
                 if result != kResultOk {
                     crate::nice_warn!(
-                        "The host denied the resize, we currently don't handle this for VST3 \
-                         plugins"
+                        "The host denied to resize the window to {:?}, we currently don't handle \
+                         this for VST3 plugins",
+                        new_size
                     );
                 }
 
@@ -316,12 +326,19 @@ impl<P: Vst3Plugin> WrapperView<P> {
             return kResultFalse;
         };
         let modifiers = vst3_modifiers(modifiers);
-        if self
-            .editor
-            .lock()
-            .on_virtual_key_from_host(key_code, is_down, modifiers)
+
+        if let Some(inner) = self.inner.upgrade()
+            && let Some(editor_window) = inner.editor_window.borrow().as_ref()
         {
-            kResultOk
+            if editor_window
+                .get()
+                .handle
+                .on_virtual_key_from_host(key_code, is_down, modifiers)
+            {
+                kResultOk
+            } else {
+                kResultFalse
+            }
         } else {
             kResultFalse
         }
@@ -330,7 +347,7 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> RunLoopEventHandler<P> {
-    pub fn new(inner: Arc<WrapperInner<P>>, run_loop: ComPtr<IRunLoop>) -> ComWrapper<Self> {
+    pub fn new(inner: Weak<WrapperInner<P>>, run_loop: ComPtr<IRunLoop>) -> ComWrapper<Self> {
         let mut sockets = [0i32; 2];
         assert_eq!(
             unsafe {
@@ -437,8 +454,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn attached(&self, parent: *mut c_void, type_: FIDString) -> tresult {
         check_null_ptr!(parent);
 
-        let mut editor_handle = self.editor_handle.lock();
-        if editor_handle.is_none() {
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
+        let mut window = inner.editor_window.borrow_mut();
+        if window.is_none() {
             let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
                 #[allow(clippy::unnecessary_cast)]
                 let w = parent as usize as c_ulong;
@@ -456,15 +477,105 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 return kInvalidArgument;
             };
 
-            *editor_handle = Some(Fragile::new(
-                self.editor
-                    .lock()
-                    .spawn(parent_handle, self.inner.clone().make_gui_context()),
-            ));
+            #[derive(Debug, Clone, Copy, thiserror::Error)]
+            enum ResizeError {
+                #[error("Failed to post window resize task")]
+                FailedToPostTask,
+                #[error("Attempted to close window when plugin was closed")]
+                PluginClosed,
+            }
 
-            self.inner.is_editor_open.store(true, Ordering::SeqCst);
+            struct Vst3HostCallbacks<P: Vst3Plugin> {
+                inner: Weak<WrapperInner<P>>,
+            }
 
-            kResultOk
+            impl<P: Vst3Plugin> HostCallbacks for Vst3HostCallbacks<P> {
+                fn request_resize(
+                    &mut self,
+                    new_size: Size,
+                    scale_factor: f64,
+                ) -> Result<(), Box<dyn Error>> {
+                    if let Some(inner) = self.inner.upgrade() {
+                        let view = inner.plug_view.read().clone().unwrap();
+
+                        if let Err(task) = view.do_maybe_in_run_loop(Task::RequestResize {
+                            size: new_size,
+                            scale_factor,
+                        }) {
+                            if !inner.schedule_gui(task) {
+                                return Err(ResizeError::FailedToPostTask.into());
+                            }
+                        }
+
+                        // We currently have no way to handle the host refusing to resize the
+                        // window since resizing must be done in the GUI thread.
+                        Ok(())
+                    } else {
+                        Err(ResizeError::PluginClosed.into())
+                    }
+                }
+
+                fn destroyed(&mut self) {
+                    // TODO: Does VST3 have a way for a plugin to notify the host that its GUI
+                    // has been destroyed?
+                }
+            }
+
+            let callbacks: Box<dyn HostCallbacks> = Box::new(Vst3HostCallbacks {
+                inner: Arc::downgrade(&inner),
+            });
+
+            struct Vst3HostMainThreadCaller<P: Vst3Plugin> {
+                inner: Weak<WrapperInner<P>>,
+            }
+
+            impl<P: Vst3Plugin> HostMainThreadCaller for Vst3HostMainThreadCaller<P> {
+                fn call_main_thread(&mut self) {
+                    if let Some(inner) = self.inner.upgrade() {
+                        let view = inner.plug_view.read().clone().unwrap();
+
+                        if let Err(task) = view.do_maybe_in_run_loop(Task::CallMainThread) {
+                            if !inner.schedule_gui(task) {
+                                crate::nice_error!("Failed to post Task::CallMainThread");
+                            }
+                        }
+                    }
+                }
+            }
+
+            let main_thread_caller: Box<dyn HostMainThreadCaller> =
+                Box::new(Vst3HostMainThreadCaller {
+                    inner: Arc::downgrade(&inner),
+                });
+
+            let fallback_scale_factor = self.fallback_scale_factor.load().map(|s| s as f64);
+
+            match self.editor.upgrade().unwrap().lock().spawn(
+                Some(parent_handle),
+                false,
+                fallback_scale_factor,
+                inner.clone().make_gui_context(),
+                Some(HostMethods {
+                    callbacks,
+                    main_thread_caller,
+                }),
+            ) {
+                Ok(editor_window) => match editor_window.handle.show(&editor_window.window) {
+                    Ok(()) => {
+                        *window = Some(Fragile::new(editor_window));
+                        inner.is_editor_open.store(true, Ordering::SeqCst);
+                        kResultOk
+                    }
+                    Err(e) => {
+                        crate::nice_error!("Failed to show editor: {}", e);
+                        kResultFalse
+                    }
+                },
+                Err(e) => {
+                    crate::nice_error!("Failed to create editor: {}", e);
+                    kResultFalse
+                }
+            }
         } else {
             crate::nice_debug_assert_failure!(
                 "Host tried to attach editor while the editor is already attached"
@@ -475,9 +586,13 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn removed(&self) -> tresult {
-        let mut editor_handle = self.editor_handle.lock();
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
+        let mut editor_handle = inner.editor_window.borrow_mut();
         if editor_handle.is_some() {
-            self.inner.is_editor_open.store(false, Ordering::SeqCst);
+            inner.is_editor_open.store(false, Ordering::SeqCst);
             *editor_handle = None;
 
             kResultOk
@@ -507,13 +622,16 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn getSize(&self, size: *mut ViewRect) -> tresult {
         check_null_ptr!(size);
 
+        let Some(editor) = self.editor.upgrade() else {
+            return kResultFalse;
+        };
+
         let size = unsafe { &mut *size };
 
         // TODO: This is technically incorrect during resizing, this should still report the old
         //       size until `.on_size()` has been called. We should probably only bother fixing this
         //       if it turns out to be an issue.
-        let scale_factor = self.scale_factor.load(Ordering::Relaxed);
-        let editor_size: PhysicalSize<i32> = self.editor.lock().size().to_physical(scale_factor);
+        let editor_size: PhysicalSize<i32> = editor.lock().size().cast();
 
         size.left = 0;
         size.right = editor_size.width;
@@ -526,6 +644,10 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn onSize(&self, new_size: *mut ViewRect) -> tresult {
         check_null_ptr!(new_size);
 
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
         // The host is telling us the view's new frame (after honoring an earlier
         // `request_resize()`, or because the user dragged a host resize handle).
         let phys_width = unsafe { (*new_size).right - (*new_size).left };
@@ -534,14 +656,23 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             return kResultFalse;
         }
 
+        let size = PhysicalSize {
+            width: phys_width as u32,
+            height: phys_height as u32,
+        };
+
         // Apply the new size to the editor. Editors that don't support being
         // resized return `false` from `set_size()`, in which case we tell the
         // host we couldn't honor it.
-        if self.editor.lock().set_size(PhysicalSize {
-            width: phys_width as u32,
-            height: phys_height as u32,
-        }) {
-            kResultOk
+        if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Err(e) = editor_window.handle.set_size(size, &editor_window.window) {
+                crate::nice_error!("Failed to resize window to {:?}: {}", size, e);
+                kResultFalse
+            } else {
+                kResultOk
+            }
         } else {
             kResultFalse
         }
@@ -552,6 +683,13 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn setFrame(&self, frame: *mut IPlugFrame) -> tresult {
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
+        #[cfg(not(all(target_family = "unix", not(target_os = "macos"))))]
+        let _ = inner;
+
         match unsafe { ComRef::from_raw(frame) } {
             Some(frame) => {
                 // On Linux the host will expose another interface that lets us run code on the
@@ -560,7 +698,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 {
                     *self.run_loop_event_handler.write() = frame
                         .cast()
-                        .map(|run_loop| RunLoopEventHandler::new(self.inner.clone(), run_loop));
+                        .map(|run_loop| RunLoopEventHandler::new(Arc::downgrade(&inner), run_loop));
                 }
                 *self.plug_frame.write() = Some(frame.to_com_ptr());
             }
@@ -577,8 +715,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     }
 
     unsafe fn canResize(&self) -> tresult {
+        let Some(editor) = self.editor.upgrade() else {
+            return kResultFalse;
+        };
+
         // The editor decides whether it's resizable via `Editor::resize_hint()`.
-        if self.editor.lock().resize_hint().can_resize {
+        if editor.lock().resize_hint().can_resize {
             kResultOk
         } else {
             kResultFalse
@@ -588,19 +730,52 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn checkSizeConstraint(&self, rect: *mut ViewRect) -> tresult {
         check_null_ptr!(rect);
 
-        // TODO: Implement Host->Plugin resizing
-        unsafe {
-            if (*rect).right - (*rect).left > 0 && (*rect).bottom - (*rect).top > 0 {
-                kResultOk
+        let size = unsafe {
+            PhysicalSize::new((*rect).right - (*rect).left, (*rect).bottom - (*rect).top)
+        };
+
+        if size.width <= 0 || size.height <= 0 {
+            return kResultFalse;
+        }
+
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
+        let size: PhysicalSize<u32> = size.cast();
+
+        if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+
+            if let Some(adjusted_size) = editor_window
+                .handle
+                .adjust_size(size, &editor_window.window)
+            {
+                if adjusted_size == size {
+                    kResultOk
+                } else {
+                    unsafe {
+                        (*rect).right = (*rect).left + adjusted_size.width as i32;
+                        (*rect).bottom = (*rect).top + adjusted_size.height as i32;
+                    }
+
+                    kResultOk
+                }
             } else {
                 kResultFalse
             }
+        } else {
+            kResultFalse
         }
     }
 }
 
 impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
-    unsafe fn setContentScaleFactor(&self, factor: ScaleFactor) -> tresult {
+    unsafe fn setContentScaleFactor(&self, scale_factor: ScaleFactor) -> tresult {
+        let Some(inner) = self.inner.upgrade() else {
+            return kResultFalse;
+        };
+
         // TODO: So apparently Ableton Live doesn't call this function. Right now we'll hardcode the
         //       default scale to 1.0 on Linux and Windows since we can't easily get the scale from
         //       baseview. A better alternative would be to do the fallback DPI scale detection
@@ -608,17 +783,22 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
         //       on macOS and both the editor implementation and the wrappers would know about the
         //       correct scale.
 
-        // On macOS scaling is done by the OS, and all window sizes are in logical pixels
-        if cfg!(target_os = "macos") {
-            crate::nice_debug_assert_failure!(
-                "Ignoring host request to set explicit DPI scaling factor"
-            );
+        if !scale_factor.is_finite() || !scale_factor.is_sign_positive() {
             return kResultFalse;
         }
 
-        if self.editor.lock().set_scale_factor(factor as f64) {
-            self.scale_factor.store(factor as f64, Ordering::Relaxed);
-            kResultOk
+        if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
+            let editor_window = editor_window.get();
+            if let Err(e) = editor_window
+                .handle
+                .set_fallback_scale_factor(scale_factor as f64, &editor_window.window)
+            {
+                crate::nice_error!("Failed to set suggested scale factor: {}", e);
+                kResultFalse
+            } else {
+                self.fallback_scale_factor.store(Some(scale_factor));
+                kResultOk
+            }
         } else {
             kResultFalse
         }
@@ -657,25 +837,29 @@ impl<P: Vst3Plugin> IEventHandlerTrait for RunLoopEventHandler<P> {
         // This gets called from the host's UI thread because we wrote some bytes to the Unix domain
         // socket. We'll read that data from the socket again just to make REAPER happy.
         while let Some(task) = self.tasks.pop() {
-            self.inner.execute(task, true);
+            if let Some(inner) = self.inner.upgrade() {
+                inner.execute(task, true);
+            }
         }
     }
 }
 
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
 impl<P: Vst3Plugin> Drop for RunLoopEventHandler<P> {
+    // PLEASE FIXME: This drop method never actually gets called for some reason.
     fn drop(&mut self) {
         // When this object gets dropped and there are still unprocessed tasks left, then we'll
         // handle those in the regular event loop so no work gets lost
         let mut posting_failed = false;
         while let Some(task) = self.tasks.pop() {
-            posting_failed |= !self
-                .inner
-                .event_loop
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .schedule_gui(task);
+            if let Some(inner) = self.inner.upgrade() {
+                posting_failed |= !inner
+                    .event_loop
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .schedule_gui(task);
+            }
         }
 
         if posting_failed {

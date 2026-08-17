@@ -2,12 +2,14 @@
 
 use std::fmt::Display;
 
-pub mod gui;
-pub mod init;
+pub mod activate;
 pub mod process;
 
 // Contexts for more plugin-API specific features
 pub mod remote_controls;
+
+#[cfg(feature = "editor")]
+pub mod gui;
 
 /// The currently active plugin API. This may be useful to display in an about screen in the
 /// plugin's GUI for debugging purposes.

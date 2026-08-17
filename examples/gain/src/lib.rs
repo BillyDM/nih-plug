@@ -151,6 +151,9 @@ impl Plugin for Gain {
     // splits.
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
     // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
     // from plain byte buffers.
@@ -166,13 +169,13 @@ impl Plugin for Gain {
 
     // This plugin doesn't need any special initialization, but if you need to do anything expensive
     // then this would be the place. State is kept around when the host reconfigures the
-    // plugin. If we do need special initialization, we could implement the `initialize()` and/or
+    // plugin. If we do need special initialization, we could implement the `activate()` and/or
     // `reset()` methods
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         _buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        _context: &mut impl ActivateContext<Self>,
     ) -> bool {
         true
     }

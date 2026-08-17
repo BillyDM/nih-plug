@@ -9,20 +9,25 @@ use egui::{InnerResponse, UiBuilder};
 pub struct ResizableWindow {
     id: Id,
     min_size: Vec2,
+    max_size: Option<Vec2>,
 }
 
 impl ResizableWindow {
     pub fn new(id_source: impl egui::AsId) -> Self {
         Self {
             id: Id::new(id_source),
-            min_size: Vec2::splat(16.0),
+            min_size: Vec2 { x: 1.0, y: 1.0 },
+            max_size: None,
         }
     }
 
-    /// Won't shrink to smaller than this
-    #[inline]
-    pub fn min_size(mut self, min_size: impl Into<Vec2>) -> Self {
-        self.min_size = min_size.into();
+    pub fn min_size(mut self, min_size: Vec2) -> Self {
+        self.min_size = min_size;
+        self
+    }
+
+    pub fn max_size(mut self, max_size: Vec2) -> Self {
+        self.max_size = Some(max_size);
         self
     }
 
@@ -37,15 +42,35 @@ impl ResizableWindow {
             let corner_size = Vec2::splat(ui.visuals().resize_corner_size);
             let corner_rect = Rect::from_min_size(ui_rect.max - corner_size, corner_size);
 
-            let corner_response = ui.interact(corner_rect, self.id.with("corner"), Sense::drag());
+            let id = self.id.with("cr");
 
-            if let Some(pointer_pos) = corner_response.interact_pointer_pos() {
-                let desired_size = (pointer_pos - ui_rect.min + 0.5 * corner_response.rect.size())
-                    .max(self.min_size);
+            let corner_response = ui.interact(corner_rect, id, Sense::drag());
 
-                if corner_response.dragged() {
-                    ui.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
+            #[derive(Clone, Copy)]
+            struct State {
+                start_window_size: Vec2,
+            }
+
+            if corner_response.dragged()
+                && let Some(total_drag_delta) = corner_response.total_drag_delta()
+            {
+                let state = ui.data_mut(|d| {
+                    *d.get_persisted_mut_or_default::<Option<State>>(id)
+                        .get_or_insert_with(|| State {
+                            start_window_size: ui_rect.max.to_vec2(),
+                        })
+                });
+
+                let mut desired_size = state.start_window_size + total_drag_delta;
+
+                desired_size = desired_size.max(self.min_size);
+                if let Some(max_size) = self.max_size {
+                    desired_size = desired_size.min(max_size);
                 }
+
+                ui.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
+            } else if corner_response.drag_stopped() {
+                ui.data_mut(|d| *d.get_persisted_mut_or_default::<Option<State>>(id) = None);
             }
 
             paint_resize_corner(&content_ui, &corner_response);

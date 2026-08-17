@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use crate::util::permit_alloc;
 
 pub(crate) mod buffer_management;
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "editor"))]
 pub(crate) mod context_checks;
 
 /// The bit that controls flush-to-zero behavior for denormals in 32 and 64-bit floating point

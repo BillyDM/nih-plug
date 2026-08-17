@@ -99,6 +99,9 @@ impl Plugin for Stft {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
+    // editor should set this to `()`.
+    type Editor = ();
     type SysExMessage = ();
     type BackgroundTask = ();
 
@@ -106,11 +109,11 @@ impl Plugin for Stft {
         self.params.clone()
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         _buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        context: &mut impl ActivateContext<Self>,
     ) -> bool {
         // The plugin's latency consists of the block size from the overlap-add procedure and half
         // of the filter kernel's size (since we're using a linear phase/symmetrical convolution

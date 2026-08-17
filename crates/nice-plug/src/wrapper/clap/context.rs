@@ -3,8 +3,7 @@ use clap_sys::ext::remote_controls::{CLAP_REMOTE_CONTROLS_COUNT, clap_remote_con
 use clap_sys::id::{CLAP_INVALID_ID, clap_id};
 use clap_sys::string_sizes::CLAP_NAME_SIZE;
 use nice_plug_core::context::PluginApi;
-use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::context::init::InitContext;
+use nice_plug_core::context::activate::ActivateContext;
 use nice_plug_core::context::process::{ProcessContext, Transport};
 use nice_plug_core::context::remote_controls::{
     RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
@@ -12,31 +11,29 @@ use nice_plug_core::context::remote_controls::{
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::params::Param;
 use nice_plug_core::params::internals::ParamPtr;
-use nice_plug_core::plugin::PluginState;
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 
-use super::wrapper::{OutputParamEvent, Task, Wrapper};
+use super::wrapper::{Task, Wrapper};
 use crate::event_loop::EventLoop;
 use crate::wrapper::clap::ClapPlugin;
 use crate::wrapper::util::strlcpy;
 
-/// An [`InitContext`] implementation for the wrapper.
+/// An [`ActivateContext`] implementation for the wrapper.
 ///
 /// # Note
 ///
-/// See the VST3 `WrapperInitContext` for an explanation of why we need this `pending_requests`
+/// See the VST3 `WrapperActivateContext` for an explanation of why we need this `pending_requests`
 /// field.
-pub(crate) struct WrapperInitContext<'a, P: ClapPlugin> {
+pub(crate) struct WrapperActivateContext<'a, P: ClapPlugin> {
     pub(super) wrapper: &'a Wrapper<P>,
-    pub(super) pending_requests: PendingInitContextRequests,
+    pub(super) pending_requests: PendingActivateContextRequests,
 }
 
-/// Any requests that should be sent out when the [`WrapperInitContext`] is dropped. See that
+/// Any requests that should be sent out when the [`WrapperActivateContext`] is dropped. See that
 /// struct's docstring for mroe information.
 #[derive(Debug, Default)]
-pub(crate) struct PendingInitContextRequests {
+pub(crate) struct PendingActivateContextRequests {
     /// The value of the last `.set_latency_samples()` call.
     latency_changed: Cell<Option<u32>>,
 }
@@ -54,8 +51,9 @@ pub(crate) struct WrapperProcessContext<'a, P: ClapPlugin> {
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
 /// [`Editor::spawn()`][crate::prelude::Editor::spawn()] so it can interact with the rest of the plugin and
 /// with the host for things like setting parameters.
+#[cfg(feature = "editor")]
 pub(crate) struct WrapperGuiContext<P: ClapPlugin> {
-    pub(super) wrapper: Arc<Wrapper<P>>,
+    pub(super) wrapper: std::sync::Weak<Wrapper<P>>,
     #[cfg(debug_assertions)]
     pub(super) param_gesture_checker:
         atomic_refcell::AtomicRefCell<crate::wrapper::util::context_checks::ParamGestureChecker>,
@@ -71,7 +69,7 @@ pub(crate) struct RemoteControlPages<'a> {
     pages: &'a mut Vec<clap_remote_controls_page>,
 }
 
-impl<P: ClapPlugin> Drop for WrapperInitContext<'_, P> {
+impl<P: ClapPlugin> Drop for WrapperActivateContext<'_, P> {
     fn drop(&mut self) {
         if let Some(samples) = self.pending_requests.latency_changed.take() {
             self.wrapper.set_latency_samples(samples)
@@ -79,7 +77,7 @@ impl<P: ClapPlugin> Drop for WrapperInitContext<'_, P> {
     }
 }
 
-impl<P: ClapPlugin> InitContext<P> for WrapperInitContext<'_, P> {
+impl<P: ClapPlugin> ActivateContext<P> for WrapperActivateContext<'_, P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Clap
     }
@@ -135,22 +133,22 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     }
 }
 
-impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
+#[cfg(feature = "editor")]
+impl<P: ClapPlugin> nice_plug_core::context::gui::GuiContextInner for WrapperGuiContext<P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Clap
-    }
-
-    fn request_resize(&self) -> bool {
-        self.wrapper.request_resize()
     }
 
     // All of these functions are supposed to be called from the main thread, so we'll put some
     // trust in the caller and assume that this is indeed the case
     unsafe fn raw_begin_set_parameter(&self, param: ParamPtr) {
-        match self.wrapper.param_ptr_to_hash.get(&param) {
+        let wrapper = self.wrapper.upgrade().unwrap();
+
+        match wrapper.param_ptr_to_hash.get(&param) {
             Some(hash) => {
-                let success = self
-                    .wrapper
+                use crate::wrapper::clap::wrapper::OutputParamEvent;
+
+                let success = wrapper
                     .queue_parameter_event(OutputParamEvent::BeginGesture { param_hash: *hash });
 
                 crate::nice_debug_assert!(
@@ -163,7 +161,7 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(param) {
+        match wrapper.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -175,8 +173,12 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
     }
 
     unsafe fn raw_set_parameter_normalized(&self, param: ParamPtr, normalized: f32) {
-        match self.wrapper.param_ptr_to_hash.get(&param) {
+        let wrapper = self.wrapper.upgrade().unwrap();
+
+        match wrapper.param_ptr_to_hash.get(&param) {
             Some(hash) => {
+                use crate::wrapper::clap::wrapper::OutputParamEvent;
+
                 // We queue the parameter change event here, and it will be sent to the host either
                 // at the end of the current processing cycle or after requesting an explicit flush
                 // (when the plugin isn't processing audio). The parameter's actual value will only
@@ -184,12 +186,10 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
                 // in the middle of processing audio.
                 let clap_plain_value =
                     normalized as f64 * unsafe { param.step_count().unwrap_or(1) as f64 };
-                let success = self
-                    .wrapper
-                    .queue_parameter_event(OutputParamEvent::SetValue {
-                        param_hash: *hash,
-                        clap_plain_value,
-                    });
+                let success = wrapper.queue_parameter_event(OutputParamEvent::SetValue {
+                    param_hash: *hash,
+                    clap_plain_value,
+                });
 
                 crate::nice_debug_assert!(
                     success,
@@ -201,7 +201,7 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(param) {
+        match wrapper.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -215,10 +215,13 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
     }
 
     unsafe fn raw_end_set_parameter(&self, param: ParamPtr) {
-        match self.wrapper.param_ptr_to_hash.get(&param) {
+        let wrapper = self.wrapper.upgrade().unwrap();
+
+        match wrapper.param_ptr_to_hash.get(&param) {
             Some(hash) => {
-                let success = self
-                    .wrapper
+                use crate::wrapper::clap::wrapper::OutputParamEvent;
+
+                let success = wrapper
                     .queue_parameter_event(OutputParamEvent::EndGesture { param_hash: *hash });
 
                 crate::nice_debug_assert!(
@@ -231,7 +234,7 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
         }
 
         #[cfg(debug_assertions)]
-        match self.wrapper.param_id_from_ptr(param) {
+        match wrapper.param_id_from_ptr(param) {
             Some(param_id) => self
                 .param_gesture_checker
                 .borrow_mut()
@@ -244,12 +247,15 @@ impl<P: ClapPlugin> GuiContext for WrapperGuiContext<P> {
         }
     }
 
-    fn get_state(&self) -> PluginState {
-        self.wrapper.get_state_object()
+    fn get_state(&self) -> nice_plug_core::plugin::PluginState {
+        self.wrapper.upgrade().unwrap().get_state_object()
     }
 
-    fn set_state(&self, state: PluginState) {
-        self.wrapper.set_state_object_from_gui(state)
+    fn set_state(&self, state: nice_plug_core::plugin::PluginState) {
+        self.wrapper
+            .upgrade()
+            .unwrap()
+            .set_state_object_from_gui(state)
     }
 }
 

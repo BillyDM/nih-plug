@@ -7,8 +7,10 @@ mod inner;
 mod note_expressions;
 mod param_units;
 pub mod subcategories;
-mod view;
 mod wrapper;
+
+#[cfg(feature = "editor")]
+mod view;
 
 /// Re-export for the wrapper.
 pub use factory::PluginInfo;
