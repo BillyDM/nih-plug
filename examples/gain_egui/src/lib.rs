@@ -1,8 +1,8 @@
 use egui::{Margin, Vec2};
 use nice_plug::{context::gui::GuiContext, editor::dpi::LogicalSize, prelude::*};
 use nice_plug_egui::{
-    EguiEditor, EguiNiceSettings, EguiState, NiceEguiApp, RepaintNotifier, create_egui_editor,
-    resizable_window::ResizableWindow, widgets,
+    EguiEditor, EguiEditorState, EguiNiceSettings, NiceEguiApp, RepaintNotifier,
+    create_egui_editor, resizable_window::ResizableWindow, widgets,
 };
 use std::sync::{Arc, Mutex};
 
@@ -326,7 +326,7 @@ impl Default for GainParams {
 pub struct Gain {
     params: Arc<GainParams>,
 
-    editor_state: Arc<EguiState>,
+    editor_state: Arc<EguiEditorState>,
 
     /// Needed to normalize the peak meter's response based on the sample rate.
     peak_meter_decay_weight: f32,
@@ -400,7 +400,7 @@ impl Default for Gain {
         Self {
             params,
 
-            editor_state: EguiState::from_size(MIN_WINDOW_SIZE, zoom_factor),
+            editor_state: EguiEditorState::from_size(MIN_WINDOW_SIZE, zoom_factor),
 
             peak_meter_decay_weight: 1.0,
             peak_meter,

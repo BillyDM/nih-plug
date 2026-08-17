@@ -37,7 +37,7 @@ pub mod widgets;
 ///
 /// See [`EguiState::from_size()`].
 pub fn create_egui_editor<A: NiceEguiApp>(
-    egui_state: Arc<EguiState>,
+    egui_state: Arc<EguiEditorState>,
     repaint_notifier: RepaintNotifier,
     settings: EguiNiceSettings,
     app: A,
@@ -95,7 +95,7 @@ pub trait NiceEguiApp: Send + 'static {
 
 /// State for an `nice-plug-egui` editor.
 #[derive(Debug)]
-pub struct EguiState {
+pub struct EguiEditorState {
     size: AtomicCell<Size>,
     zoom_factor: AtomicCell<f32>,
 
@@ -109,7 +109,7 @@ pub struct EguiState {
     open: AtomicBool,
 }
 
-impl EguiState {
+impl EguiEditorState {
     /// Create a new state for egui's editor.
     pub fn from_size(size: impl Into<Size>, zoom_factor: f32) -> Arc<Self> {
         assert!(zoom_factor > 0.0);

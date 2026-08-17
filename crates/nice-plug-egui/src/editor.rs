@@ -1,6 +1,6 @@
 //! An [`Editor`] implementation for egui.
 
-use crate::EguiState;
+use crate::EguiEditorState;
 use crate::NiceEguiApp;
 use egui_baseview::EguiWindowSettings;
 use egui_baseview::RepaintNotifier;
@@ -73,7 +73,7 @@ struct UserAppWrapper<A: NiceEguiApp> {
     user_app: Arc<Mutex<A>>,
     gui_context: GuiContext,
     egui_ctx: Arc<Mutex<Option<egui::Context>>>,
-    egui_state: Arc<EguiState>,
+    egui_state: Arc<EguiEditorState>,
 }
 
 impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
@@ -117,7 +117,7 @@ impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
 
 /// An [`Editor`] implementation that calls an egui draw loop.
 pub struct EguiEditor<A: NiceEguiApp> {
-    pub(crate) egui_state: Arc<EguiState>,
+    pub(crate) egui_state: Arc<EguiEditorState>,
     pub(crate) user_app: Arc<Mutex<A>>,
     pub(crate) settings: Arc<EguiNiceSettings>,
     pub(crate) repaint_notifier: RepaintNotifier,
@@ -242,7 +242,7 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
 
 /// A handle to a spawned instance of an [`EguiEditor`].
 pub struct EguiEditorHandle {
-    egui_state: Arc<EguiState>,
+    egui_state: Arc<EguiEditorState>,
     repaint_notifier: RepaintNotifier,
     resize_hint: ResizeHint,
 }
