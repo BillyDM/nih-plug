@@ -13,6 +13,35 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.3.0
+
+## Breaking Changes
+* All crates updated to use baseview version `0.3.1`
+* `nice-plug-core`, `nice-plug`, and `nice-plug-iced` bumped to version 0.3
+* `nice-plug-egui` bumped to version 0.5
+* `nice-plug-egui` updated to use `egui` version `0.36`
+* A new `editor` cargo feature was added to `nice-plug` and `nice-plug-core`. Disabling this will disable all GUI-related
+code entirely, saving some processing overhead and reducing binary size.
+* `Plugin::initialize()` and `InitContext` renamed to `Plugin::activate()` and `ActivateContext`
+* A new `Editor` type was added to the `Plugin` trait. Plugins without an editor can set this to `()`.
+* `Plugin::editor()` now returns `Option<Self::Editor>` instead of `Option<Box<dyn Editor>>`
+* The `Editor` trait was completely overhauled to support better handling of window resizing and scaling. See
+[editor.rs](https://codeberg.org/RustAudio/nice-plug/src/commit/1f496ddd098b5ce050f4617322ec4c8718b94a62/crates/nice-plug-core/src/editor.rs)
+for more details.
+* Added `resize_hint` field to `EguiNiceSettings`
+* The build and update closures in `create_egui_editor` were replaced with a new `NiceEguiApp` trait
+* `EguiState` was renamed to `EguiEditorState`
+* Renamed `EditorState` in `nice-plug-iced` to `PersistentState`
+* Renamed `EditorSettings` in `nice-plug-iced` to `IcedNiceSettings` and added `resize_hint` field
+* `nice-plug-egui` no longer automatically repaints every frame. Use the new `RepaintNotifier` to notify the GUI when it
+should repaint.
+
+## Added
+* Better integration for window resizing and scaling in CLAP, VST3, and standalone targets
+
+## Changed
+* Window size is no longer saved/loaded with the plugin's preset state
+
 # nice-plug 0.2.3
 
 ## Fixed
