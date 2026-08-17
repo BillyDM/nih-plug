@@ -506,17 +506,15 @@ impl Jack {
 
         if let (Some(port), Some(port_name)) =
             (&self.midi_input, &self.config.connect_jack_midi_input)
+            && let Err(err) = client.connect_ports_by_name(port_name, &port.name()?)
         {
-            if let Err(err) = client.connect_ports_by_name(port_name, &port.name()?) {
-                crate::nice_error!("Could not connect to '{port_name}': {err}");
-            }
+            crate::nice_error!("Could not connect to '{port_name}': {err}");
         }
         if let (Some(port), Some(port_name)) =
             (&self.midi_output, &self.config.connect_jack_midi_output)
+            && let Err(err) = client.connect_ports_by_name(&port.lock().name()?, port_name)
         {
-            if let Err(err) = client.connect_ports_by_name(&port.lock().name()?, port_name) {
-                crate::nice_error!("Could not connect to '{port_name}': {err}");
-            }
+            crate::nice_error!("Could not connect to '{port_name}': {err}");
         }
 
         Ok(())

@@ -501,10 +501,9 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                         if let Err(task) = view.do_maybe_in_run_loop(Task::RequestResize {
                             size: new_size,
                             scale_factor,
-                        }) {
-                            if !inner.schedule_gui(task) {
-                                return Err(ResizeError::FailedToPostTask.into());
-                            }
+                        }) && !inner.schedule_gui(task)
+                        {
+                            return Err(ResizeError::FailedToPostTask.into());
                         }
 
                         // We currently have no way to handle the host refusing to resize the
@@ -534,10 +533,10 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                     if let Some(inner) = self.inner.upgrade() {
                         let view = inner.plug_view.read().clone().unwrap();
 
-                        if let Err(task) = view.do_maybe_in_run_loop(Task::CallMainThread) {
-                            if !inner.schedule_gui(task) {
-                                crate::nice_error!("Failed to post Task::CallMainThread");
-                            }
+                        if let Err(task) = view.do_maybe_in_run_loop(Task::CallMainThread)
+                            && !inner.schedule_gui(task)
+                        {
+                            crate::nice_error!("Failed to post Task::CallMainThread");
                         }
                     }
                 }

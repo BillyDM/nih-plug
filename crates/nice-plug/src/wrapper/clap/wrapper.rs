@@ -2062,10 +2062,10 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // If this reactivation happened due to the latency changing, notify the host of that
         // latency change.
-        if wrapper.latency_changed.swap(false, Ordering::SeqCst) {
-            if let Some(host_latency) = &*wrapper.host_latency.borrow() {
-                unsafe_clap_call! { host_latency=>changed(&*wrapper.host_callback) };
-            }
+        if wrapper.latency_changed.swap(false, Ordering::SeqCst)
+            && let Some(host_latency) = &*wrapper.host_latency.borrow()
+        {
+            unsafe_clap_call! { host_latency=>changed(&*wrapper.host_callback) };
         }
 
         // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks

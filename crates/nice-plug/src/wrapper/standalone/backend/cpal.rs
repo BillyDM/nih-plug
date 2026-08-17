@@ -753,10 +753,10 @@ impl CpalMidir {
         move |_timing, midi_data, _data| {
             // Since this is system MIDI there's no real useful timing information and we'll set all
             // the timings to the first sample in the buffer
-            if let Ok(event) = NoteEvent::from_midi(0, midi_data) {
-                if midi_input_rb_producer.push(event).is_err() {
-                    crate::nice_error!("The MIDI input event queue was full, dropping event");
-                }
+            if let Ok(event) = NoteEvent::from_midi(0, midi_data)
+                && midi_input_rb_producer.push(event).is_err()
+            {
+                crate::nice_error!("The MIDI input event queue was full, dropping event");
             }
         }
     }

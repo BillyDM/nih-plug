@@ -235,10 +235,9 @@ pub fn s2v_f32_hz_then_khz() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
 
         if let (_, Some(midi_note_number_str), _) | (Some(midi_note_number_str), None, None) =
             segments
+            && let Some(midi_note_number) = note_formatter(midi_note_number_str)
         {
-            if let Some(midi_note_number) = note_formatter(midi_note_number_str) {
-                return Some(util::f32_midi_note_to_freq(midi_note_number as f32));
-            }
+            return Some(util::f32_midi_note_to_freq(midi_note_number as f32));
         }
 
         // Otherwise we'll accept values in either Hz (with or without unit) or kHz
