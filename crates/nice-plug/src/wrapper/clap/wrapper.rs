@@ -2065,19 +2065,33 @@ impl<P: ClapPlugin> Wrapper<P> {
                     // NOTE: `Plugin::reset()` is called in `clap_plugin::start_processing()` instead of in
                     //       this function
 
-                    // This preallocates enough space so we can transform all of the host's raw channel
-                    // pointers into a set of `Buffer` objects for the plugin's main and auxiliary IO
-                    *wrapper.buffer_manager.borrow_mut() = BufferManager::for_audio_io_layout(
-                        max_frames_count as usize,
-                        audio_io_layout,
-                    );
+                    // Likewise, make sure that the buffers are also not currently being used by the process
+                    // method.
+                    let now_2 = Instant::now();
+                    loop {
+                        if let Ok(mut buffer_manager) = wrapper.buffer_manager.try_borrow_mut() {
+                            // This preallocates enough space so we can transform all of the host's raw channel
+                            // pointers into a set of `Buffer` objects for the plugin's main and auxiliary IO
+                            *buffer_manager = BufferManager::for_audio_io_layout(
+                                max_frames_count as usize,
+                                audio_io_layout,
+                            );
 
-                    // Also store this for later, so we can reinitialize the plugin after restoring state
-                    wrapper.current_buffer_config.store(Some(buffer_config));
+                            // Also store this for later, so we can reinitialize the plugin after restoring state
+                            wrapper.current_buffer_config.store(Some(buffer_config));
 
-                    wrapper.is_activated.store(true, Ordering::SeqCst);
+                            wrapper.is_activated.store(true, Ordering::SeqCst);
 
-                    result = true;
+                            result = true;
+                        } else if now_2.elapsed() > Duration::from_secs(1) {
+                            crate::nice_error!(
+                                "Failed to acquire lock on buffers while activating"
+                            );
+                            break;
+                        } else {
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    }
                 }
 
                 break;
