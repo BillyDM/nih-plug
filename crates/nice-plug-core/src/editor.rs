@@ -11,6 +11,7 @@ use std::ptr::NonNull;
 pub use dpi;
 
 use crate::context::gui::GuiContext;
+use crate::plugin::TrackInfo;
 
 pub struct SpawnedEditor<E: EditorHandle> {
     /// A handle to the instance of an open [`Editor`].
@@ -194,14 +195,20 @@ pub trait EditorHandle: Send + 'static {
 
     /// Called when the plugin's state has changed (i.e. a preset was loaded). The
     /// editor should rescan all of its parameters.
+    ///
+    /// Generally you will want to trigger a redraw when this is called.
     fn state_changed(&self) {}
 
     /// Called whenever a specific parameter's value has changed. You don't
     /// need to do anything with this, but this can be used to force a redraw when the host sends a
     /// new value for a parameter or when a parameter change sent to the host gets processed.
+    ///
+    /// Generally you will want to trigger a redraw when this is called.
     fn param_value_changed(&self, id: &str, normalized_value: f32);
 
     /// Called whenever a specific parameter's monophonic modulation value has changed.
+    ///
+    /// Generally you will want to trigger a redraw when this is called.
     fn param_modulation_changed(&self, id: &str, modulation_offset: f32);
 }
 
@@ -257,6 +264,14 @@ pub trait Editor: Send {
     /// size). See [`ResizeHint`] for the per-axis and aspect-ratio options.
     fn resize_hint(&self) -> ResizeHint {
         ResizeHint::default()
+    }
+
+    /// Called when the provided track information has changed.
+    ///
+    /// Generally you will want to trigger a redraw when this is called, if your GUI uses the
+    /// track informatioin.
+    fn track_info_updated(&self, info: TrackInfo) {
+        let _ = info;
     }
 }
 

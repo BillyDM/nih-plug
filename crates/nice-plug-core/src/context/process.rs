@@ -84,6 +84,9 @@ pub trait ProcessContext<P: Plugin> {
     /// this may cause audio playback to be restarted.
     fn set_latency_samples(&self, samples: u32);
 
+    /// Request the plugin to be restarted.
+    fn request_restart(&self);
+
     /// Set the current voice **capacity** for this plugin (so not the number of currently active
     /// voices). This may only be called if `ClapPlugin::CLAP_POLY_MODULATION_CONFIG` is set.
     /// `capacity` must be between 1 and the configured maximum capacity. Changing this at runtime

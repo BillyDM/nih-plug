@@ -19,6 +19,7 @@ use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use try_lock::TryLock;
 use vst3::ComPtr;
 #[cfg(feature = "editor")]
 use vst3::ComWrapper;
@@ -33,7 +34,7 @@ use crate::event_loop::{EventLoop, MainThreadExecutor, OsEventLoop};
 use crate::util::permit_alloc;
 use crate::wrapper::state;
 use crate::wrapper::util::buffer_management::BufferManager;
-use crate::wrapper::util::{hash_param_id, process_wrapper};
+use crate::wrapper::util::hash_param_id;
 use crate::wrapper::vst3::Vst3Plugin;
 #[cfg(feature = "editor")]
 use crate::wrapper::vst3::context::WrapperGuiContext;
@@ -45,7 +46,7 @@ use crate::wrapper::vst3::view::WrapperView;
 /// its own struct.
 pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// The wrapped plugin instance.
-    pub plugin: Mutex<P>,
+    pub plugin: TryLock<P>,
     /// The plugin's background task executor closure.
     pub task_executor: Mutex<TaskExecutor<P>>,
     /// The plugin's parameters. These are fetched once during initialization. That way the
@@ -312,7 +313,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             .collect();
 
         let wrapper = Arc::new(Self {
-            plugin: Mutex::new(plugin),
+            plugin: TryLock::new(plugin),
             task_executor,
             params,
             // Initialized later as it needs a reference to the wrapper for the async executor
@@ -377,7 +378,8 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         {
             *wrapper.editor.borrow_mut() = wrapper
                 .plugin
-                .lock()
+                .try_lock()
+                .unwrap()
                 .editor(nice_plug_core::context::gui::AsyncExecutor::new(
                     Arc::new({
                         let wrapper = Arc::downgrade(&wrapper);
@@ -613,10 +615,13 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         // Only trigger a restart if it's actually needed
         let old_latency = self.current_latency.swap(samples, Ordering::SeqCst);
         if old_latency != samples {
-            let task_posted =
-                self.schedule_gui(Task::TriggerRestart(RestartFlags_::kLatencyChanged));
-            crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
+            self.request_restart();
         }
+    }
+
+    pub fn request_restart(&self) {
+        let task_posted = self.schedule_gui(Task::TriggerRestart(RestartFlags_::kLatencyChanged));
+        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
     }
 
     /// Immediately set the plugin state. Returns `false` if the deserialization failed. The plugin
@@ -630,21 +635,16 @@ impl<P: Vst3Plugin> WrapperInner<P> {
     ///
     /// `self.plugin` must _not_ be locked while calling this function or it will deadlock.
     pub fn set_state_inner(&self, state: &mut PluginState) -> bool {
-        let audio_io_layout = self.current_audio_io_layout.load();
-        let buffer_config = self.current_buffer_config.load();
-
-        // FIXME: This is obviously not realtime-safe, but loading presets without doing this could
-        //        lead to inconsistencies. It's the plugin's responsibility to not perform any
-        //        realtime-unsafe work when the activate function is called a second time if it
-        //        supports runtime preset loading.  `state::deserialize_object()` normally never
+        // FIXME: This is obviously not realtime-safe, but loading presets without doing this
+        //        could lead to inconsistencies. `state::deserialize_object()` normally never
         //        allocates, but if the plugin has persistent non-parameter data then its
         //        `deserialize_fields()` implementation may still allocate.
-        let mut success = permit_alloc(|| unsafe {
+        let success = permit_alloc(|| unsafe {
             state::deserialize_object::<P>(
                 state,
                 self.params.clone(),
                 state::make_params_getter(&self.param_by_hash, &self.param_id_to_hash),
-                buffer_config.as_ref(),
+                self.current_buffer_config.load().as_ref(),
             )
         });
         if !success {
@@ -653,26 +653,6 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             );
             return false;
         }
-
-        // If the plugin was already activated then it needs to be reactivated
-        if let Some(buffer_config) = buffer_config {
-            // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-            let mut activate_context = self.make_activate_context();
-            let mut plugin = self.plugin.lock();
-
-            // See above
-            success = permit_alloc(|| {
-                plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context)
-            });
-            if success {
-                process_wrapper(|| plugin.reset());
-            }
-        }
-
-        crate::nice_debug_assert!(
-            success,
-            "Plugin returned false when reinitializing after loading state"
-        );
 
         #[cfg(feature = "editor")]
         {

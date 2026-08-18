@@ -4,7 +4,7 @@ use nice_plug_egui::{
     EguiEditor, EguiEditorState, EguiNiceSettings, NiceEguiApp, RepaintNotifier,
     create_egui_editor, resizable_window::ResizableWindow, widgets,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 300.0);
 const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
@@ -26,10 +26,10 @@ const AUDIO_TO_GUI_MSG_CHANNEL_CAPACITY: usize = 128;
 pub struct GainEditor {
     open_state: Option<OpenEditorState>,
     zoom_factor: f32,
+    track_info: Option<TrackInfo>,
 
     params: Arc<GainParams>,
     peak_meter: Arc<AtomicF32>,
-    track_info: Arc<Mutex<TrackInfo>>,
 
     // For some reason, softbuffer doesn't show anything on the first paint.
     /// A message channel to send events between the GUI and the audio thread.
@@ -99,11 +99,7 @@ impl NiceEguiApp for GainEditor {
                     .inner_margin(Margin::same(5))
                     .show(ui, |ui| {
                         // Display the track information
-                        let track_info = self
-                            .track_info
-                            .lock()
-                            .map(|info| info.clone())
-                            .unwrap_or_default();
+                        let track_info = self.track_info.clone().unwrap_or_default();
                         let name = track_info.name();
                         if name.is_empty() {
                             ui.label("Track name: (unknown)");
@@ -240,6 +236,10 @@ impl NiceEguiApp for GainEditor {
                     });
             });
     }
+
+    fn track_info_changed(&mut self, info: TrackInfo) {
+        self.track_info = Some(info);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -361,9 +361,6 @@ pub struct Gain {
 
     /// Temporarily hold on to the initial GUI state until the editor is first opened.
     initial_editor: Option<GainEditor>,
-
-    /// Track information reported by the host through [`Plugin::track_info_updated()`].
-    track_info: Arc<Mutex<TrackInfo>>,
 }
 
 impl Default for Gain {
@@ -376,7 +373,6 @@ impl Default for Gain {
 
         let params = Arc::new(GainParams::default());
         let peak_meter = Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB));
-        let track_info = Arc::new(std::sync::Mutex::new(TrackInfo::default()));
 
         // If you wish to make the zoom factor user-configurable, then it should be loaded
         // from a config file to make it persistent. The window size however does not need
@@ -385,9 +381,9 @@ impl Default for Gain {
 
         let initial_editor = GainEditor {
             open_state: None,
+            track_info: None,
             params: params.clone(),
             peak_meter: peak_meter.clone(),
-            track_info: track_info.clone(),
             msg_channel: GuiMsgChannel {
                 to_audio_tx,
                 from_audio_rx,
@@ -417,8 +413,6 @@ impl Default for Gain {
             triple_buffer_state: triple_buffer_output,
 
             initial_editor: Some(initial_editor),
-
-            track_info,
         }
     }
 }
@@ -560,12 +554,6 @@ impl Plugin for Gain {
         }
 
         ProcessStatus::Normal
-    }
-
-    fn track_info_updated(&mut self, info: TrackInfo) {
-        if let Ok(mut track_info) = self.track_info.lock() {
-            *track_info = info;
-        }
     }
 }
 

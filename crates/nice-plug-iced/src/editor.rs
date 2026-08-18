@@ -154,6 +154,11 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
     fn resize_hint(&self) -> nice_plug_core::editor::ResizeHint {
         self.settings.resize_hint
     }
+
+    fn track_info_updated(&self, info: nice_plug_core::plugin::TrackInfo) {
+        // TODO: Add a subscription for track information.
+        let _ = info;
+    }
 }
 
 /// The window handle used for [`IcedEditor`](crate::IcedEditor).

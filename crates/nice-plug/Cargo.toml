@@ -83,6 +83,7 @@ clap = { version = "4.1.8", features = [
 ], optional = true }
 parking_lot.workspace = true
 atomic_refcell.workspace = true
+try-lock = "0.2.5"
 crossbeam.workspace = true
 anymap3 = "1.0.1"
 anyhow.workspace = true

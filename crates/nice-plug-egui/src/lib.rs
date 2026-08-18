@@ -9,6 +9,7 @@ use crossbeam::atomic::AtomicCell;
 use egui_baseview::baseview::WindowSize;
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize, Size};
+use nice_plug_core::plugin::TrackInfo;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -91,6 +92,11 @@ pub trait NiceEguiApp: Send + 'static {
     /// If your app holds onto an `egui::Context` object, then it should be dropped here so that
     /// egui can probably be cleaned up.
     fn editor_closed(&mut self) {}
+
+    /// Called when the track information has changed.
+    fn track_info_changed(&mut self, info: TrackInfo) {
+        let _ = info;
+    }
 }
 
 /// State for an `nice-plug-egui` editor.

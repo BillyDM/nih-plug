@@ -238,6 +238,11 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
     fn resize_hint(&self) -> nice_plug_core::editor::ResizeHint {
         self.settings.resize_hint
     }
+
+    fn track_info_updated(&self, info: nice_plug_core::plugin::TrackInfo) {
+        self.user_app.lock().track_info_changed(info);
+        self.repaint_notifier.request_repaint();
+    }
 }
 
 /// A handle to a spawned instance of an [`EguiEditor`].

@@ -92,6 +92,10 @@ impl<P: Plugin, B: Backend<P>> ProcessContext<P> for WrapperProcessContext<'_, P
     fn set_current_voice_capacity(&self, _capacity: u32) {
         // This is only supported by CLAP
     }
+
+    fn request_restart(&self) {
+        // Not relevant for standalone backend
+    }
 }
 
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
@@ -177,5 +181,9 @@ impl<P: Plugin, B: Backend<P>> GuiContextInner for WrapperGuiContext<P, B> {
             .upgrade()
             .unwrap()
             .set_state_object_from_gui(state)
+    }
+
+    fn request_restart(&self) {
+        // Not relevant for standalone backend
     }
 }
