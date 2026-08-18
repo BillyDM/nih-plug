@@ -431,16 +431,31 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                             //       instead. Otherwise we would call the function twice, and `set_process()` needs
                             //       to be called after this function before the plugin may process audio again.
 
-                            // This preallocates enough space so we can transform all of the host's raw
-                            // channel pointers into a set of `Buffer` objects for the plugin's main and
-                            // auxiliary IO
-                            *self.inner.buffer_manager.borrow_mut() =
-                                BufferManager::for_audio_io_layout(
-                                    buffer_config.max_buffer_size as usize,
-                                    audio_io_layout,
-                                );
+                            // Likewise, make sure that the buffers are also not currently being used by the process
+                            // method.
+                            let now_2 = Instant::now();
+                            loop {
+                                if let Ok(mut buffer_manager) =
+                                    self.inner.buffer_manager.try_borrow_mut()
+                                {
+                                    // This preallocates enough space so we can transform all of the host's raw
+                                    // channel pointers into a set of `Buffer` objects for the plugin's main and
+                                    // auxiliary IO
+                                    *buffer_manager = BufferManager::for_audio_io_layout(
+                                        buffer_config.max_buffer_size as usize,
+                                        audio_io_layout,
+                                    );
 
-                            result = kResultOk;
+                                    result = kResultOk;
+                                } else if now_2.elapsed() > Duration::from_secs(1) {
+                                    crate::nice_error!(
+                                        "Failed to acquire lock on buffers while activating"
+                                    );
+                                    break;
+                                } else {
+                                    std::thread::sleep(Duration::from_millis(1));
+                                }
+                            }
                         }
 
                         break;
