@@ -264,4 +264,6 @@ Debug output from your plugin can be found in Bitwig's `engine.log` file. (`~/.B
 
 Currently nice-plug's documentation isn't very extensive. For now, you can check out the examples in the [nice-plug repository](https://codeberg.org/RustAudio/nice-plug), and also check out the [API documentation](https://docs.rs/nice-plug).
 
+It is recommended to not even worry about GUI when developing the DSP of your plugin, especially if you are just starting out learning DSP. nice-plug makes it easy to create GUI-less plugins!
+
 If you have any questions, feel free to join us in the [Rust Audio Discord Server](https://discord.gg/Qs2Zwtf9Gf) in the `#nice-plug` channel!
