@@ -142,6 +142,8 @@ for how to create plugin GUIs with them. For now, take a look at the examples
 to get started. (Feel free to contribute any guides, documentation, and or
 example plugins!)
 
+> It is recommended to not even worry about GUI when developing the DSP of your plugin, especially if you are just starting out learning DSP. nice-plug makes it easy to create GUI-less plugins!
+
 # Example plugins
 
 The best way to get an idea for what the API looks like is to look at the
