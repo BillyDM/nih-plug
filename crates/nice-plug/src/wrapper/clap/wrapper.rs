@@ -2052,7 +2052,6 @@ impl<P: ClapPlugin> Wrapper<P> {
             unsafe_clap_call! { host_latency=>changed(&*wrapper.host_callback) };
         }
 
-        // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
         let mut activate_context = wrapper.make_activate_context();
 
         // In the case a host misbehaves and tries to activate the plugin without waiting for the
@@ -2102,6 +2101,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                 std::thread::sleep(Duration::from_millis(1));
             }
         }
+
+        // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
+        drop(activate_context);
 
         result
     }

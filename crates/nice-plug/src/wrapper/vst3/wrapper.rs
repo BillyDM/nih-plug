@@ -415,7 +415,6 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                     unsafe { param._internal_update_smoother(buffer_config.sample_rate, true) };
                 }
 
-                // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
                 let mut activate_context = self.inner.make_activate_context();
                 let audio_io_layout = self.inner.current_audio_io_layout.load();
 
@@ -466,6 +465,9 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                         std::thread::sleep(Duration::from_millis(1));
                     }
                 }
+
+                // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
+                drop(activate_context);
 
                 result
             }
