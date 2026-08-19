@@ -266,4 +266,6 @@ Currently nice-plug's documentation isn't very extensive. For now, you can check
 
 It is recommended to not even worry about GUI when developing the DSP of your plugin, especially if you are just starting out learning DSP. nice-plug makes it easy to create GUI-less plugins!
 
+For an extensive list of resources on audio plugin development in general, see [Awesome Audio DSP](https://codeberg.org/BillyDM/awesome-audio-dsp).
+
 If you have any questions, feel free to join us in the [Rust Audio Discord Server](https://discord.gg/Qs2Zwtf9Gf) in the `#nice-plug` channel!
