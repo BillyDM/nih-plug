@@ -446,6 +446,8 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                                     );
 
                                     result = kResultOk;
+
+                                    break;
                                 } else if now_2.elapsed() > Duration::from_secs(1) {
                                     crate::nice_error!(
                                         "Failed to acquire lock on buffers while activating"

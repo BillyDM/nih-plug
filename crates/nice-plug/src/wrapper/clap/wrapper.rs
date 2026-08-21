@@ -2082,6 +2082,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                             wrapper.is_activated.store(true, Ordering::SeqCst);
 
                             result = true;
+
+                            break;
                         } else if now_2.elapsed() > Duration::from_secs(1) {
                             crate::nice_error!(
                                 "Failed to acquire lock on buffers while activating"
@@ -2311,7 +2313,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                     // On the occasion a host misbehaves and tries to activate/deactivate a plugin
                     // concurrently with the process method, return an error.
                     crate::nice_error!(
-                        "Host tried to activate/deactivate plugin while process method is still running"
+                        "Host tried to activate/deactivate plugin while process method is still \
+                         running"
                     );
 
                     return CLAP_PROCESS_ERROR;
@@ -2521,7 +2524,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                         // On the occasion a host misbehaves and tries to activate/deactivate a plugin
                         // concurrently with the process method, return an error.
                         crate::nice_error!(
-                            "Host tried to activate/deactivate plugin while process method is still running"
+                            "Host tried to activate/deactivate plugin while process method is \
+                             still running"
                         );
 
                         return CLAP_PROCESS_ERROR;
