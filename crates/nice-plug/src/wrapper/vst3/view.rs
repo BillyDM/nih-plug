@@ -10,6 +10,8 @@ use std::error::Error;
 use std::ffi::{CStr, c_ulong, c_void};
 use std::num::NonZeroIsize;
 use std::ptr::NonNull;
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use vst3::Steinberg::{
@@ -203,6 +205,8 @@ struct RunLoopEventHandler<P: Vst3Plugin> {
     /// A self-referencing pointer to the outer `ComWrapper<RunLoopEventHandler>`, needed to call
     /// `IRunLoop::unregisterEventHandler()` when this object gets dropped.
     event_handler_ptr: EventHandlerSelfRefPtr,
+
+    notified: AtomicBool,
 }
 
 /// A self-referencing pointer to the outer `ComWrapper<RunLoopEventHandler>`, needed to call
@@ -369,6 +373,7 @@ impl<P: Vst3Plugin> RunLoopEventHandler<P> {
             socket_write_fd,
             tasks: ArrayQueue::new(TASK_QUEUE_CAPACITY),
             event_handler_ptr: EventHandlerSelfRefPtr(Cell::new(std::ptr::null_mut())),
+            notified: AtomicBool::new(false),
         });
         let event_handler_ptr = handler.to_com_ptr::<IEventHandler>().unwrap().into_raw();
 
@@ -394,21 +399,23 @@ impl<P: Vst3Plugin> RunLoopEventHandler<P> {
     pub fn post_task(&self, task: Task<P>) -> Result<(), Task<P>> {
         self.tasks.push(task)?;
 
-        // We need to use a Unix domain socket to let the host know to call our event handler. In
-        // theory eventfd would be more suitable here, but Ardour does not support that. This is
-        // read again in `Self::on_fd_is_set()`.
-        let notify_value = 1i8;
-        const NOTIFY_VALUE_SIZE: usize = std::mem::size_of::<i8>();
-        assert_eq!(
-            unsafe {
-                libc::write(
-                    self.socket_write_fd,
-                    &notify_value as *const _ as *const c_void,
-                    NOTIFY_VALUE_SIZE,
-                )
-            },
-            NOTIFY_VALUE_SIZE as isize
-        );
+        if !self.notified.swap(true, Ordering::SeqCst) {
+            // We need to use a Unix domain socket to let the host know to call our event handler. In
+            // theory eventfd would be more suitable here, but Ardour does not support that. This is
+            // read again in `Self::on_fd_is_set()`.
+            let notify_value = 1i8;
+            const NOTIFY_VALUE_SIZE: usize = std::mem::size_of::<i8>();
+            assert_eq!(
+                unsafe {
+                    libc::write(
+                        self.socket_write_fd,
+                        &notify_value as *const _ as *const c_void,
+                        NOTIFY_VALUE_SIZE,
+                    )
+                },
+                NOTIFY_VALUE_SIZE as isize
+            );
+        }
 
         Ok(())
     }
@@ -832,6 +839,8 @@ impl<P: Vst3Plugin> IEventHandlerTrait for RunLoopEventHandler<P> {
                 break;
             }
         }
+
+        self.notified.store(false, Ordering::SeqCst);
 
         // This gets called from the host's UI thread because we wrote some bytes to the Unix domain
         // socket. We'll read that data from the socket again just to make REAPER happy.
