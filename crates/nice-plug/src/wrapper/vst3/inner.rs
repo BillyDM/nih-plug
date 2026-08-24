@@ -6,6 +6,8 @@ use nice_plug_core::audio_setup::{AudioIOLayout, BufferConfig, ProcessMode};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
+use nice_plug_core::editor::EditorHandle;
+#[cfg(feature = "editor")]
 use nice_plug_core::editor::dpi::Size;
 #[cfg(feature = "editor")]
 use nice_plug_core::editor::{Editor, SpawnedEditor};
@@ -62,7 +64,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     // My personal record for craziest Rust type!!!!
     #[cfg(feature = "editor")]
     pub editor_window:
-        Arc<AtomicRefCell<Option<fragile::Fragile<SpawnedEditor<<P::Editor as Editor>::Handle>>>>>,
+        Arc<AtomicRefCell<Option<EditorWindowWrapper<<P::Editor as Editor>::Handle>>>>,
 
     /// The host's [`IComponentHandler`] instance, if passed through
     /// [`IEditController::set_component_handler`].
@@ -695,7 +697,9 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                 use nice_plug_core::editor::EditorHandle;
 
                 if let Some(editor_window) = self.editor_window.borrow().as_ref() {
-                    editor_window.get().handle.state_changed();
+                    editor_window.with(|editor_window| {
+                        editor_window.handle.state_changed();
+                    });
                 }
             }
             #[cfg(feature = "editor")]
@@ -704,10 +708,11 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
 
                 if let Some(editor_window) = self.editor_window.borrow().as_ref() {
                     let param_id = &self.param_id_by_hash[&param_hash];
-                    editor_window
-                        .get()
-                        .handle
-                        .param_value_changed(param_id, normalized_value);
+                    editor_window.with(|editor_window| {
+                        editor_window
+                            .handle
+                            .param_value_changed(param_id, normalized_value);
+                    });
                 }
             }
             Task::TriggerRestart(flags) => match &*self.component_handler.borrow() {
@@ -743,12 +748,64 @@ impl<P: Vst3Plugin> MainThreadExecutor<Task<P>> for WrapperInner<P> {
                 use nice_plug_core::editor::EditorHandle;
 
                 if let Some(editor_window) = self.editor_window.borrow().as_ref() {
-                    let editor_window = editor_window.get();
-                    editor_window
-                        .handle
-                        .host_main_thread_callback(&editor_window.window)
+                    editor_window.with(|editor_window| {
+                        editor_window
+                            .handle
+                            .host_main_thread_callback(&editor_window.window)
+                    });
                 }
             }
         }
     }
 }
+
+#[cfg(feature = "editor")]
+pub(crate) struct EditorWindowWrapper<E: EditorHandle> {
+    #[cfg(not(feature = "unsafe_carla_patch"))]
+    editor: fragile::Fragile<SpawnedEditor<E>>,
+    #[cfg(feature = "unsafe_carla_patch")]
+    editor: Mutex<EditorWindowWrapperInner<E>>,
+}
+
+#[cfg(feature = "editor")]
+impl<E: EditorHandle> EditorWindowWrapper<E> {
+    pub fn new(editor: SpawnedEditor<E>) -> Self {
+        Self {
+            #[cfg(not(feature = "unsafe_carla_patch"))]
+            editor: fragile::Fragile::new(editor),
+            #[cfg(feature = "unsafe_carla_patch")]
+            editor: Mutex::new(EditorWindowWrapperInner { editor }),
+        }
+    }
+
+    pub fn with(&self, f: impl FnOnce(&SpawnedEditor<E>)) {
+        #[cfg(not(feature = "unsafe_carla_patch"))]
+        {
+            (f)(self.editor.get())
+        }
+
+        #[cfg(feature = "unsafe_carla_patch")]
+        {
+            let editor = self.editor.lock();
+            (f)(&editor.editor);
+        }
+    }
+}
+
+#[cfg(all(feature = "editor", feature = "unsafe_carla_patch"))]
+struct EditorWindowWrapperInner<E: EditorHandle> {
+    editor: SpawnedEditor<E>,
+}
+
+#[cfg(all(feature = "editor", feature = "unsafe_carla_patch"))]
+// Safety:
+//
+// This is not safe, but for misbehaving hosts like Carla which don't
+// use the correct threads for GUI calls, we have no choice.
+//
+// This is an opt-in feature that is clearly marked as unsafe.
+//
+// For more information, see:
+// https://codeberg.org/RustAudio/nice-plug/issues/76
+// https://github.com/falkTX/Carla/issues/2078
+unsafe impl<E: EditorHandle> Send for EditorWindowWrapperInner<E> {}

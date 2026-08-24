@@ -1,5 +1,4 @@
 use crossbeam::atomic::AtomicCell;
-use fragile::Fragile;
 use nice_plug_core::editor::HostMainThreadCaller;
 use nice_plug_core::editor::dpi::{PhysicalSize, Size};
 use nice_plug_core::editor::{
@@ -27,6 +26,7 @@ use vst3::{Class, ComPtr, ComRef, ComWrapper};
 
 use super::inner::{Task, WrapperInner};
 use crate::editor::{Modifiers, VirtualKeyCode};
+use crate::wrapper::vst3::inner::EditorWindowWrapper;
 use crate::wrapper::vst3::{Vst3Plugin, util::fid_matches};
 
 /// Lowest VST3 virtual key code (`KEY_BACK` in the VST3 SDK
@@ -334,15 +334,14 @@ impl<P: Vst3Plugin> WrapperView<P> {
         if let Some(inner) = self.inner.upgrade()
             && let Some(editor_window) = inner.editor_window.borrow().as_ref()
         {
-            if editor_window
-                .get()
-                .handle
-                .on_virtual_key_from_host(key_code, is_down, modifiers)
-            {
-                kResultOk
-            } else {
-                kResultFalse
-            }
+            let mut res = false;
+            editor_window.with(|editor_window| {
+                res = editor_window
+                    .handle
+                    .on_virtual_key_from_host(key_code, is_down, modifiers);
+            });
+
+            if res { kResultOk } else { kResultFalse }
         } else {
             kResultFalse
         }
@@ -568,7 +567,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             ) {
                 Ok(editor_window) => match editor_window.handle.show(&editor_window.window) {
                     Ok(()) => {
-                        *window = Some(Fragile::new(editor_window));
+                        *window = Some(EditorWindowWrapper::new(editor_window));
                         inner.is_editor_open.store(true, Ordering::SeqCst);
                         kResultOk
                     }
@@ -671,9 +670,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
         // resized return `false` from `set_size()`, in which case we tell the
         // host we couldn't honor it.
         if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
-            let editor_window = editor_window.get();
+            let mut res = None;
+            editor_window.with(|editor_window| {
+                res = Some(editor_window.handle.set_size(size, &editor_window.window));
+            });
 
-            if let Err(e) = editor_window.handle.set_size(size, &editor_window.window) {
+            if let Err(e) = res.unwrap() {
                 crate::nice_error!("Failed to resize window to {:?}: {}", size, e);
                 kResultFalse
             } else {
@@ -751,12 +753,14 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
         let size: PhysicalSize<u32> = size.cast();
 
         if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
-            let editor_window = editor_window.get();
+            let mut res = None;
+            editor_window.with(|editor_window| {
+                res = editor_window
+                    .handle
+                    .adjust_size(size, &editor_window.window);
+            });
 
-            if let Some(adjusted_size) = editor_window
-                .handle
-                .adjust_size(size, &editor_window.window)
-            {
+            if let Some(adjusted_size) = res {
                 if adjusted_size == size {
                     kResultOk
                 } else {
@@ -794,11 +798,16 @@ impl<P: Vst3Plugin> IPlugViewContentScaleSupportTrait for WrapperView<P> {
         }
 
         if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
-            let editor_window = editor_window.get();
-            if let Err(e) = editor_window
-                .handle
-                .set_fallback_scale_factor(scale_factor as f64, &editor_window.window)
-            {
+            let mut res = None;
+            editor_window.with(|editor_window| {
+                res = Some(
+                    editor_window
+                        .handle
+                        .set_fallback_scale_factor(scale_factor as f64, &editor_window.window),
+                );
+            });
+
+            if let Err(e) = res.unwrap() {
                 crate::nice_error!("Failed to set suggested scale factor: {}", e);
                 kResultFalse
             } else {

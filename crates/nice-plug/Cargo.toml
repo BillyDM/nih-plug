@@ -69,6 +69,15 @@ tracing-subscriber = ["dep:tracing-subscriber"]
 # For an explanation on why denormal numbers are a problem, see:
 # https://mu.krj.st/denormal/
 unsafe_flush_denormals = []
+# Enables a workaround for VST3 plugins crashing in the Carla host.
+#
+# The patch can lead to undefined in misbehaving hosts like Carla, so use at
+# your own risk!
+#
+# For more information, see:
+# https://codeberg.org/RustAudio/nice-plug/issues/76
+# https://github.com/falkTX/Carla/issues/2078
+unsafe_carla_patch = []
 
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.2" }
