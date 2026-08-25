@@ -37,6 +37,9 @@ standalone = [
   "dep:audioadapter-buffers",
   "dep:ctrlc"
 ]
+# Enables ASIO for the standalone wrapper. This is separate from `standalone` so plugin and
+# non-Windows standalone builds do not need the ASIO SDK toolchain.
+standalone-asio = ["standalone", "cpal/asio"]
 # Enables the `nice_export_vst3!()` macro. Enabled by default.
 vst3 = ["dep:vst3", "dep:widestring"]
 # Add adapters to the Buffer object for reading the channel data to and from

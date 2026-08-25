@@ -173,6 +173,16 @@ pub fn nice_export_standalone_with_args<P: Plugin, Args: IntoIterator<Item = Str
                 }
             }
         }
+        #[cfg(all(target_os = "windows", feature = "standalone-asio"))]
+        config::BackendType::Asio => {
+            match backend::CpalMidir::new::<P>(config.clone(), cpal::HostId::Asio) {
+                Ok(backend) => run_wrapper::<P, _>(backend, config),
+                Err(err) => {
+                    crate::nice_error!("Could not initialize the ASIO backend: {:#}", err);
+                    false
+                }
+            }
+        }
         config::BackendType::Dummy => {
             run_wrapper::<P, _>(backend::Dummy::new::<P>(config.clone()), config)
         }

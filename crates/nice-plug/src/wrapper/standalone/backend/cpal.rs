@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use cpal::{
-    Device, FromSample, InputCallbackInfo, OutputCallbackInfo, Sample, SampleFormat, Stream,
+    Device, FromSample, I24, InputCallbackInfo, OutputCallbackInfo, Sample, SampleFormat, Stream,
     StreamConfig, traits::*,
 };
 use crossbeam::sync::{Parker, Unparker};
@@ -183,6 +183,7 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                     input.sample_format,
                     (SampleFormat::I8, i8),
                     (SampleFormat::I16, i16),
+                    (SampleFormat::I24, I24),
                     (SampleFormat::I32, i32),
                     (SampleFormat::I64, i64),
                     (SampleFormat::U8, u8),
@@ -367,6 +368,7 @@ impl<P: Plugin> Backend<P> for CpalMidir {
                 self.output.sample_format,
                 (SampleFormat::I8, i8),
                 (SampleFormat::I16, i16),
+                (SampleFormat::I24, I24),
                 (SampleFormat::I32, i32),
                 (SampleFormat::I64, i64),
                 (SampleFormat::U8, u8),
@@ -425,6 +427,21 @@ impl CpalMidir {
     /// reason.
     pub fn new<P: Plugin>(config: WrapperConfig, cpal_host_id: cpal::HostId) -> Result<Self> {
         let audio_io_layout = config.audio_io_layout_or_exit::<P>();
+
+        // ASIO exposes input and output through one duplex device, so reuse the selected input
+        // device when no output was specified.
+        #[cfg(all(target_os = "windows", feature = "standalone-asio"))]
+        let output_device_name = if cpal_host_id == cpal::HostId::Asio {
+            config
+                .output_device
+                .as_ref()
+                .or(config.input_device.as_ref())
+        } else {
+            config.output_device.as_ref()
+        };
+        #[cfg(not(all(target_os = "windows", feature = "standalone-asio")))]
+        let output_device_name = config.output_device.as_ref();
+
         let host = cpal::host_from_id(cpal_host_id).context("The Audio API is unavailable")?;
 
         if config.input_device.is_none() && audio_io_layout.main_input_channels.is_some() {
@@ -473,7 +490,7 @@ impl CpalMidir {
             })
             .transpose()?;
 
-        let output_device = match config.output_device.as_ref() {
+        let output_device = match output_device_name {
             Some(name) => host
                 .output_devices()
                 .context("No audio output devices available")?

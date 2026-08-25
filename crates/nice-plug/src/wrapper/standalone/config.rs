@@ -59,23 +59,24 @@ pub struct WrapperConfig {
     #[clap(value_parser, long, default_value = "2048")]
     pub midi_capacity: u32,
 
-    /// The input device for the ALSA, CoreAudio, and WASAPI backends. No input will be connected
-    /// if this is not specified.
+    /// The input device for the ALSA, ASIO, CoreAudio, and WASAPI backends. No input will be
+    /// connected if this is not specified. If no ASIO output device is specified, this device will
+    /// also be used for output.
     ///
     /// Specifying an empty string or other invalid value will list all available input devices.
     #[clap(value_parser, long)]
     pub input_device: Option<String>,
-    /// The output device for the ALSA, CoreAudio, and WASAPI backends.
+    /// The output device for the ALSA, ASIO, CoreAudio, and WASAPI backends.
     ///
     /// Specifying an empty string or other invalid value will list all available output devices.
     #[clap(value_parser, long)]
     pub output_device: Option<String>,
-    /// The input MIDI device for the ALSA, CoreAudio, and WASAPI backends.
+    /// The input MIDI device for the ALSA, ASIO, CoreAudio, and WASAPI backends.
     ///
     /// Specifying an empty string or other invalid value will list all available MIDI inputs.
     #[clap(value_parser, long)]
     pub midi_input: Option<String>,
-    /// The output output device for the ALSA, CoreAudio, and WASAPI backends.
+    /// The output MIDI device for the ALSA, ASIO, CoreAudio, and WASAPI backends.
     ///
     /// Specifying an empty string or other invalid value will list all available MIDI output.
     #[clap(value_parser, long)]
@@ -150,6 +151,9 @@ pub enum BackendType {
     /// Use WASAPI for audio and MIDI.
     #[cfg(target_os = "windows")]
     Wasapi,
+    /// Use ASIO for audio and midir for MIDI.
+    #[cfg(all(target_os = "windows", feature = "standalone-asio"))]
+    Asio,
     /// Does not playback or receive any audio or MIDI.
     Dummy,
 }
