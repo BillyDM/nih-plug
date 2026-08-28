@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::internals::ParamPtr;
-use super::{InternalParamMut, Param, ParamFlags};
+use super::{InternalParamMut, Param, ParamFlags, ParamInfo};
 
 /// A simple boolean parameter.
 pub struct BoolParam {
@@ -27,33 +27,25 @@ pub struct BoolParam {
     /// The field's default value.
     default: bool,
 
-    /// Flags to control the parameter's behavior. See [`ParamFlags`].
-    flags: ParamFlags,
     /// Optional callback for listening to value changes. The argument passed to this function is
     /// the parameter's new value. This should not do anything expensive as it may be called
     /// multiple times in rapid succession, and it can be run from both the GUI and the audio
     /// thread.
     value_changed: Option<Arc<dyn Fn(bool) + Send + Sync>>,
 
-    /// The parameter's human readable display name.
-    name: String,
+    /// Metadata and conversion callbacks that are not used by the DSP hot path.
+    info: Box<ParamInfo<bool>>,
     /// If this parameter has been marked as polyphonically modulatable, then this will be a unique
     /// integer identifying the parameter. Because this value is determined by the plugin itself,
     /// the plugin can easily map
     /// [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation] events to the
     /// correct parameter by pattern matching on a constant.
     poly_modulation_id: Option<u32>,
-    /// Optional custom conversion function from a boolean value to a string.
-    value_to_string: Option<Arc<dyn Fn(bool) -> String + Send + Sync>>,
-    /// Optional custom conversion function from a string to a boolean value. If the string cannot
-    /// be parsed, then this should return a `None`. If this happens while the parameter is being
-    /// updated then the update will be canceled.
-    string_to_value: Option<Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>>,
 }
 
 impl Display for BoolParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.value(), &self.value_to_string) {
+        match (self.value(), &self.info.value_to_string) {
             (v, Some(func)) => write!(f, "{}", func(v)),
             (true, None) => write!(f, "On"),
             (false, None) => write!(f, "Off"),
@@ -65,9 +57,9 @@ impl Debug for BoolParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This uses the above `Display` instance to show the value
         if self.value.load(Ordering::Relaxed) != self.unmodulated_value.load(Ordering::Relaxed) {
-            write!(f, "{}: {} (modulated)", self.name, self)
+            write!(f, "{}: {} (modulated)", self.info.name, self)
         } else {
-            write!(f, "{}: {}", self.name, self)
+            write!(f, "{}: {}", self.info.name, self)
         }
     }
 }
@@ -79,11 +71,11 @@ impl Param for BoolParam {
     type Plain = bool;
 
     fn name(&self) -> &str {
-        &self.name
+        &self.info.name
     }
 
     fn unit(&self) -> &'static str {
-        ""
+        self.info.unit
     }
 
     fn poly_modulation_id(&self) -> Option<u32> {
@@ -129,7 +121,7 @@ impl Param for BoolParam {
 
     fn normalized_value_to_string(&self, normalized: f32, _include_unit: bool) -> String {
         let value = self.preview_plain(normalized);
-        match (value, &self.value_to_string) {
+        match (value, &self.info.value_to_string) {
             (v, Some(f)) => f(v),
             (true, None) => String::from("On"),
             (false, None) => String::from("Off"),
@@ -138,7 +130,7 @@ impl Param for BoolParam {
 
     fn string_to_normalized_value(&self, string: &str) -> Option<f32> {
         let string = string.trim();
-        let value = match &self.string_to_value {
+        let value = match &self.info.string_to_value {
             Some(f) => f(string),
             None => Some(string.eq_ignore_ascii_case("true") || string.eq_ignore_ascii_case("on")),
         }?;
@@ -157,7 +149,7 @@ impl Param for BoolParam {
     }
 
     fn flags(&self) -> ParamFlags {
-        self.flags
+        self.info.flags
     }
 
     fn as_ptr(&self) -> ParamPtr {
@@ -234,13 +226,10 @@ impl BoolParam {
             modulation_offset: AtomicF32::new(0.0),
             default,
 
-            flags: ParamFlags::default(),
             value_changed: None,
 
-            name: name.into(),
+            info: Box::new(ParamInfo::new(name)),
             poly_modulation_id: None,
-            value_to_string: None,
-            string_to_value: None,
         }
     }
 
@@ -281,7 +270,7 @@ impl BoolParam {
         mut self,
         callback: Arc<dyn Fn(bool) -> String + Send + Sync>,
     ) -> Self {
-        self.value_to_string = Some(callback);
+        self.info.value_to_string = Some(callback);
         self
     }
 
@@ -292,7 +281,7 @@ impl BoolParam {
         mut self,
         callback: Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>,
     ) -> Self {
-        self.string_to_value = Some(callback);
+        self.info.string_to_value = Some(callback);
         self
     }
 
@@ -301,7 +290,7 @@ impl BoolParam {
     /// if you don't create one yourself. You will need to implement this yourself if your plugin
     /// introduces latency.
     pub fn make_bypass(mut self) -> Self {
-        self.flags.insert(ParamFlags::BYPASS);
+        self.info.flags.insert(ParamFlags::BYPASS);
         self
     }
 
@@ -309,7 +298,7 @@ impl BoolParam {
     /// an automation lane. The parameter can however still be manually changed by the user from
     /// either the plugin's own GUI or from the host's generic UI.
     pub fn non_automatable(mut self) -> Self {
-        self.flags.insert(ParamFlags::NON_AUTOMATABLE);
+        self.info.flags.insert(ParamFlags::NON_AUTOMATABLE);
         self
     }
 
@@ -317,14 +306,14 @@ impl BoolParam {
     /// `NON_AUTOMATABLE`. Setting this does not prevent you from changing the parameter in the
     /// plugin's editor GUI.
     pub fn hide(mut self) -> Self {
-        self.flags.insert(ParamFlags::HIDDEN);
+        self.info.flags.insert(ParamFlags::HIDDEN);
         self
     }
 
     /// Don't show this parameter when generating a generic UI for the plugin using one of
     /// nice-plug's generic UI widgets.
     pub fn hide_in_generic_ui(mut self) -> Self {
-        self.flags.insert(ParamFlags::HIDE_IN_GENERIC_UI);
+        self.info.flags.insert(ParamFlags::HIDE_IN_GENERIC_UI);
         self
     }
 }

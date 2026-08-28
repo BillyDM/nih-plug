@@ -29,6 +29,36 @@ pub use enums::EnumParam;
 pub use float::FloatParam;
 pub use integer::IntParam;
 
+/// Parameter metadata and conversion callbacks that are not accessed by the DSP hot path.
+/// Storing these out of line reduces the cache footprint of parameter value reads during audio
+/// processing.
+struct ParamInfo<T> {
+    /// Flags controlling the parameter's behavior.
+    flags: ParamFlags,
+    /// The parameter's human-readable display name.
+    name: String,
+    /// The parameter value's unit. This is appended after `value_to_string`, when set, without
+    /// automatically inserting a space.
+    unit: &'static str,
+    /// An optional custom conversion function from a plain parameter value to a string.
+    value_to_string: Option<Arc<dyn Fn(T) -> String + Send + Sync>>,
+    /// An optional custom conversion function from a string to a plain parameter value. The input
+    /// may include the unit. Returning `None` cancels the parameter update.
+    string_to_value: Option<Arc<dyn Fn(&str) -> Option<T> + Send + Sync>>,
+}
+
+impl<T> ParamInfo<T> {
+    fn new(name: impl Into<String>) -> Self {
+        Self {
+            flags: ParamFlags::default(),
+            name: name.into(),
+            unit: "",
+            value_to_string: None,
+            string_to_value: None,
+        }
+    }
+}
+
 bitflags::bitflags! {
     /// Flags for controlling a parameter's behavior.
     #[repr(transparent)]

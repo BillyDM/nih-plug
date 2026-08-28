@@ -10,7 +10,7 @@ use crate::nice_debug_assert;
 use super::internals::ParamPtr;
 use super::range::FloatRange;
 use super::smoothing::{Smoother, SmoothingStyle};
-use super::{InternalParamMut, Param, ParamFlags};
+use super::{InternalParamMut, Param, ParamFlags, ParamInfo};
 
 /// A floating point parameter that's stored unnormalized. The range is used for the normalization
 /// process.
@@ -35,8 +35,6 @@ pub struct FloatParam {
     /// set by the host.
     pub smoothed: Smoother<f32>,
 
-    /// Flags to control the parameter's behavior. See [`ParamFlags`].
-    flags: ParamFlags,
     /// Optional callback for listening to value changes. The argument passed to this function is
     /// the parameter's new **plain** value. This should not do anything expensive as it may be
     /// called multiple times in rapid succession.
@@ -50,40 +48,28 @@ pub struct FloatParam {
     /// The distribution of the parameter's values.
     range: FloatRange,
     /// The distance between discrete steps in this parameter. Mostly useful for quantizing GUI
-    /// input. If this is set and if [`value_to_string`][Self::value_to_string] is not set, then
+    /// input. If this is set and if [`value_to_string`][Self::with_value_to_string] is not set, then
     /// this is also used when formatting the parameter. This must be a positive, nonzero number.
     step_size: Option<f32>,
-    /// The parameter's human readable display name.
-    name: String,
-    /// The parameter value's unit, added after [`value_to_string`][Self::value_to_string] if that
-    /// is set. nice-plug will not automatically add a space before the unit.
-    unit: &'static str,
+    /// Metadata and conversion callbacks that are not used by the DSP hot path.
+    info: Box<ParamInfo<f32>>,
     /// If this parameter has been marked as polyphonically modulatable, then this will be a unique
     /// integer identifying the parameter. Because this value is determined by the plugin itself,
     /// the plugin can easily map
     /// [`NoteEvent::PolyModulation`][crate::prelude::NoteEvent::PolyModulation] events to the
     /// correct parameter by pattern matching on a constant.
     poly_modulation_id: Option<u32>,
-    /// Optional custom conversion function from a plain **unnormalized** value to a string.
-    value_to_string: Option<Arc<dyn Fn(f32) -> String + Send + Sync>>,
-    /// Optional custom conversion function from a string to a plain **unnormalized** value. If the
-    /// string cannot be parsed, then this should return a `None`. If this happens while the
-    /// parameter is being updated then the update will be canceled.
-    ///
-    /// The input string may or may not contain the unit, so you will need to be able to handle
-    /// that.
-    string_to_value: Option<Arc<dyn Fn(&str) -> Option<f32> + Send + Sync>>,
 }
 
 impl Display for FloatParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (&self.value_to_string, &self.step_size) {
-            (Some(func), _) => write!(f, "{}{}", func(self.value()), self.unit),
+        match (&self.info.value_to_string, &self.step_size) {
+            (Some(func), _) => write!(f, "{}{}", func(self.value()), self.info.unit),
             (None, Some(step_size)) => {
                 let num_digits = decimals_from_step_size(*step_size);
-                write!(f, "{:.num_digits$}{}", self.value(), self.unit)
+                write!(f, "{:.num_digits$}{}", self.value(), self.info.unit)
             }
-            _ => write!(f, "{}{}", self.value(), self.unit),
+            _ => write!(f, "{}{}", self.value(), self.info.unit),
         }
     }
 }
@@ -92,9 +78,9 @@ impl Debug for FloatParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // This uses the above `Display` instance to show the value
         if self.modulated_plain_value() != self.unmodulated_plain_value() {
-            write!(f, "{}: {} (modulated)", self.name, self)
+            write!(f, "{}: {} (modulated)", self.info.name, self)
         } else {
-            write!(f, "{}: {}", self.name, self)
+            write!(f, "{}: {}", self.info.name, self)
         }
     }
 }
@@ -106,11 +92,11 @@ impl Param for FloatParam {
     type Plain = f32;
 
     fn name(&self) -> &str {
-        &self.name
+        &self.info.name
     }
 
     fn unit(&self) -> &'static str {
-        self.unit
+        self.info.unit
     }
 
     fn poly_modulation_id(&self) -> Option<u32> {
@@ -156,27 +142,27 @@ impl Param for FloatParam {
 
     fn normalized_value_to_string(&self, normalized: f32, include_unit: bool) -> String {
         let value = self.preview_plain(normalized);
-        match (&self.value_to_string, &self.step_size, include_unit) {
-            (Some(f), _, true) => format!("{}{}", f(value), self.unit),
+        match (&self.info.value_to_string, &self.step_size, include_unit) {
+            (Some(f), _, true) => format!("{}{}", f(value), self.info.unit),
             (Some(f), _, false) => f(value),
             (None, Some(step_size), true) => {
                 let num_digits = decimals_from_step_size(*step_size);
-                format!("{:.num_digits$}{}", value, self.unit)
+                format!("{:.num_digits$}{}", value, self.info.unit)
             }
             (None, Some(step_size), false) => {
                 let num_digits = decimals_from_step_size(*step_size);
                 format!("{value:.num_digits$}")
             }
-            (None, None, true) => format!("{}{}", value, self.unit),
+            (None, None, true) => format!("{}{}", value, self.info.unit),
             (None, None, false) => format!("{value}"),
         }
     }
 
     fn string_to_normalized_value(&self, string: &str) -> Option<f32> {
-        let value = match &self.string_to_value {
+        let value = match &self.info.string_to_value {
             Some(f) => f(string.trim()),
             // In the CLAP wrapper the unit will be included, so make sure to handle that
-            None => string.trim().trim_end_matches(self.unit).parse().ok(),
+            None => string.trim().trim_end_matches(self.info.unit).parse().ok(),
         }?;
 
         Some(self.preview_normalized(value))
@@ -197,7 +183,7 @@ impl Param for FloatParam {
     }
 
     fn flags(&self) -> ParamFlags {
-        self.flags
+        self.info.flags
     }
 
     fn as_ptr(&self) -> ParamPtr {
@@ -282,16 +268,12 @@ impl FloatParam {
             default,
             smoothed: Smoother::none(),
 
-            flags: ParamFlags::default(),
             value_changed: None,
 
             range,
             step_size: None,
-            name: name.into(),
-            unit: "",
+            info: Box::new(ParamInfo::new(name)),
             poly_modulation_id: None,
-            value_to_string: None,
-            string_to_value: None,
         }
     }
 
@@ -360,7 +342,7 @@ impl FloatParam {
     /// [`value_to_string`][Self::with_value_to_string()] function if that is also set. nice-plug
     /// will not automatically add a space before the unit.
     pub fn with_unit(mut self, unit: &'static str) -> Self {
-        self.unit = unit;
+        self.info.unit = unit;
         self
     }
 
@@ -379,7 +361,7 @@ impl FloatParam {
         mut self,
         callback: Arc<dyn Fn(f32) -> String + Send + Sync>,
     ) -> Self {
-        self.value_to_string = Some(callback);
+        self.info.value_to_string = Some(callback);
         self
     }
 
@@ -393,7 +375,7 @@ impl FloatParam {
         mut self,
         callback: Arc<dyn Fn(&str) -> Option<f32> + Send + Sync>,
     ) -> Self {
-        self.string_to_value = Some(callback);
+        self.info.string_to_value = Some(callback);
         self
     }
 
@@ -401,7 +383,7 @@ impl FloatParam {
     /// an automation lane. The parameter can however still be manually changed by the user from
     /// either the plugin's own GUI or from the host's generic UI.
     pub fn non_automatable(mut self) -> Self {
-        self.flags.insert(ParamFlags::NON_AUTOMATABLE);
+        self.info.flags.insert(ParamFlags::NON_AUTOMATABLE);
         self
     }
 
@@ -409,14 +391,14 @@ impl FloatParam {
     /// `NON_AUTOMATABLE`. Setting this does not prevent you from changing the parameter in the
     /// plugin's editor GUI.
     pub fn hide(mut self) -> Self {
-        self.flags.insert(ParamFlags::HIDDEN);
+        self.info.flags.insert(ParamFlags::HIDDEN);
         self
     }
 
     /// Don't show this parameter when generating a generic UI for the plugin using one of
     /// nice-plug's generic UI widgets.
     pub fn hide_in_generic_ui(mut self) -> Self {
-        self.flags.insert(ParamFlags::HIDE_IN_GENERIC_UI);
+        self.info.flags.insert(ParamFlags::HIDE_IN_GENERIC_UI);
         self
     }
 }
