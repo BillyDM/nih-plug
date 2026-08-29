@@ -60,6 +60,15 @@ impl FloatRange {
         0.5f32.log((middle_gain - min_gain) / (max_gain - min_gain))
     }
 
+    /// Create a parameter range for a gain value that is linear when formatted as decibels.
+    pub fn gain_range(min_db: f32, max_db: f32) -> Self {
+        Self::Skewed {
+            min: util::db_to_gain(min_db),
+            max: util::db_to_gain(max_db),
+            factor: Self::gain_skew_factor(min_db, max_db),
+        }
+    }
+
     /// Normalize a plain, unnormalized value. Will be clamped to the bounds of the range if the
     /// normalized value exceeds `[0, 1]`.
     pub fn normalize(&self, plain: f32) -> f32 {
