@@ -192,11 +192,7 @@ impl Default for GainParams {
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(MIN_GAIN_DB),
-                    max: util::db_to_gain(MAX_GAIN_DB),
-                    factor: FloatRange::gain_skew_factor(MIN_GAIN_DB, MAX_GAIN_DB),
-                },
+                FloatRange::gain_range(MIN_GAIN_DB, MAX_GAIN_DB),
             )
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
