@@ -1873,7 +1873,7 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 if clamped_capacity != self.current_voice_capacity.load(Ordering::Relaxed) {
                     self.current_voice_capacity
-                        .store(clamped_capacity, Ordering::Relaxed);
+                        .store(clamped_capacity, Ordering::SeqCst);
                     let task_posted = self.schedule_gui(Task::VoiceInfoChanged);
                     crate::nice_debug_assert!(
                         task_posted,
