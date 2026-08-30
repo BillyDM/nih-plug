@@ -25,7 +25,7 @@ nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.4.0" }
 atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the
 # GUI and the audio thread.
-rtrb = "0.3.3"
+rtrb = "0.4.0"
 # Optional, only include if you want to sync complex state between
 # the GUI and the audio thread.
 triple_buffer = "9.0.0"

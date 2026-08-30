@@ -17,7 +17,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.3.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
-baseview = { version = "0.3.1", features = ["tracing"] }
+baseview = { version = "0.3.2", features = ["tracing"] }
 wgpu = "30"
 pollster = "1.0"
 crossbeam = "0.8"
