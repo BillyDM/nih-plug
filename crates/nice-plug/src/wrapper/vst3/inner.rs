@@ -12,7 +12,9 @@ use nice_plug_core::editor::{Editor, SpawnedEditor};
 use nice_plug_core::midi::{MidiConfig, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor, TrackInfo};
+#[cfg(feature = "editor")]
+use nice_plug_core::plugin::TrackInfo;
+use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
 use parking_lot::Mutex;
 #[cfg(feature = "editor")]
 use parking_lot::RwLock;
@@ -104,6 +106,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// The most recently reported track information. Hosts may send partial updates (e.g.
     /// Ableton), so this is used to merge successive [`IInfoListener::setChannelContextInfos()`]
     /// calls.
+    #[cfg(feature = "editor")]
     pub current_track_info: AtomicRefCell<TrackInfo>,
 
     /// The last process status returned by the plugin. This is used for tail handling.
@@ -342,6 +345,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             ),
             current_buffer_config: AtomicCell::new(None),
             current_process_mode: AtomicCell::new(ProcessMode::Realtime),
+            #[cfg(feature = "editor")]
             current_track_info: AtomicRefCell::new(TrackInfo::default()),
             last_process_status: AtomicCell::new(ProcessStatus::Normal),
             current_latency: AtomicU32::new(0),

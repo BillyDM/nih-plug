@@ -45,9 +45,11 @@ use clap_sys::ext::render::{
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::ext::tail::{CLAP_EXT_TAIL, clap_plugin_tail};
 use clap_sys::ext::thread_check::{CLAP_EXT_THREAD_CHECK, clap_host_thread_check};
+use clap_sys::ext::track_info::CLAP_EXT_TRACK_INFO;
+#[cfg(feature = "editor")]
 use clap_sys::ext::track_info::{
-    CLAP_EXT_TRACK_INFO, CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME,
-    clap_host_track_info, clap_plugin_track_info, clap_track_info,
+    CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME, clap_host_track_info,
+    clap_plugin_track_info, clap_track_info,
 };
 use clap_sys::ext::voice_info::{
     CLAP_EXT_VOICE_INFO, CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES, clap_host_voice_info,
@@ -75,9 +77,9 @@ use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{
-    Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo,
-};
+use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
+#[cfg(feature = "editor")]
+use nice_plug_core::plugin::{TrackColor, TrackInfo};
 use parking_lot::Mutex;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -260,10 +262,13 @@ pub struct Wrapper<P: ClapPlugin> {
 
     clap_plugin_tail: clap_plugin_tail,
 
+    #[cfg(feature = "editor")]
     clap_plugin_track_info: clap_plugin_track_info,
+    #[cfg(feature = "editor")]
     host_track_info: AtomicRefCell<Option<ClapPtr<clap_host_track_info>>>,
     /// The most recently reported track information. Hosts may send partial updates, so this is used
     /// to merge successive track info queries.
+    #[cfg(feature = "editor")]
     current_track_info: AtomicRefCell<TrackInfo>,
 
     clap_plugin_voice_info: clap_plugin_voice_info,
@@ -720,10 +725,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                 get: Some(Self::ext_tail_get),
             },
 
+            #[cfg(feature = "editor")]
             clap_plugin_track_info: clap_plugin_track_info {
                 changed: Some(Self::ext_track_info_changed),
             },
+            #[cfg(feature = "editor")]
             host_track_info: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
             current_track_info: AtomicRefCell::new(TrackInfo::default()),
 
             clap_plugin_voice_info: clap_plugin_voice_info {
@@ -1881,6 +1889,7 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     /// Query the host for the current track information and notify the plugin if anything changed.
+    #[cfg(feature = "editor")]
     fn update_track_info_from_host(&self) {
         let host_track_info = self.host_track_info.borrow();
         let Some(host_track_info) = host_track_info.as_ref() else {
@@ -1990,6 +1999,11 @@ impl<P: ClapPlugin> Wrapper<P> {
                 >(
                     &wrapper.host_callback, CLAP_EXT_GUI
                 );
+
+                *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
+                    &wrapper.host_callback,
+                    CLAP_EXT_TRACK_INFO,
+                );
             }
             *wrapper.host_latency.borrow_mut() =
                 query_host_extension::<clap_host_latency>(&wrapper.host_callback, CLAP_EXT_LATENCY);
@@ -2003,12 +2017,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                 &wrapper.host_callback,
                 CLAP_EXT_THREAD_CHECK,
             );
-            *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
-                &wrapper.host_callback,
-                CLAP_EXT_TRACK_INFO,
-            );
         }
 
+        #[cfg(feature = "editor")]
         wrapper.update_track_info_from_host();
 
         true
@@ -2651,7 +2662,11 @@ impl<P: ClapPlugin> Wrapper<P> {
         } else if id == CLAP_EXT_STATE {
             &wrapper.clap_plugin_state as *const _ as *const c_void
         } else if id == CLAP_EXT_TRACK_INFO {
-            &wrapper.clap_plugin_track_info as *const _ as *const c_void
+            #[cfg(not(feature = "editor"))]
+            return std::ptr::null();
+
+            #[cfg(feature = "editor")]
+            return &wrapper.clap_plugin_track_info as *const _ as *const c_void;
         } else if id == CLAP_EXT_VOICE_INFO {
             if P::CLAP_POLY_MODULATION_CONFIG.is_some() {
                 &wrapper.clap_plugin_voice_info as *const _ as *const c_void
@@ -3770,6 +3785,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_track_info_changed(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };

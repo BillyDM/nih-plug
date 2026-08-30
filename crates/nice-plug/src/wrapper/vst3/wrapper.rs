@@ -1,10 +1,11 @@
 use nice_plug_core::audio_setup::{AuxiliaryBuffers, BufferConfig, ProcessMode};
 use nice_plug_core::context::process::Transport;
+#[cfg(feature = "editor")]
 use nice_plug_core::editor::Editor;
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent};
 use nice_plug_core::params::ParamFlags;
-use nice_plug_core::plugin::{ProcessStatus, TrackColor, TrackInfo};
+use nice_plug_core::plugin::ProcessStatus;
 use std::borrow::Borrow;
 use std::ffi::c_void;
 use std::mem::{self, MaybeUninit};
@@ -19,12 +20,12 @@ use vst3::Steinberg::Vst::ProcessContext_::StatesAndFlags_::{
 };
 use vst3::Steinberg::Vst::{
     BusDirection, CString,
-    ChannelContext::{self, IInfoListener, IInfoListenerTrait},
+    ChannelContext::{IInfoListener, IInfoListenerTrait},
     CtrlNumber, DataEvent, Event,
     Event_::EventTypes_,
-    IAttributeList, IAttributeListTrait, IAudioProcessor, IAudioProcessorTrait, IComponent,
-    IComponentHandler, IComponentTrait, IEditController, IEditControllerTrait, IEventListTrait,
-    IMidiMapping, IMidiMappingTrait, INoteExpressionController, INoteExpressionControllerTrait,
+    IAttributeList, IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentHandler,
+    IComponentTrait, IEditController, IEditControllerTrait, IEventListTrait, IMidiMapping,
+    IMidiMappingTrait, INoteExpressionController, INoteExpressionControllerTrait,
     IParamValueQueueTrait, IParameterChangesTrait, IProcessContextRequirements,
     IProcessContextRequirements_, IProcessContextRequirementsTrait, IUnitInfo, IUnitInfoTrait,
     IoMode, LegacyMIDICCOutEvent, MediaType, NoteExpressionTypeID, NoteExpressionTypeInfo,
@@ -2023,54 +2024,66 @@ impl<P: Vst3Plugin> IUnitInfoTrait for Wrapper<P> {
 
 impl<P: Vst3Plugin> IInfoListenerTrait for Wrapper<P> {
     unsafe fn setChannelContextInfos(&self, list: *mut IAttributeList) -> tresult {
-        fn track_color_from_vst3_color(color: u32) -> TrackColor {
-            TrackColor::new(
-                ((color >> 16) & 0xFF) as u8,
-                ((color >> 8) & 0xFF) as u8,
-                (color & 0xFF) as u8,
-                ((color >> 24) & 0xFF) as u8,
-            )
+        #[cfg(not(feature = "editor"))]
+        {
+            let _ = list;
+            return kResultOk;
         }
-        check_null_ptr!(list);
 
-        let list = unsafe { ComRef::from_raw(list) };
-        let Some(list) = list else {
-            return kInvalidArgument;
-        };
+        #[cfg(feature = "editor")]
+        {
+            use nice_plug_core::plugin::{TrackColor, TrackInfo};
+            use vst3::Steinberg::Vst::{ChannelContext, IAttributeListTrait};
 
-        permit_alloc(|| {
-            let mut current_track_info = self.inner.current_track_info.borrow_mut();
-            let mut name = current_track_info.name().to_owned();
-            let mut color = current_track_info.color();
-
-            let mut name_buf: String128 = [0; 128];
-            if unsafe {
-                list.getString(
-                    ChannelContext::kChannelNameKey,
-                    name_buf.as_mut_ptr(),
-                    mem::size_of::<String128>() as u32,
+            fn track_color_from_vst3_color(color: u32) -> TrackColor {
+                TrackColor::new(
+                    ((color >> 16) & 0xFF) as u8,
+                    ((color >> 8) & 0xFF) as u8,
+                    (color & 0xFF) as u8,
+                    ((color >> 24) & 0xFF) as u8,
                 )
-            } == kResultOk
-                && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
-            {
-                name = cstr.to_string_lossy();
-            } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
-
-            let mut color_value = 0i64;
-            if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }
-                == kResultOk
-            {
-                color = Some(track_color_from_vst3_color(color_value as u32));
             }
+            check_null_ptr!(list);
 
-            let track_info = TrackInfo::new(name, color);
-            *current_track_info = track_info.clone();
+            let list = unsafe { ComRef::from_raw(list) };
+            let Some(list) = list else {
+                return kInvalidArgument;
+            };
 
-            if let Some(editor) = self.inner.editor.borrow().as_ref() {
-                editor.lock().track_info_updated(track_info);
-            }
-        });
+            permit_alloc(|| {
+                let mut current_track_info = self.inner.current_track_info.borrow_mut();
+                let mut name = current_track_info.name().to_owned();
+                let mut color = current_track_info.color();
 
-        kResultOk
+                let mut name_buf: String128 = [0; 128];
+                if unsafe {
+                    list.getString(
+                        ChannelContext::kChannelNameKey,
+                        name_buf.as_mut_ptr(),
+                        mem::size_of::<String128>() as u32,
+                    )
+                } == kResultOk
+                    && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
+                {
+                    name = cstr.to_string_lossy();
+                } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
+
+                let mut color_value = 0i64;
+                if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }
+                    == kResultOk
+                {
+                    color = Some(track_color_from_vst3_color(color_value as u32));
+                }
+
+                let track_info = TrackInfo::new(name, color);
+                *current_track_info = track_info.clone();
+
+                if let Some(editor) = self.inner.editor.borrow().as_ref() {
+                    editor.lock().track_info_updated(track_info);
+                }
+            });
+
+            kResultOk
+        }
     }
 }

@@ -36,7 +36,9 @@ pub use crate::params::range::{FloatRange, IntRange};
 pub use crate::params::smoothing::{AtomicF32, Smoothable, Smoother, SmoothingStyle};
 pub use crate::params::{BoolParam, FloatParam, IntParam, Param, ParamFlags};
 pub use crate::plugin::PluginState;
-pub use crate::plugin::{Plugin, ProcessStatus, TaskExecutor, TrackColor, TrackInfo};
+pub use crate::plugin::{Plugin, ProcessStatus, TaskExecutor};
+#[cfg(feature = "editor")]
+pub use crate::plugin::{TrackColor, TrackInfo};
 pub use crate::wrapper::clap::features::ClapFeature;
 pub use crate::wrapper::clap::{ClapPlugin, PolyModulationConfig};
 #[cfg(feature = "vst3")]

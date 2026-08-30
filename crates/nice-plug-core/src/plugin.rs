@@ -4,8 +4,11 @@
 use std::sync::Arc;
 
 mod state;
-mod track_info;
 pub use state::*;
+
+#[cfg(feature = "editor")]
+mod track_info;
+#[cfg(feature = "editor")]
 pub use track_info::*;
 
 use crate::{
