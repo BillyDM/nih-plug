@@ -4,8 +4,11 @@
 use std::sync::Arc;
 
 mod state;
-mod track_info;
 pub use state::*;
+
+#[cfg(feature = "editor")]
+mod track_info;
+#[cfg(feature = "editor")]
 pub use track_info::*;
 
 use crate::{
@@ -260,6 +263,12 @@ pub trait Plugin: Default + Send + 'static {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus;
 
+    /// Called when the host is about to deactivate the plugin or when it is about to send the plugin
+    /// to sleep.
+    ///
+    /// This is currently only used in the CLAP backend.
+    fn stop_processing(&mut self) {}
+
     /// Called when the plugin is deactivated. The host will call
     /// [`activate()`][Self::activate()] again before the plugin resumes processing audio. These
     /// two functions will not be called when the host only temporarily stops processing audio. You
@@ -269,10 +278,6 @@ pub trait Plugin: Default + Send + 'static {
     /// `activate()` may be called more than once before `deactivate()` is called, for instance
     /// when restoring state while the plugin is still activate.
     fn deactivate(&mut self) {}
-
-    /// Called when the host provides track information after [`activate()`][Self::activate()] and after
-    /// changes are made to the track that the plugin is on.
-    fn track_info_updated(&mut self, info: TrackInfo) {}
 
     /// Configure the global logger here.
     ///

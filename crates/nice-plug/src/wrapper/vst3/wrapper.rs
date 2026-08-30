@@ -1,9 +1,11 @@
 use nice_plug_core::audio_setup::{AuxiliaryBuffers, BufferConfig, ProcessMode};
 use nice_plug_core::context::process::Transport;
+#[cfg(feature = "editor")]
+use nice_plug_core::editor::Editor;
 use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent};
 use nice_plug_core::params::ParamFlags;
-use nice_plug_core::plugin::{ProcessStatus, TrackColor, TrackInfo};
+use nice_plug_core::plugin::ProcessStatus;
 use std::borrow::Borrow;
 use std::ffi::c_void;
 use std::mem::{self, MaybeUninit};
@@ -11,18 +13,19 @@ use std::num::NonZeroU32;
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use vst3::Steinberg::Vst::ProcessContext_::StatesAndFlags_::{
     kBarPositionValid, kCycleActive, kCycleValid, kPlaying, kProjectTimeMusicValid, kRecording,
     kTempoValid, kTimeSigValid,
 };
 use vst3::Steinberg::Vst::{
     BusDirection, CString,
-    ChannelContext::{self, IInfoListener, IInfoListenerTrait},
+    ChannelContext::{IInfoListener, IInfoListenerTrait},
     CtrlNumber, DataEvent, Event,
     Event_::EventTypes_,
-    IAttributeList, IAttributeListTrait, IAudioProcessor, IAudioProcessorTrait, IComponent,
-    IComponentHandler, IComponentTrait, IEditController, IEditControllerTrait, IEventListTrait,
-    IMidiMapping, IMidiMappingTrait, INoteExpressionController, INoteExpressionControllerTrait,
+    IAttributeList, IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentHandler,
+    IComponentTrait, IEditController, IEditControllerTrait, IEventListTrait, IMidiMapping,
+    IMidiMappingTrait, INoteExpressionController, INoteExpressionControllerTrait,
     IParamValueQueueTrait, IParameterChangesTrait, IProcessContextRequirements,
     IProcessContextRequirements_, IProcessContextRequirementsTrait, IUnitInfo, IUnitInfoTrait,
     IoMode, LegacyMIDICCOutEvent, MediaType, NoteExpressionTypeID, NoteExpressionTypeInfo,
@@ -413,31 +416,80 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
                     unsafe { param._internal_update_smoother(buffer_config.sample_rate, true) };
                 }
 
-                // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
                 let mut activate_context = self.inner.make_activate_context();
                 let audio_io_layout = self.inner.current_audio_io_layout.load();
-                let mut plugin = self.inner.plugin.lock();
-                if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context) {
-                    // NOTE: We don't call `Plugin::reset()` here. The call is done in `set_process()`
-                    //       instead. Otherwise we would call the function twice, and `set_process()` needs
-                    //       to be called after this function before the plugin may process audio again.
 
-                    // This preallocates enough space so we can transform all of the host's raw
-                    // channel pointers into a set of `Buffer` objects for the plugin's main and
-                    // auxiliary IO
-                    *self.inner.buffer_manager.borrow_mut() = BufferManager::for_audio_io_layout(
-                        buffer_config.max_buffer_size as usize,
-                        audio_io_layout,
-                    );
+                // In the case a host misbehaves and tries to activate the plugin without waiting for the
+                // `process` method to finish, manually wait for that method to finish.
+                let now = Instant::now();
+                let mut result = kResultFalse;
+                loop {
+                    if let Some(mut plugin) = self.inner.plugin.try_lock() {
+                        if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context)
+                        {
+                            // NOTE: We don't call `Plugin::reset()` here. The call is done in `set_process()`
+                            //       instead. Otherwise we would call the function twice, and `set_process()` needs
+                            //       to be called after this function before the plugin may process audio again.
 
-                    kResultOk
-                } else {
-                    kResultFalse
+                            // Likewise, make sure that the buffers are also not currently being used by the process
+                            // method.
+                            let now_2 = Instant::now();
+                            loop {
+                                if let Ok(mut buffer_manager) =
+                                    self.inner.buffer_manager.try_borrow_mut()
+                                {
+                                    // This preallocates enough space so we can transform all of the host's raw
+                                    // channel pointers into a set of `Buffer` objects for the plugin's main and
+                                    // auxiliary IO
+                                    *buffer_manager = BufferManager::for_audio_io_layout(
+                                        buffer_config.max_buffer_size as usize,
+                                        audio_io_layout,
+                                    );
+
+                                    result = kResultOk;
+
+                                    break;
+                                } else if now_2.elapsed() > Duration::from_secs(1) {
+                                    crate::nice_error!(
+                                        "Failed to acquire lock on buffers while activating"
+                                    );
+                                    break;
+                                } else {
+                                    std::thread::sleep(Duration::from_millis(1));
+                                }
+                            }
+                        }
+
+                        break;
+                    } else if now.elapsed() > Duration::from_secs(1) {
+                        crate::nice_error!("Failed to acquire lock on plugin while activating");
+                        break;
+                    } else {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
                 }
+
+                // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
+                drop(activate_context);
+
+                result
             }
             (true, None) => kResultFalse,
             (false, _) => {
-                self.inner.plugin.lock().deactivate();
+                // In the case a host misbehaves and tries to activate the plugin without waiting for the
+                // `process` method to finish, manually wait for that method to finish.
+                let now = Instant::now();
+                loop {
+                    if let Some(mut plugin) = self.inner.plugin.try_lock() {
+                        plugin.deactivate();
+                        break;
+                    } else if now.elapsed() > Duration::from_secs(1) {
+                        crate::nice_error!("Failed to acquire lock on plugin while deactivating");
+                        break;
+                    } else {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
 
                 kResultOk
             }
@@ -1459,17 +1511,21 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                     }
 
                     let result = if buffer_is_valid {
-                        // NOTE: `parking_lot`'s mutexes sometimes allocate because of their use of
-                        //       thread locals
-                        let mut plugin = permit_alloc(|| self.inner.plugin.lock());
-                        let mut aux = AuxiliaryBuffers {
-                            inputs: buffers.aux_inputs,
-                            outputs: buffers.aux_outputs,
-                        };
-                        let mut context = self.inner.make_process_context(transport);
-                        let result = plugin.process(buffers.main_buffer, &mut aux, &mut context);
-                        self.inner.last_process_status.store(result);
-                        result
+                        // In the case the host misbehaves and tries to activate/deactive the plugin while the
+                        // process loop is still running, just return an error.
+                        if let Some(mut plugin) = self.inner.plugin.try_lock() {
+                            let mut aux = AuxiliaryBuffers {
+                                inputs: buffers.aux_inputs,
+                                outputs: buffers.aux_outputs,
+                            };
+                            let mut context = self.inner.make_process_context(transport);
+                            let result =
+                                plugin.process(buffers.main_buffer, &mut aux, &mut context);
+                            self.inner.last_process_status.store(result);
+                            result
+                        } else {
+                            ProcessStatus::Error("Failed to acquire plugin lock")
+                        }
                     } else {
                         ProcessStatus::Normal
                     };
@@ -1968,51 +2024,66 @@ impl<P: Vst3Plugin> IUnitInfoTrait for Wrapper<P> {
 
 impl<P: Vst3Plugin> IInfoListenerTrait for Wrapper<P> {
     unsafe fn setChannelContextInfos(&self, list: *mut IAttributeList) -> tresult {
-        fn track_color_from_vst3_color(color: u32) -> TrackColor {
-            TrackColor::new(
-                ((color >> 16) & 0xFF) as u8,
-                ((color >> 8) & 0xFF) as u8,
-                (color & 0xFF) as u8,
-                ((color >> 24) & 0xFF) as u8,
-            )
+        #[cfg(not(feature = "editor"))]
+        {
+            let _ = list;
+            return kResultOk;
         }
-        check_null_ptr!(list);
 
-        let list = unsafe { ComRef::from_raw(list) };
-        let Some(list) = list else {
-            return kInvalidArgument;
-        };
+        #[cfg(feature = "editor")]
+        {
+            use nice_plug_core::plugin::{TrackColor, TrackInfo};
+            use vst3::Steinberg::Vst::{ChannelContext, IAttributeListTrait};
 
-        permit_alloc(|| {
-            let mut current_track_info = self.inner.current_track_info.borrow_mut();
-            let mut name = current_track_info.name().to_owned();
-            let mut color = current_track_info.color();
-
-            let mut name_buf: String128 = [0; 128];
-            if unsafe {
-                list.getString(
-                    ChannelContext::kChannelNameKey,
-                    name_buf.as_mut_ptr(),
-                    mem::size_of::<String128>() as u32,
+            fn track_color_from_vst3_color(color: u32) -> TrackColor {
+                TrackColor::new(
+                    ((color >> 16) & 0xFF) as u8,
+                    ((color >> 8) & 0xFF) as u8,
+                    (color & 0xFF) as u8,
+                    ((color >> 24) & 0xFF) as u8,
                 )
-            } == kResultOk
-                && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
-            {
-                name = cstr.to_string_lossy();
-            } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
-
-            let mut color_value = 0i64;
-            if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }
-                == kResultOk
-            {
-                color = Some(track_color_from_vst3_color(color_value as u32));
             }
+            check_null_ptr!(list);
 
-            let track_info = TrackInfo::new(name, color);
-            *current_track_info = track_info.clone();
-            self.inner.plugin.lock().track_info_updated(track_info);
-        });
+            let list = unsafe { ComRef::from_raw(list) };
+            let Some(list) = list else {
+                return kInvalidArgument;
+            };
 
-        kResultOk
+            permit_alloc(|| {
+                let mut current_track_info = self.inner.current_track_info.borrow_mut();
+                let mut name = current_track_info.name().to_owned();
+                let mut color = current_track_info.color();
+
+                let mut name_buf: String128 = [0; 128];
+                if unsafe {
+                    list.getString(
+                        ChannelContext::kChannelNameKey,
+                        name_buf.as_mut_ptr(),
+                        mem::size_of::<String128>() as u32,
+                    )
+                } == kResultOk
+                    && let Ok(cstr) = U16CStr::from_slice_truncate(&name_buf)
+                {
+                    name = cstr.to_string_lossy();
+                } // Else if getting the string failed or if there is no null terminator, do nothing with the name.
+
+                let mut color_value = 0i64;
+                if unsafe { list.getInt(ChannelContext::kChannelColorKey, &mut color_value) }
+                    == kResultOk
+                {
+                    color = Some(track_color_from_vst3_color(color_value as u32));
+                }
+
+                let track_info = TrackInfo::new(name, color);
+                *current_track_info = track_info.clone();
+
+                if let Some(editor) = self.inner.editor.borrow().as_ref() {
+                    editor.lock().track_info_updated(track_info);
+                }
+            });
+
+            kResultOk
+        }
     }
 }

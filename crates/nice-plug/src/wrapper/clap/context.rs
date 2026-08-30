@@ -131,6 +131,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     fn set_current_voice_capacity(&self, capacity: u32) {
         self.wrapper.set_current_voice_capacity(capacity)
     }
+
+    fn request_restart(&self) {
+        self.wrapper.request_restart();
+    }
 }
 
 #[cfg(feature = "editor")]
@@ -256,6 +260,10 @@ impl<P: ClapPlugin> nice_plug_core::context::gui::GuiContextInner for WrapperGui
             .upgrade()
             .unwrap()
             .set_state_object_from_gui(state)
+    }
+
+    fn request_restart(&self) {
+        self.wrapper.upgrade().unwrap().request_restart();
     }
 }
 

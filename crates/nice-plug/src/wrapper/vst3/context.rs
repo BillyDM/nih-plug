@@ -127,6 +127,10 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
     fn set_current_voice_capacity(&self, _capacity: u32) {
         // This is only supported by CLAP
     }
+
+    fn request_restart(&self) {
+        self.inner.request_restart();
+    }
 }
 
 #[cfg(feature = "editor")]
@@ -243,5 +247,9 @@ impl<P: Vst3Plugin + Send> GuiContextInner for WrapperGuiContext<P> {
             .upgrade()
             .unwrap()
             .set_state_object_from_gui(state)
+    }
+
+    fn request_restart(&self) {
+        self.inner.upgrade().unwrap().request_restart();
     }
 }

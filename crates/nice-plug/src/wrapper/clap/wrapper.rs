@@ -45,9 +45,11 @@ use clap_sys::ext::render::{
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::ext::tail::{CLAP_EXT_TAIL, clap_plugin_tail};
 use clap_sys::ext::thread_check::{CLAP_EXT_THREAD_CHECK, clap_host_thread_check};
+use clap_sys::ext::track_info::CLAP_EXT_TRACK_INFO;
+#[cfg(feature = "editor")]
 use clap_sys::ext::track_info::{
-    CLAP_EXT_TRACK_INFO, CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME,
-    clap_host_track_info, clap_plugin_track_info, clap_track_info,
+    CLAP_TRACK_INFO_HAS_TRACK_COLOR, CLAP_TRACK_INFO_HAS_TRACK_NAME, clap_host_track_info,
+    clap_plugin_track_info, clap_track_info,
 };
 use clap_sys::ext::voice_info::{
     CLAP_EXT_VOICE_INFO, CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES, clap_host_voice_info,
@@ -75,9 +77,9 @@ use nice_plug_core::midi::sysex::SysExMessage;
 use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
-use nice_plug_core::plugin::{
-    Plugin, PluginState, ProcessStatus, TaskExecutor, TrackColor, TrackInfo,
-};
+use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
+#[cfg(feature = "editor")]
+use nice_plug_core::plugin::{TrackColor, TrackInfo};
 use parking_lot::Mutex;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -89,7 +91,8 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread::{self, ThreadId};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use try_lock::TryLock;
 
 use super::context::{WrapperActivateContext, WrapperProcessContext};
 use super::descriptor::PluginDescriptor;
@@ -117,7 +120,7 @@ pub struct Wrapper<P: ClapPlugin> {
     this: AtomicRefCell<Weak<Self>>,
 
     /// The wrapped plugin instance.
-    plugin: Mutex<P>,
+    plugin: TryLock<P>,
     /// The plugin's background task executor closure.
     pub task_executor: Mutex<TaskExecutor<P>>,
     /// The plugin's parameters. These are fetched once during initialization. That way the
@@ -259,10 +262,13 @@ pub struct Wrapper<P: ClapPlugin> {
 
     clap_plugin_tail: clap_plugin_tail,
 
+    #[cfg(feature = "editor")]
     clap_plugin_track_info: clap_plugin_track_info,
+    #[cfg(feature = "editor")]
     host_track_info: AtomicRefCell<Option<ClapPtr<clap_host_track_info>>>,
     /// The most recently reported track information. Hosts may send partial updates, so this is used
     /// to merge successive track info queries.
+    #[cfg(feature = "editor")]
     current_track_info: AtomicRefCell<TrackInfo>,
 
     clap_plugin_voice_info: clap_plugin_voice_info,
@@ -439,7 +445,7 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     // following the specification is probably a good idea regardless :)
                     if self.is_activated.load(Ordering::SeqCst) {
                         self.latency_changed.store(true, Ordering::SeqCst);
-                        unsafe_clap_call! { &*self.host_callback=>request_restart(&*self.host_callback) };
+                        self.request_restart();
                     } else {
                         unsafe_clap_call! { host_latency=>changed(&*self.host_callback) };
                     }
@@ -582,7 +588,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         let wrapper = Self {
             this: AtomicRefCell::new(Weak::new()),
 
-            plugin: Mutex::new(plugin),
+            plugin: TryLock::new(plugin),
             task_executor,
             params,
             // Initialized later as it needs a reference to the wrapper for the async executor
@@ -719,10 +725,13 @@ impl<P: ClapPlugin> Wrapper<P> {
                 get: Some(Self::ext_tail_get),
             },
 
+            #[cfg(feature = "editor")]
             clap_plugin_track_info: clap_plugin_track_info {
                 changed: Some(Self::ext_track_info_changed),
             },
+            #[cfg(feature = "editor")]
             host_track_info: AtomicRefCell::new(None),
+            #[cfg(feature = "editor")]
             current_track_info: AtomicRefCell::new(TrackInfo::default()),
 
             clap_plugin_voice_info: clap_plugin_voice_info {
@@ -765,7 +774,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         {
             *wrapper.editor.borrow_mut() = wrapper
                 .plugin
-                .lock()
+                .try_lock()
+                .unwrap()
                 .editor(nice_plug_core::context::gui::AsyncExecutor::new(
                     Arc::new({
                         let wrapper = Arc::downgrade(&wrapper);
@@ -1879,9 +1889,15 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     /// Query the host for the current track information and notify the plugin if anything changed.
+    #[cfg(feature = "editor")]
     fn update_track_info_from_host(&self) {
         let host_track_info = self.host_track_info.borrow();
         let Some(host_track_info) = host_track_info.as_ref() else {
+            return;
+        };
+
+        let editor = self.editor.borrow();
+        let Some(editor) = editor.as_ref() else {
             return;
         };
 
@@ -1921,7 +1937,8 @@ impl<P: ClapPlugin> Wrapper<P> {
 
             let track_info = TrackInfo::new(name, color);
             *current_track_info = track_info.clone();
-            self.plugin.lock().track_info_updated(track_info);
+
+            editor.lock().track_info_updated(track_info);
         });
     }
 
@@ -1936,16 +1953,11 @@ impl<P: ClapPlugin> Wrapper<P> {
     ///
     /// `self.plugin` must _not_ be locked while calling this function or it will deadlock.
     pub fn set_state_inner(&self, state: &mut PluginState) -> bool {
-        let audio_io_layout = self.current_audio_io_layout.load();
-        let buffer_config = self.current_buffer_config.load();
-
-        // FIXME: This is obviously not realtime-safe, but loading presets without doing this could
-        //        lead to inconsistencies. It's the plugin's responsibility to not perform any
-        //        realtime-unsafe work when the activate function is called a second time if it
-        //        supports runtime preset loading.  `state::deserialize_object()` normally never
+        // FIXME: This is obviously not realtime-safe, but loading presets without doing this
+        //        could lead to inconsistencies. `state::deserialize_object()` normally never
         //        allocates, but if the plugin has persistent non-parameter data then its
         //        `deserialize_fields()` implementation may still allocate.
-        let mut success = permit_alloc(|| unsafe {
+        let success = permit_alloc(|| unsafe {
             state::deserialize_object::<P>(
                 state,
                 self.params.clone(),
@@ -1960,29 +1972,6 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        // If the plugin was already activated then it needs to be reactivated
-        if let Some(buffer_config) = buffer_config {
-            let mut activate_context = self.make_activate_context();
-            let mut plugin = self.plugin.lock();
-
-            // See above
-            success = permit_alloc(|| {
-                plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context)
-            });
-            if success {
-                process_wrapper(|| plugin.reset());
-            }
-
-            // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
-            drop(activate_context);
-            drop(plugin);
-        }
-
-        crate::nice_debug_assert!(
-            success,
-            "Plugin returned false when reinitializing after loading state"
-        );
-
         #[cfg(feature = "editor")]
         {
             // Reinitialize the plugin after loading state so it can respond to the new parameter values
@@ -1991,6 +1980,10 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
 
         success
+    }
+
+    pub fn request_restart(&self) {
+        unsafe_clap_call! { &*self.host_callback=>request_restart(&*self.host_callback) };
     }
 
     unsafe extern "C" fn init(plugin: *const clap_plugin) -> bool {
@@ -2006,6 +1999,11 @@ impl<P: ClapPlugin> Wrapper<P> {
                 >(
                     &wrapper.host_callback, CLAP_EXT_GUI
                 );
+
+                *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
+                    &wrapper.host_callback,
+                    CLAP_EXT_TRACK_INFO,
+                );
             }
             *wrapper.host_latency.borrow_mut() =
                 query_host_extension::<clap_host_latency>(&wrapper.host_callback, CLAP_EXT_LATENCY);
@@ -2019,12 +2017,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                 &wrapper.host_callback,
                 CLAP_EXT_THREAD_CHECK,
             );
-            *wrapper.host_track_info.borrow_mut() = query_host_extension::<clap_host_track_info>(
-                &wrapper.host_callback,
-                CLAP_EXT_TRACK_INFO,
-            );
         }
 
+        #[cfg(feature = "editor")]
         wrapper.update_track_info_from_host();
 
         true
@@ -2068,34 +2063,82 @@ impl<P: ClapPlugin> Wrapper<P> {
             unsafe_clap_call! { host_latency=>changed(&*wrapper.host_callback) };
         }
 
-        // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
         let mut activate_context = wrapper.make_activate_context();
-        let mut plugin = wrapper.plugin.lock();
-        if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context) {
-            // NOTE: `Plugin::reset()` is called in `clap_plugin::start_processing()` instead of in
-            //       this function
 
-            // This preallocates enough space so we can transform all of the host's raw channel
-            // pointers into a set of `Buffer` objects for the plugin's main and auxiliary IO
-            *wrapper.buffer_manager.borrow_mut() =
-                BufferManager::for_audio_io_layout(max_frames_count as usize, audio_io_layout);
+        // In the case a host misbehaves and tries to activate the plugin without waiting for the
+        // `process` method to finish, manually wait for that method to finish.
+        let now = Instant::now();
+        let mut result = false;
+        loop {
+            if let Some(mut plugin) = wrapper.plugin.try_lock() {
+                if plugin.activate(&audio_io_layout, &buffer_config, &mut activate_context) {
+                    // NOTE: `Plugin::reset()` is called in `clap_plugin::start_processing()` instead of in
+                    //       this function
 
-            // Also store this for later, so we can reinitialize the plugin after restoring state
-            wrapper.current_buffer_config.store(Some(buffer_config));
+                    // Likewise, make sure that the buffers are also not currently being used by the process
+                    // method.
+                    let now_2 = Instant::now();
+                    loop {
+                        if let Ok(mut buffer_manager) = wrapper.buffer_manager.try_borrow_mut() {
+                            // This preallocates enough space so we can transform all of the host's raw channel
+                            // pointers into a set of `Buffer` objects for the plugin's main and auxiliary IO
+                            *buffer_manager = BufferManager::for_audio_io_layout(
+                                max_frames_count as usize,
+                                audio_io_layout,
+                            );
 
-            wrapper.is_activated.store(true, Ordering::SeqCst);
+                            // Also store this for later, so we can reinitialize the plugin after restoring state
+                            wrapper.current_buffer_config.store(Some(buffer_config));
 
-            true
-        } else {
-            false
+                            wrapper.is_activated.store(true, Ordering::SeqCst);
+
+                            result = true;
+
+                            break;
+                        } else if now_2.elapsed() > Duration::from_secs(1) {
+                            crate::nice_error!(
+                                "Failed to acquire lock on buffers while activating"
+                            );
+                            break;
+                        } else {
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    }
+                }
+
+                break;
+            } else if now.elapsed() > Duration::from_secs(1) {
+                crate::nice_error!("Failed to acquire lock on plugin while activating");
+                break;
+            } else {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
+
+        // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
+        drop(activate_context);
+
+        result
     }
 
     unsafe extern "C" fn deactivate(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        wrapper.plugin.lock().deactivate();
+        // In the case a host misbehaves and tries to activate the plugin without waiting for the
+        // `process` method to finish, manually wait for that method to finish.
+        let now = Instant::now();
+        loop {
+            if let Some(mut plugin) = wrapper.plugin.try_lock() {
+                plugin.deactivate();
+                break;
+            } else if now.elapsed() > Duration::from_secs(1) {
+                crate::nice_error!("Failed to acquire lock on plugin while deactivating");
+                break;
+            } else {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
 
         wrapper.is_activated.store(false, Ordering::SeqCst);
     }
@@ -2112,7 +2155,24 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // To be consistent with the VST3 wrapper, we'll also reset the buffers here in addition to
         // the dedicated `reset()` function.
-        process_wrapper(|| wrapper.plugin.lock().reset());
+        process_wrapper(|| {
+            // In the case a host misbehaves and tries to activate/deactivate the plugin without
+            // waiting for the `process` method to finish, manually wait for that method to finish.
+            let now = Instant::now();
+            loop {
+                if let Some(mut plugin) = wrapper.plugin.try_lock() {
+                    plugin.reset();
+                    break;
+                } else if now.elapsed() > Duration::from_millis(200) {
+                    crate::nice_error!(
+                        "Failed to acquire lock on plugin while starting processing"
+                    );
+                    break;
+                } else {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        });
 
         true
     }
@@ -2122,13 +2182,47 @@ impl<P: ClapPlugin> Wrapper<P> {
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
         wrapper.is_processing.store(false, Ordering::SeqCst);
+
+        process_wrapper(|| {
+            // In the case a host misbehaves and tries to activate/deactivate the plugin without
+            // waiting for the `process` method to finish, manually wait for that method to finish.
+            let now = Instant::now();
+            loop {
+                if let Some(mut plugin) = wrapper.plugin.try_lock() {
+                    plugin.stop_processing();
+                    break;
+                } else if now.elapsed() > Duration::from_millis(200) {
+                    crate::nice_error!(
+                        "Failed to acquire lock on plugin while stopping processing"
+                    );
+                    break;
+                } else {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        });
     }
 
     unsafe extern "C" fn reset(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
-        process_wrapper(|| wrapper.plugin.lock().reset());
+        process_wrapper(|| {
+            // In the case a host misbehaves and tries to activate/deactivate the plugin without
+            // waiting for the `process` method to finish, manually wait for that method to finish.
+            let now = Instant::now();
+            loop {
+                if let Some(mut plugin) = wrapper.plugin.try_lock() {
+                    plugin.reset();
+                    break;
+                } else if now.elapsed() > Duration::from_millis(200) {
+                    crate::nice_error!("Failed to acquire lock on plugin while resetting");
+                    break;
+                } else {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        });
     }
 
     unsafe extern "C" fn process(
@@ -2226,12 +2320,22 @@ impl<P: ClapPlugin> Wrapper<P> {
                 // we can start preparing audio processing
                 let block_len = block_end - block_start;
 
+                let Ok(mut buffer_manager) = wrapper.buffer_manager.try_borrow_mut() else {
+                    // On the occasion a host misbehaves and tries to activate/deactivate a plugin
+                    // concurrently with the process method, return an error.
+                    crate::nice_error!(
+                        "Host tried to activate/deactivate plugin while process method is still \
+                         running"
+                    );
+
+                    return CLAP_PROCESS_ERROR;
+                };
+
                 // The buffer manager preallocated buffer slices for all the IO and storage for any
                 // axuiliary inputs.
                 // TODO: The audio buffers have a latency field, should we use those?
                 // TODO: Like with VST3, should we expose some way to access or set the silence/constant
                 //       flags?
-                let mut buffer_manager = wrapper.buffer_manager.borrow_mut();
                 let buffers = unsafe {
                     buffer_manager.create_buffers(block_start, block_len, |buffer_source| {
                         // Explicitly take plugins with no main output that does have auxiliary
@@ -2427,7 +2531,17 @@ impl<P: ClapPlugin> Wrapper<P> {
                 }
 
                 let result = if buffer_is_valid {
-                    let mut plugin = wrapper.plugin.lock();
+                    let Some(mut plugin) = wrapper.plugin.try_lock() else {
+                        // On the occasion a host misbehaves and tries to activate/deactivate a plugin
+                        // concurrently with the process method, return an error.
+                        crate::nice_error!(
+                            "Host tried to activate/deactivate plugin while process method is \
+                             still running"
+                        );
+
+                        return CLAP_PROCESS_ERROR;
+                    };
+
                     // SAFETY: Shortening these borrows is safe as even if the plugin overwrites the
                     //         slices (which it cannot do without using unsafe code), then they
                     //         would still be reset on the next iteration
@@ -2548,7 +2662,11 @@ impl<P: ClapPlugin> Wrapper<P> {
         } else if id == CLAP_EXT_STATE {
             &wrapper.clap_plugin_state as *const _ as *const c_void
         } else if id == CLAP_EXT_TRACK_INFO {
-            &wrapper.clap_plugin_track_info as *const _ as *const c_void
+            #[cfg(not(feature = "editor"))]
+            return std::ptr::null();
+
+            #[cfg(feature = "editor")]
+            return &wrapper.clap_plugin_track_info as *const _ as *const c_void;
         } else if id == CLAP_EXT_VOICE_INFO {
             if P::CLAP_POLY_MODULATION_CONFIG.is_some() {
                 &wrapper.clap_plugin_voice_info as *const _ as *const c_void
@@ -3577,7 +3695,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         {
             // We may change process mode while activated. In that case, restart the audio processor
             // so the plugin can react to the process mode change in `Plugin::activate`.
-            unsafe_clap_call! { &*wrapper.host_callback=>request_restart(&*wrapper.host_callback) };
+            wrapper.request_restart();
         }
 
         true
@@ -3667,6 +3785,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         }
     }
 
+    #[cfg(feature = "editor")]
     unsafe extern "C" fn ext_track_info_changed(plugin: *const clap_plugin) {
         check_null_ptr!((), plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
