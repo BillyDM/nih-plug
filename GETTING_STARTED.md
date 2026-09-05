@@ -123,7 +123,7 @@ impl Default for MyPluginParams {
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
-                FloatRange::gain_range(-30.0, 30.0),
+                FloatRange::Linear{-30.0, 30.0},
             )
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
