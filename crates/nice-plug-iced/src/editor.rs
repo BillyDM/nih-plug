@@ -3,7 +3,7 @@ use iced_baseview::baseview::HandlerError;
 use iced_baseview::shell::SharedWindowSize;
 use iced_baseview::{IcedWindowSettings, PollSubNotifier, Program, baseview, message};
 use nice_plug_core::context::gui::GuiContext;
-use nice_plug_core::editor::dpi::{LogicalSize, PhysicalSize, Size};
+use nice_plug_core::editor::dpi::{LogicalSize, NativeSize, PhysicalSize, Size};
 use nice_plug_core::editor::{
     Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SizeConstraints,
     SpawnedEditor, VirtualKeyCode,
@@ -147,8 +147,11 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
         })
     }
 
-    fn size(&self) -> PhysicalSize<u32> {
-        self.editor_state.physical_size()
+    fn size(&self) -> NativeSize<u32> {
+        NativeSize::from_size(
+            self.editor_state.logical_size().into(),
+            self.editor_state.system_scale_factor() as f64,
+        )
     }
 
     fn resize_hint(&self) -> nice_plug_core::editor::ResizeHint {
@@ -207,7 +210,7 @@ impl EditorHandle for IcedEditorHandle {
 
     fn set_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
         window.resize(new_size)
@@ -224,13 +227,13 @@ impl EditorHandle for IcedEditorHandle {
     /// Return the closest supported size.
     fn adjust_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
-    ) -> Option<PhysicalSize<u32>> {
+    ) -> Option<NativeSize<u32>> {
         let current_size = window.size();
         Some(self.resize_hint.adjust_size(
             new_size,
-            current_size.physical,
+            NativeSize::from_logical_or_physical(current_size.logical, current_size.physical),
             current_size.scale_factor,
         ))
     }
@@ -275,7 +278,7 @@ pub struct IcedEditorState {
     /// should use the system scaling factor instead.
     pub(crate) fallback_scale_factor: AtomicCell<Option<f32>>,
 
-    pub(crate) scale_factor: AtomicCell<Option<f32>>,
+    pub(crate) system_scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     open: AtomicBool,
@@ -291,7 +294,7 @@ impl IcedEditorState {
             zoom_factor: AtomicCell::new(scale_factor),
             open: AtomicBool::new(false),
             fallback_scale_factor: AtomicCell::new(None),
-            scale_factor: AtomicCell::new(None),
+            system_scale_factor: AtomicCell::new(None),
         })
     }
 
@@ -299,24 +302,23 @@ impl IcedEditorState {
         self.size.load()
     }
 
-    fn scale_factor(&self) -> f32 {
-        let zoom_factor = self.zoom_factor.load();
-        let scale_factor = self.scale_factor.load();
+    fn system_scale_factor(&self) -> f32 {
+        let scale_factor = self.system_scale_factor.load();
         let fallback_scale_factor = self.fallback_scale_factor.load();
 
-        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0) * zoom_factor)
+        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0))
     }
 
     pub fn logical_size(&self) -> LogicalSize<f32> {
         let size = self.size.load();
-        let scale_factor = self.scale_factor();
+        let scale_factor = self.system_scale_factor();
 
         size.to_logical(scale_factor as f64)
     }
 
     pub fn physical_size(&self) -> PhysicalSize<u32> {
         let size = self.size.load();
-        let scale_factor = self.scale_factor();
+        let scale_factor = self.system_scale_factor();
 
         size.to_physical(scale_factor as f64)
     }
@@ -381,7 +383,7 @@ impl IcedNiceContext {
         let size = self.window_size();
 
         self.editor_state
-            .scale_factor
+            .system_scale_factor
             .store(Some(size.scale_factor as f32));
 
         let old_size = self.editor_state.size.load();

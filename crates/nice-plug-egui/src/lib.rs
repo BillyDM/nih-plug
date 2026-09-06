@@ -109,7 +109,7 @@ pub struct EguiEditorState {
     /// should use the system scaling factor instead.
     pub(crate) fallback_scale_factor: AtomicCell<Option<f32>>,
 
-    pub(crate) scale_factor: AtomicCell<Option<f32>>,
+    pub(crate) system_scale_factor: AtomicCell<Option<f32>>,
 
     /// Whether the editor's window is currently open.
     open: AtomicBool,
@@ -125,7 +125,7 @@ impl EguiEditorState {
             zoom_factor: AtomicCell::new(zoom_factor),
             open: AtomicBool::new(false),
             fallback_scale_factor: AtomicCell::new(None),
-            scale_factor: AtomicCell::new(None),
+            system_scale_factor: AtomicCell::new(None),
         })
     }
 
@@ -133,24 +133,23 @@ impl EguiEditorState {
         self.size.load()
     }
 
-    fn scale_factor(&self) -> f32 {
-        let zoom_factor = self.zoom_factor.load();
-        let scale_factor = self.scale_factor.load();
+    fn system_scale_factor(&self) -> f32 {
+        let scale_factor = self.system_scale_factor.load();
         let fallback_scale_factor = self.fallback_scale_factor.load();
 
-        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0) * zoom_factor)
+        scale_factor.unwrap_or_else(|| fallback_scale_factor.unwrap_or(1.0))
     }
 
     pub fn logical_size(&self) -> LogicalSize<f32> {
         let size = self.size.load();
-        let scale_factor = self.scale_factor();
+        let scale_factor = self.system_scale_factor();
 
         size.to_logical(scale_factor as f64)
     }
 
     pub fn physical_size(&self) -> PhysicalSize<u32> {
         let size = self.size.load();
-        let scale_factor = self.scale_factor();
+        let scale_factor = self.system_scale_factor();
 
         size.to_physical(scale_factor as f64)
     }

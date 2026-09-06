@@ -1,10 +1,9 @@
 //! This plugin demonstrates how to "bring your own GUI toolkit" using a raw WGPU context.
 
-use baseview::dpi::PhysicalSize;
 use baseview::{HandlerError, WindowContext, WindowSettings};
 use crossbeam::atomic::AtomicCell;
 use nice_plug::context::gui::GuiContext;
-use nice_plug::editor::dpi::LogicalSize;
+use nice_plug::editor::dpi::{LogicalSize, NativeSize};
 use nice_plug::editor::{EditorHandle, HostMethods, SpawnedEditor};
 use nice_plug::prelude::*;
 use std::cell::RefCell;
@@ -404,8 +403,11 @@ impl Editor for WgpuEditor {
         })
     }
 
-    fn size(&self) -> PhysicalSize<u32> {
-        self.editor_state.physical_size()
+    fn size(&self) -> NativeSize<u32> {
+        NativeSize::from_size(
+            self.editor_state.logical_size().into(),
+            self.editor_state.scale_factor(),
+        )
     }
 
     fn resize_hint(&self) -> ResizeHint {
@@ -458,7 +460,7 @@ impl EditorHandle for WgpuEditorHandle {
 
     fn set_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
         window.resize(new_size)
@@ -475,11 +477,15 @@ impl EditorHandle for WgpuEditorHandle {
     /// Return the closest supported size.
     fn adjust_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
-    ) -> Option<PhysicalSize<u32>> {
+    ) -> Option<NativeSize<u32>> {
         let current_size = window.size();
-        Some(RESIZE_HINT.adjust_size(new_size, current_size.physical, current_size.scale_factor))
+        Some(RESIZE_HINT.adjust_size(
+            new_size,
+            NativeSize::from_logical_or_physical(current_size.logical, current_size.physical),
+            current_size.scale_factor,
+        ))
     }
 
     fn on_virtual_key_from_host(
@@ -531,12 +537,6 @@ impl WgpuEditorState {
 
     pub fn logical_size(&self) -> LogicalSize<f32> {
         self.logical_size.load()
-    }
-
-    pub fn physical_size(&self) -> PhysicalSize<u32> {
-        let logical_size = self.logical_size();
-        let scale_factor = self.scale_factor();
-        logical_size.to_physical(scale_factor)
     }
 
     pub fn scale_factor(&self) -> f64 {
