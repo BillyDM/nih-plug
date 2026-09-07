@@ -121,26 +121,37 @@ unsafe impl ByteReadBuffer for &mut [MaybeUninit<u8>] {
 }
 
 /// Read from a stream until either the byte slice as been filled, or the stream doesn't contain any
-/// data anymore. This correctly handles streams that only allow smaller, buffered reads. If the
-/// stream ended before the entire slice has been filled, then this will return `false`.
-pub fn read_stream(stream: &clap_istream, mut slice: impl ByteReadBuffer) -> bool {
-    let mut read_pos = 0;
-    while read_pos < slice.len() {
+/// data anymore. This correctly handles streams that only allow smaller, buffered reads.
+///
+/// Returns the total number of bytes that have been read, or `None` if an error occured.
+pub fn read_stream(stream: &clap_istream, mut slice: impl ByteReadBuffer) -> Option<usize> {
+    let mut total_bytes_read: usize = 0;
+
+    while total_bytes_read < slice.len() {
         let bytes_read = unsafe_clap_call! {
             stream=>read(
                 stream,
-                slice.as_mut_ptr().add(read_pos) as *mut c_void,
-                (slice.len() - read_pos) as u64,
+                slice.as_mut_ptr().add(total_bytes_read) as *mut c_void,
+                (slice.len() - total_bytes_read) as u64,
             )
         };
-        if bytes_read <= 0 {
-            return false;
+
+        let Ok(bytes_read) = usize::try_from(bytes_read) else {
+            return None;
+        };
+
+        if bytes_read == 0 {
+            break;
         }
 
-        read_pos += bytes_read as usize;
+        if let Some(total_bytes) = total_bytes_read.checked_add(bytes_read) {
+            total_bytes_read = total_bytes;
+        } else {
+            return None;
+        }
     }
 
-    true
+    Some(total_bytes_read)
 }
 
 /// Write the data from a slice to a stream until either all data has been written, or the stream

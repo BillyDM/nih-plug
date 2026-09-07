@@ -519,7 +519,17 @@ impl<P: Vst3Plugin> IComponentTrait for Wrapper<P> {
 
         let stream_byte_size = (eof_pos - current_pos) as i32;
         let mut num_bytes_read = 0;
-        let mut read_buffer: Vec<u8> = Vec::with_capacity(stream_byte_size as usize);
+
+        let mut read_buffer: Vec<u8> = Vec::new();
+
+        if read_buffer
+            .try_reserve_exact(stream_byte_size as usize)
+            .is_err()
+        {
+            crate::nice_error!("Failed to load state: Failed to allocate buffer for state stream");
+            return kResultFalse;
+        }
+
         unsafe {
             state.read(
                 read_buffer.as_mut_ptr() as *mut c_void,

@@ -115,6 +115,12 @@ use crate::wrapper::util::{
 /// more than this many parameters at a time will cause changes to get lost.
 const OUTPUT_EVENT_QUEUE_CAPACITY: usize = 2048;
 
+/// Protect against OOM issues when loading malformed state.
+///
+/// If your plugin needs more storgage space than this, please post an issue in the nice-plug
+/// repository.
+const MAX_STATE_BYTES: u64 = 268_435_456;
+
 pub struct Wrapper<P: ClapPlugin> {
     /// A reference to this object, upgraded to an `Arc<Self>` for the GUI context.
     this: AtomicRefCell<Weak<Self>>,
@@ -3685,10 +3691,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             // Even if the plugin has a hard realtime requirement, we'll still honor this
             CLAP_RENDER_OFFLINE => ProcessMode::Offline,
             n => {
-                crate::nice_debug_assert_failure!(
-                    "Unknown rendering mode '{}', defaulting to realtime",
-                    n
-                );
+                crate::nice_error!("Unknown rendering mode '{}', defaulting to realtime", n);
                 ProcessMode::Realtime
             }
         };
@@ -3723,14 +3726,14 @@ impl<P: ClapPlugin> Wrapper<P> {
                 // we need to prepend it to our actual state data.
                 let length_bytes = (serialized.len() as u64).to_le_bytes();
                 if !write_stream(unsafe { &*stream }, &length_bytes) {
-                    crate::nice_debug_assert_failure!(
-                        "Error or end of stream while writing the state length to the stream."
+                    crate::nice_error!(
+                        "Failed to save state: Error or end of stream while writing the state length"
                     );
                     return false;
                 }
                 if !write_stream(unsafe { &*stream }, &serialized) {
-                    crate::nice_debug_assert_failure!(
-                        "Error or end of stream while writing the state buffer to the stream."
+                    crate::nice_error!(
+                        "Failed to save state: Error or end of stream while writing the state buffer"
                     );
                     return false;
                 }
@@ -3740,7 +3743,7 @@ impl<P: ClapPlugin> Wrapper<P> {
                 true
             }
             Err(err) => {
-                crate::nice_debug_assert_failure!("Could not save state: {:#}", err);
+                crate::nice_error!("Failed to save state: {}", err);
                 false
             }
         }
@@ -3756,23 +3759,34 @@ impl<P: ClapPlugin> Wrapper<P> {
         // CLAP does not have a way to tell how much data there is left in a stream, so we've
         // prepended the size in front of our JSON state
         let mut length_bytes = [0u8; 8];
-        if !read_stream(unsafe { &*stream }, length_bytes.as_mut_slice()) {
-            crate::nice_debug_assert_failure!(
-                "Error or end of stream while reading the state length from the stream."
+        let bytes_read = read_stream(unsafe { &*stream }, length_bytes.as_mut_slice());
+        if bytes_read != Some(8) {
+            crate::nice_error!(
+                "Failed to load state: Error or end of stream while reading the state length"
             );
             return false;
         }
         let length = u64::from_le_bytes(length_bytes);
-
-        let mut read_buffer: Vec<u8> = Vec::with_capacity(length as usize);
-        if !read_stream(unsafe { &*stream }, read_buffer.spare_capacity_mut()) {
-            crate::nice_debug_assert_failure!(
-                "Error or end of stream while reading the state buffer from the stream."
-            );
+        // Protect against OOM errors if the metadata is malformed.
+        if length > MAX_STATE_BYTES {
+            crate::nice_error!("Failed to load state: Malformed length");
             return false;
         }
+
+        let mut read_buffer: Vec<u8> = Vec::new();
+
+        if read_buffer.try_reserve_exact(length as usize).is_err() {
+            crate::nice_error!("Failed to load state: Failed to allocate buffer for state stream");
+            return false;
+        }
+
+        let bytes_read = read_stream(unsafe { &*stream }, read_buffer.spare_capacity_mut());
+        let Some(bytes_read) = bytes_read else {
+            crate::nice_error!("Failed to load state: Error while reading the state buffer");
+            return false;
+        };
         unsafe {
-            read_buffer.set_len(length as usize);
+            read_buffer.set_len(bytes_read);
         }
 
         match unsafe { state::deserialize_json(&read_buffer) } {
