@@ -2862,11 +2862,15 @@ impl<P: ClapPlugin> Wrapper<P> {
         } else {
             index + num_input_ports
         };
+
+        // Allow processing the main input/output ports in-place if their channel count is the same.
+        let can_process_in_place = current_audio_io_layout.main_input_channels
+            == current_audio_io_layout.main_output_channels;
         let pair_stable_id = match (is_input, is_main_port) {
             // Ports are named linearly with inputs coming before outputs, so this is the index of
             // the first output port
-            (true, true) if has_main_output => num_input_ports,
-            (false, true) if has_main_input => 0,
+            (true, true) if has_main_output && can_process_in_place => num_input_ports,
+            (false, true) if has_main_input && can_process_in_place => 0,
             _ => CLAP_INVALID_ID,
         };
 
