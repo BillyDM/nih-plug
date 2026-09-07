@@ -524,6 +524,10 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         normalized_value: f32,
         sample_rate: Option<f32>,
     ) -> tresult {
+        if !normalized_value.is_finite() {
+            return kInvalidArgument;
+        }
+
         match self.param_by_hash.get(&hash) {
             Some(param_ptr) => {
                 if unsafe { param_ptr._internal_set_normalized_value(normalized_value) } {

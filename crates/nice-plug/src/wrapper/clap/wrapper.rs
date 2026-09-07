@@ -904,6 +904,10 @@ impl<P: ClapPlugin> Wrapper<P> {
             Some(param_ptr) => {
                 match update_type {
                     ClapParamUpdate::PlainValueSet(clap_plain_value) => {
+                        if !clap_plain_value.is_finite() {
+                            return false;
+                        }
+
                         let normalized_value = clap_plain_value as f32
                             / unsafe { param_ptr.step_count() }.unwrap_or(1) as f32;
 
@@ -930,6 +934,10 @@ impl<P: ClapPlugin> Wrapper<P> {
                         true
                     }
                     ClapParamUpdate::PlainValueMod(clap_plain_delta) => {
+                        if !clap_plain_delta.is_finite() {
+                            return false;
+                        }
+
                         let normalized_delta = clap_plain_delta as f32
                             / unsafe { param_ptr.step_count() }.unwrap_or(1) as f32;
 
