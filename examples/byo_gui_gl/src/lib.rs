@@ -386,8 +386,6 @@ impl Editor for GlEditor {
                     stencil_bits: 8,
                     samples: None,
                     srgb: true,
-                    double_buffer: true,
-                    vsync: false,
                     ..Default::default()
                 })),
             move |window: WindowContext| -> Result<GlWindow, HandlerError> {
