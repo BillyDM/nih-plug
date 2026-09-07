@@ -3024,16 +3024,15 @@ impl<P: ClapPlugin> Wrapper<P> {
                         scale_factor: f64,
                     ) -> Result<(), Box<dyn Error>> {
                         if let Some(wrapper) = self.wrapper.upgrade() {
-                            use nice_plug_core::editor::dpi::PhysicalSize;
+                            use nice_plug_core::editor::dpi::NativeSize;
 
-                            let physical_size: PhysicalSize<u32> =
-                                new_size.to_physical(scale_factor);
+                            let native_size = NativeSize::from_size(new_size, scale_factor);
 
                             if unsafe_clap_call! {
                                 &*self.host_gui=>request_resize(
                                     &*wrapper.host_callback,
-                                    physical_size.width,
-                                    physical_size.height,
+                                    native_size.width,
+                                    native_size.height,
                                 )
                             } {
                                 Ok(())

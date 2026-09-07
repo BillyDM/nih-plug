@@ -1,7 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 use fragile::Fragile;
 use nice_plug_core::editor::HostMainThreadCaller;
-use nice_plug_core::editor::dpi::{NativeSize, PhysicalSize, Size};
+use nice_plug_core::editor::dpi::{NativeSize, Size};
 use nice_plug_core::editor::{
     Editor, EditorHandle, HostCallbacks, HostMethods, ParentWindowHandle,
 };
@@ -263,13 +263,13 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let physical_size: PhysicalSize<u32> = new_size.to_physical(scale_factor);
+                let native_size: NativeSize<u32> = NativeSize::from_size(new_size, scale_factor);
 
                 let mut size = ViewRect {
                     left: 0,
                     top: 0,
-                    right: physical_size.width as i32,
-                    bottom: physical_size.height as i32,
+                    right: native_size.width as i32,
+                    bottom: native_size.height as i32,
                 };
 
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
