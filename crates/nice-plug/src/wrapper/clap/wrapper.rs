@@ -309,7 +309,6 @@ pub enum Task<P: Plugin> {
     /// parameter hashes since the task will be created from the audio thread.
     #[cfg(feature = "editor")]
     ParameterModulationChanged(u32, f32),
-    #[cfg(feature = "editor")]
     StateChanged,
     /// Inform the host that the latency has changed.
     LatencyChanged,
@@ -412,12 +411,18 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                         .param_value_changed(param_id, normalized_value);
                 }
             }
-            #[cfg(feature = "editor")]
             Task::StateChanged => {
-                use nice_plug_core::editor::EditorHandle;
+                #[cfg(feature = "editor")]
+                {
+                    use nice_plug_core::editor::EditorHandle;
+                    if let Some(window) = self.editor_window.borrow().as_ref() {
+                        window.get().handle.state_changed();
+                    }
+                }
 
-                if let Some(window) = self.editor_window.borrow().as_ref() {
-                    window.get().handle.state_changed();
+                if let Some(host_params) = &*self.host_params.borrow() {
+                    crate::nice_debug_assert!(is_gui_thread);
+                    unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_VALUES) };
                 }
             }
             #[cfg(feature = "editor")]
@@ -1972,12 +1977,10 @@ impl<P: ClapPlugin> Wrapper<P> {
             return false;
         }
 
-        #[cfg(feature = "editor")]
-        {
-            // Reinitialize the plugin after loading state so it can respond to the new parameter values
-            let task_posted = self.schedule_gui(Task::StateChanged);
-            crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
-        }
+        // Reinitialize the plugin after loading state so it can respond to the new parameter values,
+        // and tell the host to rescan the parameter values.
+        let task_posted = self.schedule_gui(Task::StateChanged);
+        crate::nice_debug_assert!(task_posted, "The task queue is full, dropping task...");
 
         success
     }
