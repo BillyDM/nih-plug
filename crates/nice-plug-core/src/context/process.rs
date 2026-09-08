@@ -1,6 +1,9 @@
 //! A context passed during the process function.
 
-use crate::{midi::PluginNoteEvent, plugin::Plugin};
+use crate::{
+    midi::{MidiConfig, PluginNoteEvent},
+    plugin::Plugin,
+};
 
 use super::PluginApi;
 
@@ -75,10 +78,11 @@ pub trait ProcessContext<P: Plugin> {
     /// ```
     fn next_event(&mut self) -> Option<PluginNoteEvent<P>>;
 
-    /// Send an event to the host. Only available when
-    /// [`Plugin::MIDI_OUTPUT`][crate::plugin::Plugin::MIDI_INPUT] is set. Will not do anything
-    /// otherwise.
-    fn send_event(&mut self, event: PluginNoteEvent<P>);
+    /// Send an event to the host. Only available when [`Plugin::MIDI_OUTPUT`] is set.
+    fn try_send_event(
+        &mut self,
+        event: PluginNoteEvent<P>,
+    ) -> Result<(), (PluginNoteEvent<P>, SendEventError)>;
 
     /// Update the current latency of the plugin. If the plugin is currently processing audio, then
     /// this may cause audio playback to be restarted.
@@ -98,6 +102,18 @@ pub trait ProcessContext<P: Plugin> {
     //       change to a queue (or directly to the VST3 plugin's parameter output queues) instead of
     //       using main thread host automation (and all the locks involved there).
     // fn set_parameter<P: Param>(&self, param: &P, value: P::Plain);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SendEventError {
+    #[error("Failed to send output event: Host output event buffer is full")]
+    HostBufferFull,
+    #[error("Failed to send output event: Host does not have output event buffer")]
+    NoOutputBuffer,
+    #[error(
+        "Failed to send output event: Invalid event type for output config {midi_output_config:?}"
+    )]
+    InvalidEvent { midi_output_config: MidiConfig },
 }
 
 /// Information about the plugin's transport. Depending on the plugin API and the host not all

@@ -1,23 +1,25 @@
 use atomic_refcell::AtomicRefMut;
+use clap_sys::events::clap_output_events;
 use clap_sys::ext::remote_controls::{CLAP_REMOTE_CONTROLS_COUNT, clap_remote_controls_page};
 use clap_sys::id::{CLAP_INVALID_ID, clap_id};
 use clap_sys::string_sizes::CLAP_NAME_SIZE;
 use nice_plug_core::context::PluginApi;
 use nice_plug_core::context::activate::ActivateContext;
-use nice_plug_core::context::process::{ProcessContext, Transport};
+use nice_plug_core::context::process::{ProcessContext, SendEventError, Transport};
 use nice_plug_core::context::remote_controls::{
     RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
 };
-use nice_plug_core::midi::PluginNoteEvent;
+use nice_plug_core::midi::{MidiConfig, MidiResult, NoteEvent, PluginNoteEvent};
 use nice_plug_core::params::Param;
 use nice_plug_core::params::internals::ParamPtr;
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
+use std::mem;
 
 use super::wrapper::{Task, Wrapper};
 use crate::event_loop::EventLoop;
 use crate::wrapper::clap::ClapPlugin;
-use crate::wrapper::util::strlcpy;
+use crate::wrapper::util::{clamp_output_event_timing, strlcpy};
 
 /// An [`ActivateContext`] implementation for the wrapper.
 ///
@@ -44,8 +46,12 @@ pub(crate) struct PendingActivateContextRequests {
 pub(crate) struct WrapperProcessContext<'a, P: ClapPlugin> {
     pub(super) wrapper: &'a Wrapper<P>,
     pub(super) input_events_guard: AtomicRefMut<'a, VecDeque<PluginNoteEvent<P>>>,
-    pub(super) output_events_guard: AtomicRefMut<'a, VecDeque<PluginNoteEvent<P>>>,
+    //pub(super) output_events_guard: AtomicRefMut<'a, VecDeque<PluginNoteEvent<P>>>,
     pub(super) transport: Transport,
+    // used to clamp out of bounds events to the buffer's length.
+    pub(super) total_buffer_len: u32,
+    pub(super) current_sample_idx: u32,
+    pub(super) host_out_events: *const clap_output_events,
 }
 
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
@@ -120,8 +126,373 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
         self.input_events_guard.pop_front()
     }
 
-    fn send_event(&mut self, event: PluginNoteEvent<P>) {
-        self.output_events_guard.push_back(event);
+    fn try_send_event(
+        &mut self,
+        event: PluginNoteEvent<P>,
+    ) -> Result<(), (PluginNoteEvent<P>, SendEventError)> {
+        use clap_sys::events::{
+            CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI, CLAP_EVENT_MIDI_SYSEX, CLAP_EVENT_NOTE_END,
+            CLAP_EVENT_NOTE_EXPRESSION, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON,
+            CLAP_NOTE_EXPRESSION_BRIGHTNESS, CLAP_NOTE_EXPRESSION_EXPRESSION,
+            CLAP_NOTE_EXPRESSION_PAN, CLAP_NOTE_EXPRESSION_PRESSURE, CLAP_NOTE_EXPRESSION_TUNING,
+            CLAP_NOTE_EXPRESSION_VIBRATO, CLAP_NOTE_EXPRESSION_VOLUME, clap_event_header,
+            clap_event_midi, clap_event_midi_sysex, clap_event_note, clap_event_note_expression,
+        };
+        use nice_plug_core::midi::sysex::SysExMessage;
+        use std::borrow::Borrow;
+
+        if self.host_out_events.is_null() {
+            return Err((event, SendEventError::NoOutputBuffer));
+        }
+
+        // Out of bounds events are clamped to the buffer's size
+        let time = clamp_output_event_timing(
+            event.timing() + self.current_sample_idx,
+            self.total_buffer_len,
+        );
+
+        let push_successful = match &event {
+            NoteEvent::NoteOn {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_ON,
+                        // We don't have a way to denote live events
+                        flags: 0,
+                    },
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    velocity: *velocity as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::NoteOff {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_OFF,
+                        flags: 0,
+                    },
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    velocity: *velocity as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            // NOTE: This is gated behind `P::MIDI_INPUT`, because this is a merely a hint event
+            //       for the host. It is not output to any other plugin or device.
+            NoteEvent::VoiceTerminated {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+            } if P::MIDI_INPUT >= MidiConfig::Basic => {
+                let event = clap_event_note {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_END,
+                        flags: 0,
+                    },
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    velocity: 0.0,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyPressure {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                pressure,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_PRESSURE,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *pressure as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyVolume {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                gain,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_VOLUME,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *gain as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyPan {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                pan,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_PAN,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: (*pan as f64 + 1.0) / 2.0,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyTuning {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                tuning,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_TUNING,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *tuning as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyVibrato {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                vibrato,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_VIBRATO,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *vibrato as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyExpression {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                expression,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_EXPRESSION,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *expression as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::PolyBrightness {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                brightness,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let event = clap_event_note_expression {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_note_expression>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_NOTE_EXPRESSION,
+                        flags: 0,
+                    },
+                    expression_id: CLAP_NOTE_EXPRESSION_BRIGHTNESS,
+                    note_id: voice_id.unwrap_or(-1),
+                    port_index: 0,
+                    channel: *channel as i16,
+                    key: *note as i16,
+                    value: *brightness as f64,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            midi_event @ (NoteEvent::MidiChannelPressure { .. }
+            | NoteEvent::MidiPitchBend { .. }
+            | NoteEvent::MidiCC { .. }
+            | NoteEvent::MidiProgramChange { .. })
+                if P::MIDI_OUTPUT >= MidiConfig::MidiCCs =>
+            {
+                // nice-plug already includes MIDI conversion functions, so we'll reuse those for
+                // the MIDI events
+                let midi_data = match midi_event.as_midi() {
+                    Some(MidiResult::Basic(midi_data)) => midi_data,
+                    Some(MidiResult::SysEx(_, _)) => unreachable!(
+                        "Basic MIDI event read as SysEx, something's gone horribly wrong"
+                    ),
+                    None => unreachable!("Missing MIDI conversion for MIDI event"),
+                };
+
+                let event = clap_event_midi {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_midi>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_MIDI,
+                        flags: 0,
+                    },
+                    port_index: 0,
+                    data: midi_data,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            NoteEvent::MidiSysEx { timing: _, message } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                // SysEx is supported on the basic MIDI config so this is separate
+                let (padded_sysex_buffer, length) = message.as_buffer();
+                let padded_sysex_buffer = padded_sysex_buffer.borrow();
+                crate::nice_debug_assert!(padded_sysex_buffer.len() >= length);
+                let sysex_buffer = &padded_sysex_buffer[..length];
+
+                let event = clap_event_midi_sysex {
+                    header: clap_event_header {
+                        size: mem::size_of::<clap_event_midi_sysex>() as u32,
+                        time,
+                        space_id: CLAP_CORE_EVENT_SPACE_ID,
+                        type_: CLAP_EVENT_MIDI_SYSEX,
+                        flags: 0,
+                    },
+                    port_index: 0,
+                    // The host _should_ be making a copy of the data if it accepts the event. Should...
+                    buffer: sysex_buffer.as_ptr(),
+                    size: sysex_buffer.len() as u32,
+                };
+
+                unsafe {
+                    clap_call! { self.host_out_events=>try_push(self.host_out_events, &event.header) }
+                }
+            }
+            _ => {
+                return Err((
+                    event,
+                    SendEventError::InvalidEvent {
+                        midi_output_config: P::MIDI_OUTPUT,
+                    },
+                ));
+            }
+        };
+
+        if push_successful {
+            Ok(())
+        } else {
+            Err((event, SendEventError::HostBufferFull))
+        }
     }
 
     fn set_latency_samples(&self, samples: u32) {

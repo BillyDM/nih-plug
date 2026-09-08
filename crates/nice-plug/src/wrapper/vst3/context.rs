@@ -3,12 +3,22 @@ use nice_plug_core::{
     context::{
         PluginApi,
         activate::ActivateContext,
-        process::{ProcessContext, Transport},
+        process::{ProcessContext, SendEventError, Transport},
     },
-    midi::PluginNoteEvent,
+    midi::{MidiConfig, NoteEvent, PluginNoteEvent},
 };
-use std::cell::Cell;
 use std::collections::VecDeque;
+use std::{cell::Cell, mem};
+use vst3::{
+    ComRef,
+    Steinberg::{
+        Vst::{
+            DataEvent, Event, Event_::EventTypes_, IEventList, IEventListTrait,
+            LegacyMIDICCOutEvent, NoteOffEvent, NoteOnEvent, PolyPressureEvent,
+        },
+        kResultOk,
+    },
+};
 
 #[cfg(feature = "editor")]
 use vst3::Steinberg::Vst::IComponentHandlerTrait;
@@ -19,6 +29,9 @@ use nice_plug_core::{
 };
 
 use crate::wrapper::vst3::Vst3Plugin;
+use crate::wrapper::{
+    util::clamp_output_event_timing, vst3::note_expressions::NoteExpressionController,
+};
 
 use super::inner::{Task, WrapperInner};
 
@@ -50,8 +63,11 @@ pub(crate) struct PendingActivateContextRequests {
 pub(crate) struct WrapperProcessContext<'a, P: Vst3Plugin> {
     pub(super) inner: &'a WrapperInner<P>,
     pub(super) input_events_guard: AtomicRefMut<'a, VecDeque<PluginNoteEvent<P>>>,
-    pub(super) output_events_guard: AtomicRefMut<'a, VecDeque<PluginNoteEvent<P>>>,
     pub(super) transport: Transport,
+    pub(super) host_out_events: Option<ComRef<'a, IEventList>>,
+    // used to clamp out of bounds events to the buffer's length.
+    pub(super) total_buffer_len: u32,
+    pub(super) current_sample_idx: u32,
 }
 
 /// A [`GuiContext`] implementation for the wrapper. This is passed to the plugin in
@@ -116,8 +132,229 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
         self.input_events_guard.pop_front()
     }
 
-    fn send_event(&mut self, event: PluginNoteEvent<P>) {
-        self.output_events_guard.push_back(event);
+    fn try_send_event(
+        &mut self,
+        event: PluginNoteEvent<P>,
+    ) -> Result<(), (PluginNoteEvent<P>, SendEventError)> {
+        use nice_plug_core::midi::sysex::SysExMessage;
+        use std::borrow::Borrow;
+
+        let Some(host_out_events) = &mut self.host_out_events else {
+            return Err((event, SendEventError::NoOutputBuffer));
+        };
+
+        // We'll set the correct variant on this struct, or skip to the next loop
+        // iteration if we don't handle the event type
+        let mut vst3_event: Event = unsafe { mem::zeroed() };
+        vst3_event.busIndex = 0;
+        // There's also a ppqPos field, but uh how about no
+        vst3_event.sampleOffset = clamp_output_event_timing(
+            event.timing() + self.current_sample_idx,
+            self.total_buffer_len,
+        ) as i32;
+
+        // `voice_id.unwrap_or(|| ...)` triggers
+        // https://github.com/rust-lang/rust-clippy/issues/8522
+        #[allow(clippy::unnecessary_lazy_evaluations)]
+        match &event {
+            NoteEvent::NoteOn {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                vst3_event.r#type = EventTypes_::kNoteOnEvent as u16;
+                vst3_event.__field0.noteOn = NoteOnEvent {
+                    channel: *channel as i16,
+                    pitch: *note as i16,
+                    tuning: 0.0,
+                    velocity: *velocity,
+                    length: 0, // What?
+                    // We'll use this for our note IDs, that way we don't have to do
+                    // anything complicated here
+                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                };
+            }
+            NoteEvent::NoteOff {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                vst3_event.r#type = EventTypes_::kNoteOffEvent as u16;
+                vst3_event.__field0.noteOff = NoteOffEvent {
+                    channel: *channel as i16,
+                    pitch: *note as i16,
+                    velocity: *velocity,
+                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    tuning: 0.0,
+                };
+            }
+            // VST3 does not support or need these events, but they should also not
+            // trigger a debug assertion failure in nice-plug. Also notes how this is
+            // gated by `P::MIDI_INPUT`.
+            NoteEvent::VoiceTerminated { .. } if P::MIDI_INPUT >= MidiConfig::Basic => {
+                return Ok(());
+            }
+            NoteEvent::PolyPressure {
+                timing: _,
+                voice_id,
+                channel,
+                note,
+                pressure,
+            } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                vst3_event.r#type = EventTypes_::kPolyPressureEvent as u16;
+                vst3_event.__field0.polyPressure = PolyPressureEvent {
+                    channel: *channel as i16,
+                    pitch: *note as i16,
+                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    pressure: *pressure,
+                };
+            }
+            event @ (NoteEvent::PolyVolume {
+                voice_id,
+                channel,
+                note,
+                ..
+            }
+            | NoteEvent::PolyPan {
+                voice_id,
+                channel,
+                note,
+                ..
+            }
+            | NoteEvent::PolyTuning {
+                voice_id,
+                channel,
+                note,
+                ..
+            }
+            | NoteEvent::PolyVibrato {
+                voice_id,
+                channel,
+                note,
+                ..
+            }
+            | NoteEvent::PolyExpression {
+                voice_id,
+                channel,
+                note,
+                ..
+            }
+            | NoteEvent::PolyBrightness {
+                voice_id,
+                channel,
+                note,
+                ..
+            }) if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                match NoteExpressionController::translate_event_reverse(
+                    voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    event,
+                ) {
+                    Some(translated_event) => {
+                        vst3_event.r#type = EventTypes_::kNoteExpressionValueEvent as u16;
+                        vst3_event.__field0.noteExpressionValue = translated_event;
+                    }
+                    None => {
+                        crate::nice_debug_assert_failure!("Mishandled note expression value event");
+                    }
+                }
+            }
+            NoteEvent::MidiChannelPressure {
+                timing: _,
+                channel,
+                pressure,
+            } if P::MIDI_OUTPUT >= MidiConfig::MidiCCs => {
+                vst3_event.r#type = EventTypes_::kLegacyMIDICCOutEvent as u16;
+                vst3_event.__field0.midiCCOut = LegacyMIDICCOutEvent {
+                    controlNumber: 128, // kAfterTouch
+                    channel: *channel as std::ffi::c_char,
+                    value: (pressure * 127.0).round() as std::ffi::c_char,
+                    value2: 0,
+                };
+            }
+            NoteEvent::MidiPitchBend {
+                timing: _,
+                channel,
+                value,
+            } if P::MIDI_OUTPUT >= MidiConfig::MidiCCs => {
+                let scaled = (value * ((1 << 14) - 1) as f32).round() as i32;
+
+                vst3_event.r#type = EventTypes_::kLegacyMIDICCOutEvent as u16;
+                vst3_event.__field0.midiCCOut = LegacyMIDICCOutEvent {
+                    controlNumber: 129, // kPitchBend
+                    channel: *channel as std::ffi::c_char,
+                    value: (scaled & 0b01111111) as std::ffi::c_char,
+                    value2: ((scaled >> 7) & 0b01111111) as std::ffi::c_char,
+                };
+            }
+            NoteEvent::MidiCC {
+                timing: _,
+                channel,
+                cc,
+                value,
+            } if P::MIDI_OUTPUT >= MidiConfig::MidiCCs => {
+                vst3_event.r#type = EventTypes_::kLegacyMIDICCOutEvent as u16;
+                vst3_event.__field0.midiCCOut = LegacyMIDICCOutEvent {
+                    controlNumber: *cc,
+                    channel: *channel as std::ffi::c_char,
+                    value: (value * 127.0).round() as std::ffi::c_char,
+                    value2: 0,
+                };
+            }
+            NoteEvent::MidiProgramChange {
+                timing: _,
+                channel,
+                program,
+            } if P::MIDI_OUTPUT >= MidiConfig::MidiCCs => {
+                vst3_event.r#type = EventTypes_::kLegacyMIDICCOutEvent as u16;
+                vst3_event.__field0.midiCCOut = LegacyMIDICCOutEvent {
+                    controlNumber: 130, // kCtrlProgramChange
+                    channel: *channel as std::ffi::c_char,
+                    value: *program as std::ffi::c_char,
+                    value2: 0,
+                };
+            }
+            NoteEvent::MidiSysEx { timing: _, message } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
+                let (padded_sysex_buffer, length) = message.as_buffer();
+                let padded_sysex_buffer = padded_sysex_buffer.borrow();
+                crate::nice_debug_assert!(padded_sysex_buffer.len() >= length);
+                let sysex_buffer = &padded_sysex_buffer[..length];
+
+                vst3_event.r#type = EventTypes_::kDataEvent as u16;
+                vst3_event.__field0.data = DataEvent {
+                    size: sysex_buffer.len() as u32,
+                    r#type: 0, // kMidiSysEx
+                    bytes: sysex_buffer.as_ptr(),
+                };
+
+                // NOTE: We need to have this call here while `sysex_buffer` is
+                //       still in scope since the event contains pointers to it
+                let result = unsafe { host_out_events.addEvent(&mut vst3_event) };
+                if result == kResultOk {
+                    return Ok(());
+                } else {
+                    return Err((event, SendEventError::HostBufferFull));
+                }
+            }
+            _ => {
+                return Err((
+                    event,
+                    SendEventError::InvalidEvent {
+                        midi_output_config: P::MIDI_OUTPUT,
+                    },
+                ));
+            }
+        };
+
+        let result = unsafe { host_out_events.addEvent(&mut vst3_event) };
+        if result == kResultOk {
+            Ok(())
+        } else {
+            Err((event, SendEventError::HostBufferFull))
+        }
     }
 
     fn set_latency_samples(&self, samples: u32) {

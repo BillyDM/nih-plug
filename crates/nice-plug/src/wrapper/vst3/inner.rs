@@ -22,11 +22,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use try_lock::TryLock;
-use vst3::ComPtr;
 #[cfg(feature = "editor")]
 use vst3::ComWrapper;
-use vst3::Steinberg::Vst::{IComponentHandler, IComponentHandlerTrait, RestartFlags_};
+use vst3::Steinberg::Vst::{IComponentHandler, IComponentHandlerTrait, IEventList, RestartFlags_};
 use vst3::Steinberg::{kInvalidArgument, kResultOk, tresult};
+use vst3::{ComPtr, ComRef};
 
 use super::context::{WrapperActivateContext, WrapperProcessContext};
 use super::note_expressions::NoteExpressionController;
@@ -124,10 +124,7 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// NOTE: Because with VST3 MIDI CC messages are sent as parameter changes and VST3 does not
     ///       interleave parameter changes and note events, this queue has to be sorted when
     ///       creating the process context
-    pub input_events: AtomicRefCell<VecDeque<PluginNoteEvent<P>>>,
-    /// Stores any events the plugin has output during the current processing cycle, analogous to
-    /// `input_events`.
-    pub output_events: AtomicRefCell<VecDeque<PluginNoteEvent<P>>>,
+    pub input_note_events: AtomicRefCell<VecDeque<PluginNoteEvent<P>>>,
     /// VST3 has several useful predefined note expressions, but for some reason they are the only
     /// note event type that don't have MIDI note ID and channel fields. So we need to keep track of
     /// the most recent VST3 note IDs we've seen, and then map those back to MIDI note IDs and
@@ -226,6 +223,16 @@ pub enum ProcessEvent<P: Plugin> {
     NoteEvent(PluginNoteEvent<P>),
 }
 
+impl<P: Plugin> ProcessEvent<P> {
+    #[inline]
+    pub(crate) fn timing(&self) -> u32 {
+        match self {
+            ProcessEvent::ParameterChange { timing, .. } => *timing,
+            ProcessEvent::NoteEvent(event) => event.timing(),
+        }
+    }
+}
+
 impl<P: Vst3Plugin> WrapperInner<P> {
     #[allow(unused_unsafe)]
     pub fn new() -> Arc<Self> {
@@ -315,6 +322,12 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             .map(|(_, hash, ptr, _)| (ptr, hash))
             .collect();
 
+        let input_note_events = if P::MIDI_INPUT == MidiConfig::None {
+            AtomicRefCell::new(VecDeque::new())
+        } else {
+            AtomicRefCell::new(VecDeque::with_capacity(P::INPUT_EVENT_CAPACITY))
+        };
+
         let wrapper = Arc::new(Self {
             plugin: TryLock::new(plugin),
             task_executor,
@@ -355,10 +368,9 @@ impl<P: Vst3Plugin> WrapperInner<P> {
                 0,
                 AudioIOLayout::default(),
             )),
-            input_events: AtomicRefCell::new(VecDeque::with_capacity(1024)),
-            output_events: AtomicRefCell::new(VecDeque::with_capacity(1024)),
+            input_note_events,
             note_expression_controller: AtomicRefCell::new(NoteExpressionController::default()),
-            process_events: AtomicRefCell::new(Vec::with_capacity(4096)),
+            process_events: AtomicRefCell::new(Vec::with_capacity(P::INPUT_EVENT_CAPACITY)),
             updated_state_sender,
             updated_state_receiver,
 
@@ -442,12 +454,20 @@ impl<P: Vst3Plugin> WrapperInner<P> {
         }
     }
 
-    pub fn make_process_context(&self, transport: Transport) -> WrapperProcessContext<'_, P> {
+    pub fn make_process_context<'a>(
+        &'a self,
+        transport: Transport,
+        host_out_events: Option<ComRef<'a, IEventList>>,
+        total_buffer_len: usize,
+        current_sample_idx: usize,
+    ) -> WrapperProcessContext<'a, P> {
         WrapperProcessContext {
             inner: self,
-            input_events_guard: self.input_events.borrow_mut(),
-            output_events_guard: self.output_events.borrow_mut(),
+            input_events_guard: self.input_note_events.borrow_mut(),
             transport,
+            host_out_events,
+            total_buffer_len: total_buffer_len as u32,
+            current_sample_idx: current_sample_idx as u32,
         }
     }
 

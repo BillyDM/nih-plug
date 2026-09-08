@@ -144,11 +144,8 @@ pub fn read_stream(stream: &clap_istream, mut slice: impl ByteReadBuffer) -> Opt
             break;
         }
 
-        if let Some(total_bytes) = total_bytes_read.checked_add(bytes_read) {
-            total_bytes_read = total_bytes;
-        } else {
-            return None;
-        }
+        let total_bytes = total_bytes_read.checked_add(bytes_read)?;
+        total_bytes_read = total_bytes;
     }
 
     Some(total_bytes_read)

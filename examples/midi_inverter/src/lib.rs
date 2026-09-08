@@ -33,6 +33,13 @@ impl Plugin for MidiInverter {
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    /// The capacity of the input note (MIDI) event buffer.
+    ///
+    /// If [`Plugin::MIDI_INPUT`] == [`MidiConfig::None`], then no buffer will be allocated.
+    ///
+    /// Defaults to `256`
+    const INPUT_EVENT_CAPACITY: usize = 256;
+
     // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
     // editor should set this to `()`.
     type Editor = ();
@@ -59,158 +66,184 @@ impl Plugin for MidiInverter {
                     channel,
                     note,
                     velocity,
-                } => context.send_event(NoteEvent::NoteOn {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    velocity: 1.0 - velocity,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::NoteOn {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        velocity: 1.0 - velocity,
+                    });
+                }
                 NoteEvent::NoteOff {
                     timing,
                     voice_id,
                     channel,
                     note,
                     velocity,
-                } => context.send_event(NoteEvent::NoteOff {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    velocity: 1.0 - velocity,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::NoteOff {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        velocity: 1.0 - velocity,
+                    });
+                }
                 NoteEvent::Choke {
                     timing,
                     voice_id,
                     channel,
                     note,
-                } => context.send_event(NoteEvent::Choke {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::Choke {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                    });
+                }
                 NoteEvent::PolyPressure {
                     timing,
                     voice_id,
                     channel,
                     note,
                     pressure,
-                } => context.send_event(NoteEvent::PolyPressure {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    pressure: 1.0 - pressure,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyPressure {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        pressure: 1.0 - pressure,
+                    });
+                }
                 NoteEvent::PolyVolume {
                     timing,
                     voice_id,
                     channel,
                     note,
                     gain,
-                } => context.send_event(NoteEvent::PolyVolume {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    gain: 1.0 - gain,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyVolume {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        gain: 1.0 - gain,
+                    });
+                }
                 NoteEvent::PolyPan {
                     timing,
                     voice_id,
                     channel,
                     note,
                     pan,
-                } => context.send_event(NoteEvent::PolyPan {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    pan: 1.0 - pan,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyPan {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        pan: 1.0 - pan,
+                    });
+                }
                 NoteEvent::PolyTuning {
                     timing,
                     voice_id,
                     channel,
                     note,
                     tuning,
-                } => context.send_event(NoteEvent::PolyTuning {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    tuning: 1.0 - tuning,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyTuning {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        tuning: 1.0 - tuning,
+                    });
+                }
                 NoteEvent::PolyVibrato {
                     timing,
                     voice_id,
                     channel,
                     note,
                     vibrato,
-                } => context.send_event(NoteEvent::PolyVibrato {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    vibrato: 1.0 - vibrato,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyVibrato {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        vibrato: 1.0 - vibrato,
+                    });
+                }
                 NoteEvent::PolyExpression {
                     timing,
                     voice_id,
                     channel,
                     note,
                     expression,
-                } => context.send_event(NoteEvent::PolyExpression {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    expression: 1.0 - expression,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyExpression {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        expression: 1.0 - expression,
+                    });
+                }
                 NoteEvent::PolyBrightness {
                     timing,
                     voice_id,
                     channel,
                     note,
                     brightness,
-                } => context.send_event(NoteEvent::PolyBrightness {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    brightness: 1.0 - brightness,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::PolyBrightness {
+                        timing,
+                        voice_id,
+                        channel: 15 - channel,
+                        note: 127 - note,
+                        brightness: 1.0 - brightness,
+                    });
+                }
                 NoteEvent::MidiChannelPressure {
                     timing,
                     channel,
                     pressure,
-                } => context.send_event(NoteEvent::MidiChannelPressure {
-                    timing,
-                    channel: 15 - channel,
-                    pressure: 1.0 - pressure,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::MidiChannelPressure {
+                        timing,
+                        channel: 15 - channel,
+                        pressure: 1.0 - pressure,
+                    });
+                }
                 NoteEvent::MidiPitchBend {
                     timing,
                     channel,
                     value,
-                } => context.send_event(NoteEvent::MidiPitchBend {
-                    timing,
-                    channel: 15 - channel,
-                    value: 1.0 - value,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::MidiPitchBend {
+                        timing,
+                        channel: 15 - channel,
+                        value: 1.0 - value,
+                    });
+                }
                 NoteEvent::MidiCC {
                     timing,
                     channel,
                     cc,
                     value,
-                } => context.send_event(NoteEvent::MidiCC {
-                    timing,
-                    channel: 15 - channel,
-                    // The one thing we won't invert, because uuhhhh
-                    cc,
-                    value: 1.0 - value,
-                }),
+                } => {
+                    let _ = context.try_send_event(NoteEvent::MidiCC {
+                        timing,
+                        channel: 15 - channel,
+                        // The one thing we won't invert, because uuhhhh
+                        cc,
+                        value: 1.0 - value,
+                    });
+                }
                 _ => (),
             }
         }

@@ -32,13 +32,13 @@ impl SysExMessage for CoolSysExMessage {
         }
     }
 
-    fn to_buffer(self) -> (Self::Buffer, usize) {
+    fn as_buffer(&self) -> (Self::Buffer, usize) {
         // `Self::Buffer` needs to have a fixed size, so the result needs to be padded, and we
         // return the message's actual length in bytes alongside it so the caller can trim the
         // excess padding
         match self {
             CoolSysExMessage::Foo(x) => ([0xf0, 0x69, 0x01, (x * 127.0).round() as u8, 0xf7, 0], 5),
-            CoolSysExMessage::Bar { x, y } => ([0xf0, 0x69, 0x02, x, y, 0xf7], 6),
+            CoolSysExMessage::Bar { x, y } => ([0xf0, 0x69, 0x02, *x, *y, 0xf7], 6),
         }
     }
 }
@@ -87,7 +87,7 @@ impl Plugin for SysEx {
                     CoolSysExMessage::Bar { x, y: _ } => CoolSysExMessage::Foo(x as f32 / 127.0),
                 };
 
-                context.send_event(NoteEvent::MidiSysEx {
+                let _ = context.try_send_event(NoteEvent::MidiSysEx {
                     timing,
                     message: new_message,
                 });

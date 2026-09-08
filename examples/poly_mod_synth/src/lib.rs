@@ -415,12 +415,17 @@ impl Plugin for PolyModSynth {
                     Some(v) if v.releasing && v.amp_envelope.previous_value() == 0.0 => {
                         // This event is very important, as it allows the host to manage its own modulation
                         // voices
-                        context.send_event(NoteEvent::VoiceTerminated {
-                            timing: block_end as u32,
-                            voice_id: Some(v.voice_id),
-                            channel: v.channel,
-                            note: v.note,
-                        });
+                        //
+                        // If sending fails, you might want to add logic to try to send the event the next
+                        // process cycle instead of panicking.
+                        context
+                            .try_send_event(NoteEvent::VoiceTerminated {
+                                timing: block_end as u32,
+                                voice_id: Some(v.voice_id),
+                                channel: v.channel,
+                                note: v.note,
+                            })
+                            .unwrap();
                         *voice = None;
                     }
                     _ => (),
@@ -491,14 +496,19 @@ impl PolyModSynth {
 
                 // The stolen voice needs to be terminated so the host can reuse its modulation
                 // resources
+                //
+                // If sending fails, you might want to add logic to try to send the event the next
+                // process cycle instead of panicking.
                 {
                     let oldest_voice = oldest_voice.as_ref().unwrap();
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        voice_id: Some(oldest_voice.voice_id),
-                        channel: oldest_voice.channel,
-                        note: oldest_voice.note,
-                    });
+                    context
+                        .try_send_event(NoteEvent::VoiceTerminated {
+                            timing: sample_offset,
+                            voice_id: Some(oldest_voice.voice_id),
+                            channel: oldest_voice.channel,
+                            note: oldest_voice.note,
+                        })
+                        .unwrap();
                 }
 
                 *oldest_voice = Some(new_voice);
@@ -566,13 +576,17 @@ impl PolyModSynth {
                 }) if voice_id == Some(*candidate_voice_id)
                     || (channel == *candidate_channel && note == *candidate_note) =>
                 {
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        // Notice how we always send the terminated voice ID here
-                        voice_id: Some(*candidate_voice_id),
-                        channel,
-                        note,
-                    });
+                    // If sending fails, you might want to add logic to try to send the event the next
+                    // process cycle instead of panicking.
+                    context
+                        .try_send_event(NoteEvent::VoiceTerminated {
+                            timing: sample_offset,
+                            // Notice how we always send the terminated voice ID here
+                            voice_id: Some(*candidate_voice_id),
+                            channel,
+                            note,
+                        })
+                        .unwrap();
                     *voice = None;
 
                     if voice_id.is_some() {

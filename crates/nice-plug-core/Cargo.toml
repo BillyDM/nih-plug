@@ -38,9 +38,10 @@ serde.workspace = true
 serde_json.workspace = true
 parking_lot.workspace = true
 atomic_refcell.workspace = true
+raw-window-handle.workspace = true
+thiserror.workspace = true
 crossbeam-utils = "0.8.21"
 midi-consts = "0.1"
-raw-window-handle.workspace = true
 dpi = { version = "0.1.2", optional = true }
 
 [dev-dependencies]

@@ -1,6 +1,6 @@
 use nice_plug_core::context::PluginApi;
 use nice_plug_core::context::activate::ActivateContext;
-use nice_plug_core::context::process::{ProcessContext, Transport};
+use nice_plug_core::context::process::{ProcessContext, SendEventError, Transport};
 use nice_plug_core::midi::PluginNoteEvent;
 use nice_plug_core::plugin::Plugin;
 
@@ -81,10 +81,18 @@ impl<P: Plugin, B: Backend<P>> ProcessContext<P> for WrapperProcessContext<'_, P
         }
     }
 
-    fn send_event(&mut self, event: PluginNoteEvent<P>) {
-        self.output_events.push(event);
-    }
+    fn try_send_event(
+        &mut self,
+        event: PluginNoteEvent<P>,
+    ) -> Result<(), (PluginNoteEvent<P>, SendEventError)> {
+        if self.output_events.len() >= self.output_events.capacity() {
+            return Err((event, SendEventError::HostBufferFull));
+        }
 
+        self.output_events.push(event);
+
+        Ok(())
+    }
     fn set_latency_samples(&self, samples: u32) {
         self.wrapper.set_latency_samples(samples)
     }

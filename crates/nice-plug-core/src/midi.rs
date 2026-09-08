@@ -527,7 +527,7 @@ impl<S: SysExMessage> NoteEvent<S> {
     /// Create a MIDI message from this note event. Returns `None` if this even does not have a
     /// direct MIDI equivalent. `PolyPressure` will be converted to polyphonic key pressure, but the
     /// other polyphonic note expression types will not be converted to MIDI CC messages.
-    pub fn as_midi(self) -> Option<MidiResult<S>> {
+    pub fn as_midi(&self) -> Option<MidiResult<S>> {
         match self {
             NoteEvent::NoteOn {
                 timing: _,
@@ -537,7 +537,7 @@ impl<S: SysExMessage> NoteEvent<S> {
                 velocity,
             } => Some(MidiResult::Basic([
                 midi::NOTE_ON | channel,
-                note,
+                *note,
                 // MIDI treats note ons with zero velocity as note offs, because reasons
                 (velocity * 127.0).round().clamp(1.0, 127.0) as u8,
             ])),
@@ -549,7 +549,7 @@ impl<S: SysExMessage> NoteEvent<S> {
                 velocity,
             } => Some(MidiResult::Basic([
                 midi::NOTE_OFF | channel,
-                note,
+                *note,
                 (velocity * 127.0).round().clamp(0.0, 127.0) as u8,
             ])),
             NoteEvent::PolyPressure {
@@ -560,7 +560,7 @@ impl<S: SysExMessage> NoteEvent<S> {
                 pressure,
             } => Some(MidiResult::Basic([
                 midi::POLYPHONIC_KEY_PRESSURE | channel,
-                note,
+                *note,
                 (pressure * 127.0).round().clamp(0.0, 127.0) as u8,
             ])),
             NoteEvent::MidiChannelPressure {
@@ -595,7 +595,7 @@ impl<S: SysExMessage> NoteEvent<S> {
                 value,
             } => Some(MidiResult::Basic([
                 midi::CONTROL_CHANGE | channel,
-                cc,
+                *cc,
                 (value * 127.0).round().clamp(0.0, 127.0) as u8,
             ])),
             NoteEvent::MidiProgramChange {
@@ -604,13 +604,13 @@ impl<S: SysExMessage> NoteEvent<S> {
                 program,
             } => Some(MidiResult::Basic([
                 midi::PROGRAM_CHANGE | channel,
-                program,
+                *program,
                 0,
             ])),
             // `message` is serialized and written to `sysex_buffer`, and the result contains the
             // message's actual length
             NoteEvent::MidiSysEx { timing: _, message } => {
-                let (padded_sysex_buffer, length) = message.to_buffer();
+                let (padded_sysex_buffer, length) = message.as_buffer();
                 Some(MidiResult::SysEx(padded_sysex_buffer, length))
             }
             NoteEvent::Choke { .. }
@@ -771,7 +771,7 @@ mod tests {
                 }
             }
 
-            fn to_buffer(self) -> (Self::Buffer, usize) {
+            fn as_buffer(&self) -> (Self::Buffer, usize) {
                 match self {
                     MessageType::Foo(x) => ([0xf0, 0x69, (x * 127.0).round() as u8, 0xf7], 4),
                 }
