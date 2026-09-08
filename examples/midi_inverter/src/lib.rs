@@ -33,13 +33,6 @@ impl Plugin for MidiInverter {
     const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
-    /// The capacity of the input note (MIDI) event buffer.
-    ///
-    /// If [`Plugin::MIDI_INPUT`] == [`MidiConfig::None`], then no buffer will be allocated.
-    ///
-    /// Defaults to `256`
-    const INPUT_EVENT_CAPACITY: usize = 256;
-
     // Note, the `editor` crate feature must be enabled to use an editor. Plugins without an
     // editor should set this to `()`.
     type Editor = ();
