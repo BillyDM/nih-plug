@@ -1,7 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 use fragile::Fragile;
 use nice_plug_core::editor::HostMainThreadCaller;
-use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::dpi::{NativeSize, Size};
 use nice_plug_core::editor::{
     Editor, EditorHandle, HostCallbacks, HostMethods, ParentWindowHandle,
 };
@@ -263,13 +263,13 @@ impl<P: Vst3Plugin> WrapperView<P> {
 
         match &*this.plug_frame.read() {
             Some(plug_frame) => {
-                let physical_size: PhysicalSize<u32> = new_size.to_physical(scale_factor);
+                let native_size: NativeSize<u32> = NativeSize::from_size(new_size, scale_factor);
 
                 let mut size = ViewRect {
                     left: 0,
                     top: 0,
-                    right: physical_size.width as i32,
-                    bottom: physical_size.height as i32,
+                    right: native_size.width as i32,
+                    bottom: native_size.height as i32,
                 };
 
                 let plug_view = this.as_com_ref::<IPlugView>().unwrap();
@@ -637,12 +637,12 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
         // TODO: This is technically incorrect during resizing, this should still report the old
         //       size until `.on_size()` has been called. We should probably only bother fixing this
         //       if it turns out to be an issue.
-        let editor_size: PhysicalSize<i32> = editor.lock().size().cast();
+        let editor_size = editor.lock().size();
 
         size.left = 0;
-        size.right = editor_size.width;
+        size.right = editor_size.width as i32;
         size.top = 0;
-        size.bottom = editor_size.height;
+        size.bottom = editor_size.height as i32;
 
         kResultOk
     }
@@ -656,15 +656,15 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
         // The host is telling us the view's new frame (after honoring an earlier
         // `request_resize()`, or because the user dragged a host resize handle).
-        let phys_width = unsafe { (*new_size).right - (*new_size).left };
-        let phys_height = unsafe { (*new_size).bottom - (*new_size).top };
-        if phys_width <= 0 || phys_height <= 0 {
+        let width = unsafe { (*new_size).right - (*new_size).left };
+        let height = unsafe { (*new_size).bottom - (*new_size).top };
+        if width <= 0 || height <= 0 {
             return kResultFalse;
         }
 
-        let size = PhysicalSize {
-            width: phys_width as u32,
-            height: phys_height as u32,
+        let size = NativeSize {
+            width: width as u32,
+            height: height as u32,
         };
 
         // Apply the new size to the editor. Editors that don't support being
@@ -736,11 +736,10 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
     unsafe fn checkSizeConstraint(&self, rect: *mut ViewRect) -> tresult {
         check_null_ptr!(rect);
 
-        let size = unsafe {
-            PhysicalSize::new((*rect).right - (*rect).left, (*rect).bottom - (*rect).top)
-        };
+        let (width, height) =
+            unsafe { ((*rect).right - (*rect).left, (*rect).bottom - (*rect).top) };
 
-        if size.width <= 0 || size.height <= 0 {
+        if width <= 0 || height <= 0 {
             return kResultFalse;
         }
 
@@ -748,7 +747,10 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             return kResultFalse;
         };
 
-        let size: PhysicalSize<u32> = size.cast();
+        let size = NativeSize {
+            width: width as u32,
+            height: height as u32,
+        };
 
         if let Some(editor_window) = inner.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();

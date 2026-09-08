@@ -1,17 +1,18 @@
 //! Traits for working with plugin editors.
 
 use bitflags::bitflags;
-use dpi::{LogicalSize, PhysicalSize, Size};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::error::Error;
 use std::ffi::{c_ulong, c_void};
 use std::num::{NonZeroIsize, NonZeroU32};
 use std::ptr::NonNull;
 
-pub use dpi;
-
 use crate::context::gui::GuiContext;
 use crate::plugin::TrackInfo;
+
+use self::dpi::{LogicalSize, NativeSize, PhysicalSize, Size};
+
+pub mod dpi;
 
 pub struct SpawnedEditor<E: EditorHandle> {
     /// A handle to the instance of an open [`Editor`].
@@ -112,11 +113,8 @@ pub trait EditorHandle: Send + 'static {
     /// `set_size`, `size()` should report the new dimensions.
     ///
     /// This will never be called on the standalone target.
-    fn set_size(
-        &self,
-        new_size: PhysicalSize<u32>,
-        window: &Self::Window,
-    ) -> Result<(), Self::Error>;
+    fn set_size(&self, new_size: NativeSize<u32>, window: &Self::Window)
+    -> Result<(), Self::Error>;
 
     fn host_main_thread_callback(&self, window: &Self::Window);
 
@@ -125,9 +123,9 @@ pub trait EditorHandle: Send + 'static {
     /// This will never be called on the standalone target.
     fn adjust_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
-    ) -> Option<PhysicalSize<u32>> {
+    ) -> Option<NativeSize<u32>> {
         let _ = new_size;
         let _ = window;
         None
@@ -250,8 +248,11 @@ pub trait Editor: Send {
         host: Option<HostMethods>,
     ) -> Result<SpawnedEditor<Self::Handle>, Box<dyn Error>>;
 
-    /// Returns the (current) size of the editor in physical pixels.
-    fn size(&self) -> PhysicalSize<u32>;
+    /// Returns the (current) size of the editor.
+    ///
+    /// This size is represented in the platform's native pixels (physical pixels on Windows and Linux,
+    /// and in logical pixels on macOS.)
+    fn size(&self) -> NativeSize<u32>;
 
     /// Describes whether and how the host may resize this editor. The wrapper
     /// reads this to answer the host's resize-capability queries (CLAP's
@@ -312,7 +313,7 @@ impl EditorHandle for () {
 
     fn set_size(
         &self,
-        _new_size: PhysicalSize<u32>,
+        _new_size: NativeSize<u32>,
         _window: &Self::Window,
     ) -> Result<(), Self::Error> {
         Err(DummyEditorError)
@@ -337,8 +338,11 @@ impl Editor for () {
         Err(String::from("Plugin does not implement an editor").into())
     }
 
-    fn size(&self) -> PhysicalSize<u32> {
-        PhysicalSize::default()
+    fn size(&self) -> NativeSize<u32> {
+        NativeSize {
+            width: 0,
+            height: 0,
+        }
     }
 }
 
@@ -517,8 +521,8 @@ impl ResizeHint {
     /// Returns whether or not the given size in physical pixels is valid.
     pub fn is_size_valid(
         &self,
-        new_size: PhysicalSize<u32>,
-        current_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
+        current_size: NativeSize<u32>,
         scale_factor: f64,
     ) -> bool {
         let adjusted_size = self.adjust_size(new_size, current_size, scale_factor);
@@ -529,13 +533,16 @@ impl ResizeHint {
     /// with this plugin.
     pub fn adjust_size(
         &self,
-        mut new_size: PhysicalSize<u32>,
-        current_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
+        current_size: NativeSize<u32>,
         scale_factor: f64,
-    ) -> PhysicalSize<u32> {
+    ) -> NativeSize<u32> {
         if !self.can_resize {
             return current_size;
         }
+
+        let mut new_physical_size = new_size.to_physical(scale_factor);
+        let current_physical_size = current_size.to_physical(scale_factor);
 
         let (min_phy_size, max_phy_size) = match self.size_constraints {
             SizeConstraints::Logical { min_size, max_size } => (
@@ -552,43 +559,43 @@ impl ResizeHint {
         };
 
         if let Some(min_size) = min_phy_size {
-            new_size.width = new_size.width.max(min_size.width);
-            new_size.height = new_size.height.max(min_size.height);
+            new_physical_size.width = new_physical_size.width.max(min_size.width);
+            new_physical_size.height = new_physical_size.height.max(min_size.height);
         }
         if let Some(max_size) = max_phy_size {
-            new_size.width = new_size.width.min(max_size.width);
-            new_size.height = new_size.height.min(max_size.height);
+            new_physical_size.width = new_physical_size.width.min(max_size.width);
+            new_physical_size.height = new_physical_size.height.min(max_size.height);
         }
 
-        new_size.width = new_size.width.max(1);
-        new_size.height = new_size.height.max(1);
+        new_physical_size.width = new_physical_size.width.max(1);
+        new_physical_size.height = new_physical_size.height.max(1);
 
         if self.preserve_aspect_ratio {
-            let adjusted_width = (new_size.height as f32 * self.aspect_ratio_width as f32
+            let adjusted_width = (new_physical_size.height as f32 * self.aspect_ratio_width as f32
                 / self.aspect_ratio_height as f32)
                 .round() as u32;
 
             if let Some(min_size) = min_phy_size
                 && adjusted_width < min_size.width
             {
-                new_size = min_size;
+                new_physical_size = min_size;
             } else if let Some(max_size) = max_phy_size
                 && adjusted_width > max_size.width
             {
-                new_size = max_size;
+                new_physical_size = max_size;
             } else {
-                new_size.width = adjusted_width;
+                new_physical_size.width = adjusted_width;
             }
         } else {
             if !self.can_resize_horizontally {
-                new_size.width = current_size.width;
+                new_physical_size.width = current_physical_size.width;
             }
             if !self.can_resize_vertically {
-                new_size.height = current_size.height;
+                new_physical_size.height = current_physical_size.height;
             }
         }
 
-        new_size
+        NativeSize::from_size(new_physical_size.into(), scale_factor)
     }
 }
 

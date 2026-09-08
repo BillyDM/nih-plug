@@ -9,7 +9,8 @@ use egui_baseview::baseview::HandlerError;
 use egui_baseview::{EguiWindow, GraphicsConfig};
 use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::editor::SizeConstraints;
-use nice_plug_core::editor::dpi::{PhysicalSize, Size};
+use nice_plug_core::editor::dpi::NativeSize;
+use nice_plug_core::editor::dpi::Size;
 use nice_plug_core::editor::{
     Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SpawnedEditor,
     VirtualKeyCode,
@@ -95,7 +96,7 @@ impl<A: NiceEguiApp> egui_baseview::App for UserAppWrapper<A> {
 
     fn resized(&mut self, size: baseview::WindowSize) {
         self.egui_state
-            .scale_factor
+            .system_scale_factor
             .store(Some(size.scale_factor as f32));
 
         let current_size = self.egui_state.size();
@@ -231,8 +232,11 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
         })
     }
 
-    fn size(&self) -> PhysicalSize<u32> {
-        self.egui_state.physical_size()
+    fn size(&self) -> NativeSize<u32> {
+        NativeSize::from_size(
+            self.egui_state.logical_size().into(),
+            self.egui_state.system_scale_factor() as f64,
+        )
     }
 
     fn resize_hint(&self) -> nice_plug_core::editor::ResizeHint {
@@ -291,7 +295,7 @@ impl EditorHandle for EguiEditorHandle {
 
     fn set_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
         window.resize(new_size)
@@ -308,13 +312,13 @@ impl EditorHandle for EguiEditorHandle {
     /// Return the closest supported size.
     fn adjust_size(
         &self,
-        new_size: PhysicalSize<u32>,
+        new_size: NativeSize<u32>,
         window: &Self::Window,
-    ) -> Option<PhysicalSize<u32>> {
+    ) -> Option<NativeSize<u32>> {
         let current_size = window.size();
         Some(self.resize_hint.adjust_size(
             new_size,
-            current_size.physical,
+            NativeSize::from_logical_or_physical(current_size.logical, current_size.physical),
             current_size.scale_factor,
         ))
     }

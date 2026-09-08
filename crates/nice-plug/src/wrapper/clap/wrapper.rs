@@ -2740,16 +2740,15 @@ impl<P: ClapPlugin> Wrapper<P> {
                         scale_factor: f64,
                     ) -> Result<(), Box<dyn Error>> {
                         if let Some(wrapper) = self.wrapper.upgrade() {
-                            use nice_plug_core::editor::dpi::PhysicalSize;
+                            use nice_plug_core::editor::dpi::NativeSize;
 
-                            let physical_size: PhysicalSize<u32> =
-                                new_size.to_physical(scale_factor);
+                            let native_size = NativeSize::from_size(new_size, scale_factor);
 
                             if unsafe_clap_call! {
                                 &*self.host_gui=>request_resize(
                                     &*wrapper.host_callback,
-                                    physical_size.width,
-                                    physical_size.height,
+                                    native_size.width,
+                                    native_size.height,
                                 )
                             } {
                                 Ok(())
@@ -2918,7 +2917,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
 
         if let Some(editor) = wrapper.editor.borrow().as_ref() {
-            let size: nice_plug_core::editor::dpi::PhysicalSize<u32> = editor.lock().size();
+            let size = editor.lock().size();
 
             unsafe {
                 *width = size.width;
@@ -2976,7 +2975,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         height: *mut u32,
     ) -> bool {
         use nice_plug_core::editor::EditorHandle;
-        use nice_plug_core::editor::dpi::PhysicalSize;
+        use nice_plug_core::editor::dpi::NativeSize;
 
         check_null_ptr!(false, plugin, unsafe { (*plugin).plugin_data });
         let wrapper = unsafe { &*((*plugin).plugin_data as *const Self) };
@@ -2984,7 +2983,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            let size = unsafe { PhysicalSize::new(*width, *height) };
+            let size = unsafe { NativeSize::new(*width, *height) };
 
             if let Some(new_size) = editor_window
                 .handle
@@ -3049,7 +3048,7 @@ impl<P: ClapPlugin> Wrapper<P> {
             let editor_window = editor_window.get();
 
             if let Err(e) = editor_window.handle.set_size(
-                nice_plug_core::editor::dpi::PhysicalSize { width, height },
+                nice_plug_core::editor::dpi::NativeSize { width, height },
                 editor_window.window.borrow(),
             ) {
                 crate::nice_error!("Failed to resize window to ({}, {}): {}", width, height, e);

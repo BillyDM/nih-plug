@@ -43,7 +43,7 @@ impl Editor for IcedEditor {
         )
     }
 
-    fn size(&self) -> nice_plug_core::editor::dpi::PhysicalSize<u32> {
+    fn size(&self) -> nice_plug_core::editor::dpi::NativeSize<u32> {
         self.inner.size()
     }
 
