@@ -87,6 +87,11 @@ impl GuiContext {
     pub fn set_state(&self, state: PluginState) {
         self.inner.set_state(state);
     }
+
+    /// Request the plugin to be restarted.
+    pub fn request_restart(&self) {
+        self.inner.request_restart();
+    }
 }
 
 /// Callbacks the plugin can make when the user interacts with its GUI such as updating parameter
