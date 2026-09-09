@@ -16,11 +16,11 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { path = "../../crates/nice-plug", version = "0.3.0", features = [
+nice-plug = { path = "../../crates/nice-plug", version = "0.4.0", features = [
     "assert_process_allocs",
     "standalone",
 ] }
 # The `canvas` feature must be enabled for iced_audio widgets to work.
-nice-plug-iced = { version = "0.3.0", features = ["canvas"] }
+nice-plug-iced = { version = "0.4.0", features = ["canvas"] }
 iced_audio = { version = "0.16.0", features = ["nice-plug"] }
 atomic_float = "1.1"

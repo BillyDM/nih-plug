@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -75,7 +75,7 @@ unsafe_flush_denormals = []
 
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.2" }
-nice-plug-core = { path = "../nice-plug-core", version = "0.3.0", default-features = false }
+nice-plug-core = { path = "../nice-plug-core", version = "0.4.0", default-features = false }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 nice-log = { path = "../nice-log", version = "0.3.1" }
 clap-sys = "0.5.0"

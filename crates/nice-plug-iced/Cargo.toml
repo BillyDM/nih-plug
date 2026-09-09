@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-iced"
-version = "0.3.0"
+version = "0.4.0"
 description = "An adapter to use iced GUIs with nice-plug"
 edition.workspace = true
 license.workspace = true
@@ -80,7 +80,7 @@ x11 = ["iced_baseview/x11"]
 
 [dependencies]
 raw-window-handle.workspace = true
-nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.3.0" }
+nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.4.0" }
 iced_futures = "0.14"
 iced_debug = "0.14"
 iced_program = "0.14"
