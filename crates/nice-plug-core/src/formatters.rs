@@ -147,7 +147,7 @@ pub fn s2v_f32_panning() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
 /// 1000 Hz. This already includes the unit.
 pub fn v2s_f32_hz_then_khz(digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
     Arc::new(move |value| {
-        if value < 1000.0 {
+        if value.round() < 1000.0 {
             format!("{value:.digits$} Hz")
         } else {
             format!("{:.digits$} kHz", value / 1000.0, digits = digits.max(1))
