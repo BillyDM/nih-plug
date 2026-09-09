@@ -2261,6 +2261,10 @@ impl<P: ClapPlugin> Wrapper<P> {
                     ProcessStatus::KeepAlive => CLAP_PROCESS_CONTINUE,
                 };
 
+                if !process.out_events.is_null() && !wrapper.output_parameter_events.is_empty() {
+                    unsafe { wrapper.handle_out_events(&*process.out_events, block_start) };
+                }
+
                 // If our block ends at the end of the buffer then that means there are no more
                 // unprocessed (parameter) events. If there are more events, we'll just keep going
                 // through this process until we've processed the entire buffer.
