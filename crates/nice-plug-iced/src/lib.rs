@@ -50,6 +50,10 @@ impl Editor for IcedEditor {
     fn resize_hint(&self) -> ResizeHint {
         self.inner.resize_hint()
     }
+
+    fn track_info_updated(&self, info: nice_plug_core::plugin::TrackInfo) {
+        self.inner.track_info_updated(info);
+    }
 }
 
 /// Create a new `Editor` using the Iced GUI framework.

@@ -8,6 +8,7 @@ use nice_plug_core::editor::{
     Editor, EditorHandle, HostMethods, Modifiers, ParentWindowHandle, ResizeHint, SizeConstraints,
     SpawnedEditor, VirtualKeyCode,
 };
+use nice_plug_core::plugin::TrackInfo;
 use std::error::Error;
 use std::sync::{
     Arc, Mutex,
@@ -159,8 +160,14 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
     }
 
     fn track_info_updated(&self, info: nice_plug_core::plugin::TrackInfo) {
-        // TODO: Add a subscription for track information.
-        let _ = info;
+        {
+            *self.editor_state.track_info.lock().unwrap() = info;
+        }
+        self.editor_state
+            .track_info_changed
+            .store(true, Ordering::Release);
+
+        self.notifier.notify();
     }
 }
 
@@ -282,6 +289,9 @@ pub struct IcedEditorState {
 
     /// Whether the editor's window is currently open.
     open: AtomicBool,
+
+    track_info_changed: AtomicBool,
+    track_info: Mutex<TrackInfo>,
 }
 
 impl IcedEditorState {
@@ -295,6 +305,8 @@ impl IcedEditorState {
             open: AtomicBool::new(false),
             fallback_scale_factor: AtomicCell::new(None),
             system_scale_factor: AtomicCell::new(None),
+            track_info_changed: AtomicBool::new(false),
+            track_info: Mutex::new(TrackInfo::default()),
         })
     }
 
@@ -340,6 +352,15 @@ impl IcedEditorState {
     /// Whether the GUI is currently visible.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Acquire)
+    }
+
+    /// Returns the new track information if it has changed since the previous call.
+    pub fn new_track_info(&self) -> Option<TrackInfo> {
+        if self.track_info_changed.swap(false, Ordering::Acquire) {
+            Some(self.track_info.lock().unwrap().clone())
+        } else {
+            None
+        }
     }
 }
 
@@ -392,6 +413,11 @@ impl IcedNiceContext {
             Size::Physical(_) => Size::Physical(size.physical),
         };
         self.editor_state.size.store(new_size);
+    }
+
+    /// Returns the new track information if it has changed since the previous call.
+    pub fn new_track_info(&self) -> Option<TrackInfo> {
+        self.editor_state.new_track_info()
     }
 }
 

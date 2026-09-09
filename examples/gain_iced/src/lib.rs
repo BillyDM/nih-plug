@@ -12,7 +12,7 @@ use std::sync::{Arc, atomic::Ordering};
 const MIN_GAIN_DB: f32 = -30.0;
 const MAX_GAIN_DB: f32 = 30.0;
 
-const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 320.0);
+const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 340.0);
 const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
 const INITIAL_SCALE_FACTOR: f32 = 1.0;
 
@@ -37,6 +37,7 @@ enum Message {
 struct MyEditorState {
     params: Arc<GainParams>,
     peak_meter: Arc<AtomicF32>,
+    track_info: Option<TrackInfo>,
 }
 
 struct MyGui {
@@ -90,6 +91,10 @@ impl MyGui {
                 self.peak_meter_db = nice_plug::util::gain_to_db(
                     self.persistent_state.peak_meter.load(Ordering::Relaxed),
                 );
+
+                if let Some(new_track_info) = self.ctx.new_track_info() {
+                    self.persistent_state.track_info = Some(new_track_info);
+                }
             }
             Message::SetScaleFactor(scale_factor) => {
                 self.ctx.set_user_scale_factor(scale_factor);
@@ -130,7 +135,15 @@ impl MyGui {
             ScaleOption(2.0),
         ];
 
+        let track_name = self
+            .persistent_state
+            .track_info
+            .as_ref()
+            .map(|t| t.name())
+            .unwrap_or("unkown");
+
         column![
+            text(format!("track name: {}", track_name)),
             button("Increment").on_press(Message::Increment),
             text(self.value).size(30),
             button("Decrement").on_press(Message::Decrement),
@@ -281,6 +294,7 @@ impl Plugin for Gain {
             MyEditorState {
                 params: self.params.clone(),
                 peak_meter: self.peak_meter.clone(),
+                track_info: None,
             },
             self.notifier.clone(),
             IcedNiceSettings::new().with_resize_hint(RESIZE_HINT),
