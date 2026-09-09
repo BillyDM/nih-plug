@@ -13,12 +13,57 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.4.0
+
+## Breaking Changes
+* `nice-plug-core`, `nice-plug`, and `nice-plug-iced` bumped to version `0.4`
+* `nice-plug-egui` bumped to version `0.5`
+* The `Editor` trait and the `ResizeHint` struct now use the new `NativeSize` type instead of `PhysicalSize`
+* `track_info_updated()` method has moved from the `Plugin` trait to the `Editor` trait
+* Minimum Rust version bumped to `1.88` (#55)
+* `ProcessContext::send_event()` method has been renamed to `try_send_event()`, and is now fallible
+* The `note` fields in `NoteEvent` have been renamed to `key` to be more consistent with MIDI terminology
+* `NoteEvent` voice IDs, channel numbers, and key numbers all now support wildcard variants
+* `NoteEvent::as_midi()` now takes a reference to `self`
+* `SysExMessage::to_buffer()` was renamed to `as_buffer()`, and now takes a reference to `self`
+
+## Added
+* Added ASIO standalone backend (by Jakub Turowski in #79)
+* Added `FloatRange::gain_range()` method (by Jeremy Stafford in #81)
+* Added `GuiContext::request_restart()` to allow plugin GUIs to request a restart of the plugin
+* Added `Plugin::INPUT_EVENT_CAPACITY` constant to allow users to adjust the allocated capacity for input events
+* Added `Plugin::stop_processing()` method that is called when the host is about to deactivate the plugin or send
+the plugin to sleep (currently only used in CLAP plugins)
+* Added `track_info_changed()` method to `NiceGuiApp` trait
+* Added `new_track_info()` method to `IcedNiceContext`
+
+## Changed
+* Many panics triggered by the host misbehaving or by malformed state have been replaced with debug log messages
+
+## Optimized
+* Added `ParamInfo` struct to parameters to reduce memory footprint in hot audio path (by Jakub Turowski in #80)
+* Optimized event sorting logic (for the most common case) in the VST3 wrapper and made it realtime safe
+
+## Fixed
+* Made plugin locking logic more robust and guaranteed to be realtime-safe
+* Added protections when loading malformed state (#85)
+* Plugins no longer panic when the host sends a large number of events at once (#87)
+* In-place processing is now only enabled when the number of main input and output channels match (#84)
+* Non-finite parameter values from the host are now filtered out to prevent state corruption (#86)
+* Fixed sample-accurate block splitting logic in clap wrapper (#91)
+* Fixed a regression where parameters wouldn't be rescanned after a state change
+* Fixed a rounding issue in `v2s_f32_hz_then_khz()`
+* Added a flag to prevent filling up VST3 fd socket
+* Fixed a minor atomic ordering issue with voice info in clap wrapper
+
+Also thanks to maxmcorp and davfre for finding various issues!
+
 # nice-plug 0.3.0
 
 ## Breaking Changes
 * All crates updated to use baseview version `0.3.1`
-* `nice-plug-core`, `nice-plug`, and `nice-plug-iced` bumped to version 0.3
-* `nice-plug-egui` bumped to version 0.5
+* `nice-plug-core`, `nice-plug`, and `nice-plug-iced` bumped to version `0.3`
+* `nice-plug-egui` bumped to version `0.4`
 * `nice-plug-egui` updated to use `egui` version `0.36`
 * A new `editor` cargo feature was added to `nice-plug` and `nice-plug-core`. Disabling this will disable all GUI-related
 code entirely, saving some processing overhead and reducing binary size.
