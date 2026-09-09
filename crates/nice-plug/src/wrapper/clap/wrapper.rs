@@ -455,7 +455,8 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     }
                 }
                 None => {
-                    crate::nice_debug_assert_failure!("Host does not support the latency extension")
+                    #[cfg(debug_assertions)]
+                    crate::nice_warn!("Host does not support the latency extension");
                 }
             },
             Task::VoiceInfoChanged => match &*self.host_voice_info.borrow() {
@@ -463,9 +464,10 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     crate::nice_debug_assert!(is_gui_thread);
                     unsafe_clap_call! { host_voice_info=>changed(&*self.host_callback) };
                 }
-                None => crate::nice_debug_assert_failure!(
-                    "Host does not support the voice-info extension"
-                ),
+                None => {
+                    #[cfg(debug_assertions)]
+                    crate::nice_warn!("Host does not support the voice-info extension");
+                }
             },
             Task::RescanParamValues => match &*self.host_params.borrow() {
                 Some(host_params) => {
@@ -473,7 +475,8 @@ impl<P: ClapPlugin> MainThreadExecutor<Task<P>> for Wrapper<P> {
                     unsafe_clap_call! { host_params=>rescan(&*self.host_callback, CLAP_PARAM_RESCAN_VALUES) };
                 }
                 None => {
-                    crate::nice_debug_assert_failure!("The host does not support parameters? What?")
+                    #[cfg(debug_assertions)]
+                    crate::nice_warn!("Host does not support the parameter extension");
                 }
             },
         };
@@ -2790,9 +2793,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                     }
                 }
             } else {
-                crate::nice_debug_assert_failure!(
-                    "Host tried to create editor while editor is already open"
-                );
+                #[cfg(debug_assertions)]
+                crate::nice_warn!("Host tried to create editor while editor is already open");
 
                 false
             }
@@ -2851,9 +2853,8 @@ impl<P: ClapPlugin> Wrapper<P> {
                 true
             }
         } else {
-            crate::nice_debug_assert_failure!(
-                "Host tried to set parent window while editor is not open"
-            );
+            #[cfg(debug_assertions)]
+            crate::nice_warn!("Host tried to set parent window while editor is not open");
 
             false
         }
@@ -2868,9 +2869,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         if editor_handle.is_some() {
             *editor_handle = None;
         } else {
-            crate::nice_debug_assert_failure!(
-                "Tried destroying editor while the editor was not active"
-            );
+            #[cfg(debug_assertions)]
+            crate::nice_warn!("Tried destroying editor while the editor was not active");
         }
     }
 

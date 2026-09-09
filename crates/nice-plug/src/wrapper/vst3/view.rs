@@ -583,9 +583,8 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 }
             }
         } else {
-            crate::nice_debug_assert_failure!(
-                "Host tried to attach editor while the editor is already attached"
-            );
+            #[cfg(debug_assertions)]
+            crate::nice_warn!("Host tried to attach editor while the editor is already attached");
 
             kResultFalse
         }
@@ -603,9 +602,8 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
             kResultOk
         } else {
-            crate::nice_debug_assert_failure!(
-                "Host tried to remove the editor without an active editor"
-            );
+            #[cfg(debug_assertions)]
+            crate::nice_warn!("Host tried to remove the editor without an active editor");
 
             kResultFalse
         }

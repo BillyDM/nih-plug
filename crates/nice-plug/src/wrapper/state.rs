@@ -145,7 +145,8 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
         let param_ptr = match params_getter(param_id_str.as_str()) {
             Some(ptr) => ptr,
             None => {
-                crate::nice_debug_assert_failure!("Unknown parameter: {}", param_id_str);
+                #[cfg(debug_assertions)]
+                crate::nice_warn!("Unknown parameter: {}", param_id_str);
                 continue;
             }
         };
@@ -169,15 +170,18 @@ pub(crate) unsafe fn deserialize_object<P: Plugin>(
                 }
                 (ParamPtr::EnumParam(p), ParamValue::String(id)) => {
                     let deserialized_enum = (*p).set_from_id(id);
-                    crate::nice_debug_assert!(
-                        deserialized_enum,
-                        "Unknown ID {:?} for enum parameter \"{}\"",
-                        id,
-                        param_id_str,
-                    );
+                    if !deserialized_enum {
+                        #[cfg(debug_assertions)]
+                        crate::nice_warn!(
+                            "Unknown ID {:?} for enum parameter \"{}\"",
+                            id,
+                            param_id_str,
+                        );
+                    }
                 }
                 (param_ptr, param_value) => {
-                    crate::nice_debug_assert_failure!(
+                    #[cfg(debug_assertions)]
+                    crate::nice_warn!(
                         "Invalid serialized value {:?} for parameter \"{}\" ({:?})",
                         param_value,
                         param_id_str,
