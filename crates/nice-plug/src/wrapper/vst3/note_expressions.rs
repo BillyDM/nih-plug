@@ -1,7 +1,7 @@
 //! Special handling for note expressions, because VST3 makes this a lot more complicated than it
 //! needs to be. We only support the predefined expressions.
 
-use nice_plug_core::midi::{NoteEvent, sysex::SysExMessage};
+use nice_plug_core::midi::{Channel, Key, NoteEvent, VoiceID, sysex::SysExMessage};
 use vst3::Steinberg::Vst::{NoteExpressionValueEvent, NoteOnEvent};
 
 type MidiNote = u8;
@@ -92,7 +92,10 @@ impl NoteExpressionController {
     /// Register the note ID from a note on event so it can later be retrieved when handling a note
     /// expression value event.
     pub fn register_note(&mut self, event: &NoteOnEvent) {
-        self.note_ids[self.note_ids_idx] = (event.noteId, event.pitch as u8, event.channel as u8);
+        let pitch = u8::try_from(event.pitch).unwrap_or(0);
+        let channel = u8::try_from(event.channel).unwrap_or(0);
+
+        self.note_ids[self.note_ids_idx] = (event.noteId, pitch, channel);
         self.note_ids_idx = (self.note_ids_idx + 1) % NOTE_IDS_LEN;
     }
 
@@ -105,7 +108,7 @@ impl NoteExpressionController {
         event: &NoteExpressionValueEvent,
     ) -> Option<NoteEvent<S>> {
         // We're calling it a voice ID, VST3 (and CLAP) calls it a note ID
-        let (note_id, note, channel) = *self
+        let (note_id, key, channel) = *self
             .note_ids
             .iter()
             .find(|(note_id, _, _)| *note_id == event.noteId)?;
@@ -113,49 +116,49 @@ impl NoteExpressionController {
         match event.typeId {
             VOLUME_EXPRESSION_ID => Some(NoteEvent::PolyVolume {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 // Because expression values in VST3 are always in the `[0, 1]` range, they added a
                 // 4x scaling factor here to allow the values to go from -infinity to +12 dB
                 gain: event.value as f32 * 4.0,
             }),
             PAN_EXPRESSION_ID => Some(NoteEvent::PolyPan {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 // Our panning expressions are symmetrical around 0
                 pan: (event.value as f32 * 2.0) - 1.0,
             }),
             TUNING_EXPRESSION_ID => Some(NoteEvent::PolyTuning {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 // This denormalized to the same [-120, 120] range used by CLAP and our expression
                 // events
                 tuning: 240.0 * (event.value as f32 - 0.5),
             }),
             VIBRATO_EXPRESSION_ID => Some(NoteEvent::PolyVibrato {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 vibrato: event.value as f32,
             }),
             EXPRESSION_EXPRESSION_ID => Some(NoteEvent::PolyBrightness {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 brightness: event.value as f32,
             }),
             BRIGHTNESS_EXPRESSION_ID => Some(NoteEvent::PolyExpression {
                 timing,
-                voice_id: Some(note_id),
-                channel,
-                note,
+                voice_id: VoiceID::ID(note_id),
+                channel: Channel::Number(channel),
+                key: Key::Number(key),
                 expression: event.value as f32,
             }),
             _ => None,

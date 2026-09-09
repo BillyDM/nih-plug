@@ -3,7 +3,7 @@ use nice_plug_core::audio_setup::{AuxiliaryBuffers, BufferConfig, ProcessMode};
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
 use nice_plug_core::editor::Editor;
-use nice_plug_core::midi::{MidiConfig, NoteEvent};
+use nice_plug_core::midi::{Channel, Key, MidiConfig, NoteEvent, VoiceID};
 use nice_plug_core::params::ParamFlags;
 use nice_plug_core::plugin::ProcessStatus;
 use std::ffi::c_void;
@@ -1235,6 +1235,28 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                 if let Some(events) = unsafe { ComRef::from_raw(data.inputEvents) } {
                     let num_events = unsafe { events.getEventCount() };
 
+                    fn voice_from_i32(v: i32) -> VoiceID {
+                        if v >= 0 {
+                            VoiceID::ID(v)
+                        } else {
+                            VoiceID::Wildcard
+                        }
+                    }
+                    fn channel_from_i16(c: i16) -> Channel {
+                        if (0..=15).contains(&c) {
+                            Channel::Number(c as u8)
+                        } else {
+                            Channel::Wildcard
+                        }
+                    }
+                    fn key_from_i16(k: i16) -> Key {
+                        if (0..=127).contains(&k) {
+                            Key::Number(k as u8)
+                        } else {
+                            Key::Wildcard
+                        }
+                    }
+
                     let mut event: MaybeUninit<_> = MaybeUninit::uninit();
                     for i in 0..num_events {
                         let result = unsafe { events.getEvent(i, event.as_mut_ptr()) };
@@ -1257,13 +1279,9 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 &mut process_events,
                                 ProcessEvent::NoteEvent(NoteEvent::NoteOn {
                                     timing,
-                                    voice_id: if event.noteId != -1 {
-                                        Some(event.noteId)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.pitch as u8,
+                                    voice_id: voice_from_i32(event.noteId),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.pitch),
                                     velocity: event.velocity,
                                 }),
                             );
@@ -1274,13 +1292,9 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 &mut process_events,
                                 ProcessEvent::NoteEvent(NoteEvent::NoteOff {
                                     timing,
-                                    voice_id: if event.noteId != -1 {
-                                        Some(event.noteId)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.pitch as u8,
+                                    voice_id: voice_from_i32(event.noteId),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.pitch),
                                     velocity: event.velocity,
                                 }),
                             );
@@ -1291,13 +1305,9 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                 &mut process_events,
                                 ProcessEvent::NoteEvent(NoteEvent::PolyPressure {
                                     timing,
-                                    voice_id: if event.noteId != -1 {
-                                        Some(event.noteId)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.pitch as u8,
+                                    voice_id: voice_from_i32(event.noteId),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.pitch),
                                     pressure: event.pressure,
                                 }),
                             );

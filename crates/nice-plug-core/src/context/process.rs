@@ -78,7 +78,8 @@ pub trait ProcessContext<P: Plugin> {
     /// ```
     fn next_event(&mut self) -> Option<PluginNoteEvent<P>>;
 
-    /// Send an event to the host. Only available when [`Plugin::MIDI_OUTPUT`] is set.
+    /// Try to send an event to the host's output event buffer. Only available when
+    /// [`Plugin::MIDI_OUTPUT`] is set.
     fn try_send_event(
         &mut self,
         event: PluginNoteEvent<P>,

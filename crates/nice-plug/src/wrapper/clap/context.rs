@@ -9,7 +9,9 @@ use nice_plug_core::context::process::{ProcessContext, SendEventError, Transport
 use nice_plug_core::context::remote_controls::{
     RemoteControlsContext, RemoteControlsPage, RemoteControlsSection,
 };
-use nice_plug_core::midi::{MidiConfig, MidiResult, NoteEvent, PluginNoteEvent};
+use nice_plug_core::midi::{
+    Channel, Key, MidiConfig, MidiResult, NoteEvent, PluginNoteEvent, VoiceID,
+};
 use nice_plug_core::params::Param;
 use nice_plug_core::params::internals::ParamPtr;
 use std::cell::Cell;
@@ -151,12 +153,22 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
             self.total_buffer_len,
         );
 
+        fn voice_to_i32(voice_id: VoiceID) -> i32 {
+            voice_id.id().unwrap_or(-1)
+        }
+        fn channel_to_i16(channel: Channel) -> i16 {
+            channel.number().map(|c| c as i16).unwrap_or(-1)
+        }
+        fn key_to_i16(key: Key) -> i16 {
+            key.number().map(|k| k as i16).unwrap_or(-1)
+        }
+
         let push_successful = match &event {
             NoteEvent::NoteOn {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 velocity,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note {
@@ -168,10 +180,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         // We don't have a way to denote live events
                         flags: 0,
                     },
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     velocity: *velocity as f64,
                 };
 
@@ -183,7 +195,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 velocity,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note {
@@ -194,10 +206,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         type_: CLAP_EVENT_NOTE_OFF,
                         flags: 0,
                     },
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     velocity: *velocity as f64,
                 };
 
@@ -211,7 +223,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
             } if P::MIDI_INPUT >= MidiConfig::Basic => {
                 let event = clap_event_note {
                     header: clap_event_header {
@@ -221,10 +233,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         type_: CLAP_EVENT_NOTE_END,
                         flags: 0,
                     },
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     velocity: 0.0,
                 };
 
@@ -236,7 +248,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 pressure,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -248,10 +260,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_PRESSURE,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *pressure as f64,
                 };
 
@@ -263,7 +275,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 gain,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -275,10 +287,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_VOLUME,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *gain as f64,
                 };
 
@@ -290,7 +302,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 pan,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -302,10 +314,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_PAN,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: (*pan as f64 + 1.0) / 2.0,
                 };
 
@@ -317,7 +329,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 tuning,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -329,10 +341,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_TUNING,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *tuning as f64,
                 };
 
@@ -344,7 +356,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 vibrato,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -356,10 +368,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_VIBRATO,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *vibrato as f64,
                 };
 
@@ -371,7 +383,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 expression,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -383,10 +395,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_EXPRESSION,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *expression as f64,
                 };
 
@@ -398,7 +410,7 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 brightness,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 let event = clap_event_note_expression {
@@ -410,10 +422,10 @@ impl<P: ClapPlugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                         flags: 0,
                     },
                     expression_id: CLAP_NOTE_EXPRESSION_BRIGHTNESS,
-                    note_id: voice_id.unwrap_or(-1),
+                    note_id: voice_to_i32(*voice_id),
                     port_index: 0,
-                    channel: *channel as i16,
-                    key: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    key: key_to_i16(*key),
                     value: *brightness as f64,
                 };
 

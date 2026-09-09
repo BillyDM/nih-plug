@@ -1,4 +1,7 @@
-use nice_plug::prelude::*;
+use nice_plug::{
+    midi::{Channel, Key},
+    prelude::*,
+};
 use std::sync::Arc;
 
 /// A plugin that inverts all MIDI note numbers, channels, CCs, velocities, pressures, and
@@ -49,6 +52,19 @@ impl Plugin for MidiInverter {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        fn reverse_channel(channel: Channel) -> Channel {
+            match channel {
+                Channel::Number(c) => Channel::Number(15u8.saturating_sub(c)),
+                Channel::Wildcard => Channel::Wildcard,
+            }
+        }
+        fn reverse_key(key: Key) -> Key {
+            match key {
+                Key::Number(k) => Key::Number(127u8.saturating_sub(k)),
+                Key::Wildcard => Key::Wildcard,
+            }
+        }
+
         // We'll invert the channel, note index, velocity, pressure, CC value, pitch bend, and
         // anything else that is invertable for all events we receive
         while let Some(event) = context.next_event() {
@@ -57,14 +73,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     velocity,
                 } => {
                     let _ = context.try_send_event(NoteEvent::NoteOn {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         velocity: 1.0 - velocity,
                     });
                 }
@@ -72,14 +88,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     velocity,
                 } => {
                     let _ = context.try_send_event(NoteEvent::NoteOff {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         velocity: 1.0 - velocity,
                     });
                 }
@@ -87,27 +103,27 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                 } => {
                     let _ = context.try_send_event(NoteEvent::Choke {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                     });
                 }
                 NoteEvent::PolyPressure {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     pressure,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyPressure {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         pressure: 1.0 - pressure,
                     });
                 }
@@ -115,14 +131,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     gain,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyVolume {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         gain: 1.0 - gain,
                     });
                 }
@@ -130,14 +146,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     pan,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyPan {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         pan: 1.0 - pan,
                     });
                 }
@@ -145,14 +161,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     tuning,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyTuning {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         tuning: 1.0 - tuning,
                     });
                 }
@@ -160,14 +176,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     vibrato,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyVibrato {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         vibrato: 1.0 - vibrato,
                     });
                 }
@@ -175,14 +191,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     expression,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyExpression {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         expression: 1.0 - expression,
                     });
                 }
@@ -190,14 +206,14 @@ impl Plugin for MidiInverter {
                     timing,
                     voice_id,
                     channel,
-                    note,
+                    key,
                     brightness,
                 } => {
                     let _ = context.try_send_event(NoteEvent::PolyBrightness {
                         timing,
                         voice_id,
-                        channel: 15 - channel,
-                        note: 127 - note,
+                        channel: reverse_channel(channel),
+                        key: reverse_key(key),
                         brightness: 1.0 - brightness,
                     });
                 }
@@ -208,7 +224,7 @@ impl Plugin for MidiInverter {
                 } => {
                     let _ = context.try_send_event(NoteEvent::MidiChannelPressure {
                         timing,
-                        channel: 15 - channel,
+                        channel: 15u8.saturating_sub(channel),
                         pressure: 1.0 - pressure,
                     });
                 }
@@ -219,7 +235,7 @@ impl Plugin for MidiInverter {
                 } => {
                     let _ = context.try_send_event(NoteEvent::MidiPitchBend {
                         timing,
-                        channel: 15 - channel,
+                        channel: 15u8.saturating_sub(channel),
                         value: 1.0 - value,
                     });
                 }
@@ -231,7 +247,7 @@ impl Plugin for MidiInverter {
                 } => {
                     let _ = context.try_send_event(NoteEvent::MidiCC {
                         timing,
-                        channel: 15 - channel,
+                        channel: 15u8.saturating_sub(channel),
                         // The one thing we won't invert, because uuhhhh
                         cc,
                         value: 1.0 - value,

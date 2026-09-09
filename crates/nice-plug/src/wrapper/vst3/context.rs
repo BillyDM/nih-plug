@@ -5,7 +5,7 @@ use nice_plug_core::{
         activate::ActivateContext,
         process::{ProcessContext, SendEventError, Transport},
     },
-    midi::{MidiConfig, NoteEvent, PluginNoteEvent},
+    midi::{Channel, Key, MidiConfig, NoteEvent, PluginNoteEvent},
 };
 use std::collections::VecDeque;
 use std::{cell::Cell, mem};
@@ -153,6 +153,13 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
             self.total_buffer_len,
         ) as i32;
 
+        fn channel_to_i16(channel: Channel) -> i16 {
+            channel.number().map(|c| c as i16).unwrap_or(-1)
+        }
+        fn key_to_i16(key: Key) -> i16 {
+            key.number().map(|k| k as i16).unwrap_or(-1)
+        }
+
         // `voice_id.unwrap_or(|| ...)` triggers
         // https://github.com/rust-lang/rust-clippy/issues/8522
         #[allow(clippy::unnecessary_lazy_evaluations)]
@@ -161,34 +168,34 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 velocity,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 vst3_event.r#type = EventTypes_::kNoteOnEvent as u16;
                 vst3_event.__field0.noteOn = NoteOnEvent {
-                    channel: *channel as i16,
-                    pitch: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    pitch: key_to_i16(*key),
                     tuning: 0.0,
                     velocity: *velocity,
                     length: 0, // What?
                     // We'll use this for our note IDs, that way we don't have to do
                     // anything complicated here
-                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    noteId: voice_id.id_or_fallback(*key, *channel),
                 };
             }
             NoteEvent::NoteOff {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 velocity,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 vst3_event.r#type = EventTypes_::kNoteOffEvent as u16;
                 vst3_event.__field0.noteOff = NoteOffEvent {
-                    channel: *channel as i16,
-                    pitch: *note as i16,
+                    channel: channel_to_i16(*channel),
+                    pitch: key_to_i16(*key),
                     velocity: *velocity,
-                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    noteId: voice_id.id_or_fallback(*key, *channel),
                     tuning: 0.0,
                 };
             }
@@ -202,55 +209,55 @@ impl<P: Vst3Plugin> ProcessContext<P> for WrapperProcessContext<'_, P> {
                 timing: _,
                 voice_id,
                 channel,
-                note,
+                key,
                 pressure,
             } if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 vst3_event.r#type = EventTypes_::kPolyPressureEvent as u16;
                 vst3_event.__field0.polyPressure = PolyPressureEvent {
-                    channel: *channel as i16,
-                    pitch: *note as i16,
-                    noteId: voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    channel: channel_to_i16(*channel),
+                    pitch: key_to_i16(*key),
+                    noteId: voice_id.id_or_fallback(*key, *channel),
                     pressure: *pressure,
                 };
             }
             event @ (NoteEvent::PolyVolume {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }
             | NoteEvent::PolyPan {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }
             | NoteEvent::PolyTuning {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }
             | NoteEvent::PolyVibrato {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }
             | NoteEvent::PolyExpression {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }
             | NoteEvent::PolyBrightness {
                 voice_id,
                 channel,
-                note,
+                key,
                 ..
             }) if P::MIDI_OUTPUT >= MidiConfig::Basic => {
                 match NoteExpressionController::translate_event_reverse(
-                    voice_id.unwrap_or_else(|| ((*channel as i32) << 8) | *note as i32),
+                    voice_id.id_or_fallback(*key, *channel),
                     event,
                 ) {
                     Some(translated_event) => {

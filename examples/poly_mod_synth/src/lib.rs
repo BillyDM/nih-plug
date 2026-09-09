@@ -1,4 +1,7 @@
-use nice_plug::prelude::*;
+use nice_plug::{
+    midi::{Channel, Key, VoiceID},
+    prelude::*,
+};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::sync::Arc;
@@ -52,9 +55,9 @@ struct Voice {
     /// basic note events will still have an effect.
     voice_id: i32,
     /// The note's channel, in `0..16`. Only used for the voice terminated event.
-    channel: u8,
+    channel: Channel,
     /// The note's key/note, in `0..128`. Only used for the voice terminated event.
-    note: u8,
+    key: Key,
     /// The voices internal ID. Each voice has an internal voice ID one higher than the previous
     /// voice. This is used to steal the last voice in case all 16 voices are in use.
     internal_voice_id: u64,
@@ -216,7 +219,7 @@ impl Plugin for PolyModSynth {
                                 timing,
                                 voice_id,
                                 channel,
-                                note,
+                                key,
                                 velocity,
                             } => {
                                 let initial_phase: f32 = self.prng.random_range(0.0..1.0);
@@ -228,28 +231,28 @@ impl Plugin for PolyModSynth {
                                 amp_envelope.set_target(sample_rate, 1.0);
 
                                 let voice =
-                                    self.start_voice(context, timing, voice_id, channel, note);
+                                    self.start_voice(context, timing, voice_id, channel, key);
                                 voice.velocity_sqrt = velocity.sqrt();
                                 voice.phase = initial_phase;
-                                voice.phase_delta = util::midi_note_to_freq(note) / sample_rate;
+                                voice.phase_delta =
+                                    util::midi_note_to_freq(key.number().unwrap_or(0))
+                                        / sample_rate;
                                 voice.amp_envelope = amp_envelope;
                             }
                             NoteEvent::NoteOff {
                                 timing: _,
                                 voice_id,
                                 channel,
-                                note,
+                                key,
                                 velocity: _,
-                            } => {
-                                self.start_release_for_voices(sample_rate, voice_id, channel, note)
-                            }
+                            } => self.start_release_for_voices(sample_rate, voice_id, channel, key),
                             NoteEvent::Choke {
                                 timing,
                                 voice_id,
                                 channel,
-                                note,
+                                key,
                             } => {
-                                self.choke_voices(context, timing, voice_id, channel, note);
+                                self.choke_voices(context, timing, voice_id, channel, key);
                             }
                             NoteEvent::PolyModulation {
                                 timing: _,
@@ -421,9 +424,9 @@ impl Plugin for PolyModSynth {
                         context
                             .try_send_event(NoteEvent::VoiceTerminated {
                                 timing: block_end as u32,
-                                voice_id: Some(v.voice_id),
+                                voice_id: VoiceID::ID(v.voice_id),
                                 channel: v.channel,
-                                note: v.note,
+                                key: v.key,
                             })
                             .unwrap();
                         *voice = None;
@@ -456,15 +459,15 @@ impl PolyModSynth {
         &mut self,
         context: &mut impl ProcessContext<Self>,
         sample_offset: u32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
+        voice_id: VoiceID,
+        channel: Channel,
+        key: Key,
     ) -> &mut Voice {
         let new_voice = Voice {
-            voice_id: voice_id.unwrap_or_else(|| compute_fallback_voice_id(note, channel)),
+            voice_id: voice_id.id_or_fallback(key, channel),
             internal_voice_id: self.next_internal_voice_id,
             channel,
-            note,
+            key,
             velocity_sqrt: 1.0,
 
             phase: 0.0,
@@ -504,9 +507,9 @@ impl PolyModSynth {
                     context
                         .try_send_event(NoteEvent::VoiceTerminated {
                             timing: sample_offset,
-                            voice_id: Some(oldest_voice.voice_id),
+                            voice_id: VoiceID::ID(oldest_voice.voice_id),
                             channel: oldest_voice.channel,
-                            note: oldest_voice.note,
+                            key: oldest_voice.key,
                         })
                         .unwrap();
                 }
@@ -522,21 +525,21 @@ impl PolyModSynth {
     fn start_release_for_voices(
         &mut self,
         sample_rate: f32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
+        voice_id: VoiceID,
+        channel: Channel,
+        key: Key,
     ) {
         for voice in self.voices.iter_mut() {
             match voice {
                 Some(Voice {
                     voice_id: candidate_voice_id,
                     channel: candidate_channel,
-                    note: candidate_note,
+                    key: candidate_key,
                     releasing,
                     amp_envelope,
                     ..
-                }) if voice_id == Some(*candidate_voice_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
+                }) if voice_id == VoiceID::ID(*candidate_voice_id)
+                    || (channel == *candidate_channel && key == *candidate_key) =>
                 {
                     *releasing = true;
                     amp_envelope.style =
@@ -546,7 +549,7 @@ impl PolyModSynth {
                     // If this targetted a single voice ID, we're done here. Otherwise there may be
                     // multiple overlapping voices as we enabled support for that in the
                     // `PolyModulationConfig`.
-                    if voice_id.is_some() {
+                    if !voice_id.is_wildcard() {
                         return;
                     }
                 }
@@ -562,19 +565,19 @@ impl PolyModSynth {
         &mut self,
         context: &mut impl ProcessContext<Self>,
         sample_offset: u32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
+        voice_id: VoiceID,
+        channel: Channel,
+        key: Key,
     ) {
         for voice in self.voices.iter_mut() {
             match voice {
                 Some(Voice {
                     voice_id: candidate_voice_id,
                     channel: candidate_channel,
-                    note: candidate_note,
+                    key: candidate_key,
                     ..
-                }) if voice_id == Some(*candidate_voice_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
+                }) if voice_id == VoiceID::ID(*candidate_voice_id)
+                    || (channel == *candidate_channel && key == *candidate_key) =>
                 {
                     // If sending fails, you might want to add logic to try to send the event the next
                     // process cycle instead of panicking.
@@ -582,14 +585,14 @@ impl PolyModSynth {
                         .try_send_event(NoteEvent::VoiceTerminated {
                             timing: sample_offset,
                             // Notice how we always send the terminated voice ID here
-                            voice_id: Some(*candidate_voice_id),
+                            voice_id: VoiceID::ID(*candidate_voice_id),
                             channel,
-                            note,
+                            key,
                         })
                         .unwrap();
                     *voice = None;
 
-                    if voice_id.is_some() {
+                    if !voice_id.is_wildcard() {
                         return;
                     }
                 }
@@ -597,12 +600,6 @@ impl PolyModSynth {
             }
         }
     }
-}
-
-/// Compute a voice ID in case the host doesn't provide them. Polyphonic modulation will not work in
-/// this case, but playing notes will.
-const fn compute_fallback_voice_id(note: u8, channel: u8) -> i32 {
-    note as i32 | ((channel as i32) << 16)
 }
 
 impl ClapPlugin for PolyModSynth {

@@ -36,9 +36,78 @@ pub enum MidiConfig {
     MidiCCs,
 }
 
-// FIXME: Like the voice ID, channel and note number can also be omitted in CLAP. And instead of an
-//        Option, maybe this should use a dedicated type to more clearly indicate that missing
-//        values should be treated as wildcards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum VoiceID {
+    /// The note can belong to any voice.
+    Wildcard,
+    /// The note belongs to the voice with the given ID.
+    ID(i32),
+}
+
+impl VoiceID {
+    pub const fn id(&self) -> Option<i32> {
+        if let Self::ID(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    pub const fn is_wildcard(&self) -> bool {
+        matches!(self, Self::Wildcard)
+    }
+
+    /// Compute a voice ID if the host didn't provide one. Polyphonic modulation will not work in
+    /// this case, but playing notes will.
+    pub fn id_or_fallback(&self, key: Key, channel: Channel) -> i32 {
+        key.number().unwrap_or(0) as i32 | ((channel.number().unwrap_or(0) as i32) << 16)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Channel {
+    /// The note can belong to any channel.
+    Wildcard,
+    /// The note's channel number, in `0..16`.
+    Number(u8),
+}
+
+impl Channel {
+    pub const fn number(&self) -> Option<u8> {
+        if let Self::Number(number) = self {
+            Some(*number)
+        } else {
+            None
+        }
+    }
+
+    pub const fn is_wildcard(&self) -> bool {
+        matches!(self, Self::Wildcard)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Key {
+    /// The note can belong to any key.
+    Wildcard,
+    /// The note's key number, in `0..127`.
+    /// Same as MIDI1 Key Number (60 == Middle C)
+    Number(u8),
+}
+
+impl Key {
+    pub const fn number(&self) -> Option<u8> {
+        if let Self::Number(number) = self {
+            Some(*number)
+        } else {
+            None
+        }
+    }
+
+    pub const fn is_wildcard(&self) -> bool {
+        matches!(self, Self::Wildcard)
+    }
+}
 
 /// Event for (incoming) notes. The set of supported note events depends on the value of
 /// [`Plugin::MIDI_INPUT`. Also check out the [`util`][crate::util] module for convenient conversion
@@ -58,11 +127,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's velocity, in `[0, 1]`. Some plugin APIs may allow higher precision than the
         /// 128 levels available in MIDI.
         velocity: f32,
@@ -73,11 +142,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's velocity, in `[0, 1]`. Some plugin APIs may allow higher precision than the
         /// 128 levels available in MIDI.
         velocity: f32,
@@ -89,11 +158,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
     },
 
     /// Sent by the plugin to the host to indicate that a voice has ended. This **needs** to be sent
@@ -103,11 +172,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// The voice's unique identifier. Setting this allows a single voice to be terminated if
         /// the plugin allows multiple overlapping voices for a single key.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
     },
     /// A polyphonic modulation event, available on [`MidiConfig::Basic`] and up. This will only be
     /// sent for parameters that were decorated with the `.with_poly_modulation_id()` modifier, and
@@ -186,11 +255,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's pressure, in `[0, 1]`.
         pressure: f32,
     },
@@ -200,11 +269,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's voltage gain ratio, where 1.0 is unity gain.
         gain: f32,
     },
@@ -214,11 +283,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's panning from, in `[-1, 1]`, with -1 being panned hard left, and 1
         /// being panned hard right.
         pan: f32,
@@ -229,11 +298,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's tuning in semitones, in `[-128, 128]`.
         tuning: f32,
     },
@@ -243,11 +312,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's vibrato amount, in `[0, 1]`.
         vibrato: f32,
     },
@@ -257,11 +326,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's expression amount, in `[0, 1]`.
         expression: f32,
     },
@@ -271,11 +340,11 @@ pub enum NoteEvent<S> {
         timing: u32,
         /// A unique identifier for this note, if available. Using this to refer to a note is
         /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
+        voice_id: VoiceID,
+        /// The note's channel number.
+        channel: Channel,
+        /// The note's MIDI key number.
+        key: Key,
         /// The note's brightness amount, in `[0, 1]`.
         brightness: f32,
     },
@@ -365,21 +434,21 @@ impl<S> NoteEvent<S> {
     }
 
     /// Returns the event's voice ID, if it has any.
-    pub fn voice_id(&self) -> Option<i32> {
+    pub fn voice_id(&self) -> Option<VoiceID> {
         match self {
-            NoteEvent::NoteOn { voice_id, .. } => *voice_id,
-            NoteEvent::NoteOff { voice_id, .. } => *voice_id,
-            NoteEvent::Choke { voice_id, .. } => *voice_id,
-            NoteEvent::VoiceTerminated { voice_id, .. } => *voice_id,
-            NoteEvent::PolyModulation { voice_id, .. } => Some(*voice_id),
+            NoteEvent::NoteOn { voice_id, .. } => Some(*voice_id),
+            NoteEvent::NoteOff { voice_id, .. } => Some(*voice_id),
+            NoteEvent::Choke { voice_id, .. } => Some(*voice_id),
+            NoteEvent::VoiceTerminated { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyModulation { voice_id, .. } => Some(VoiceID::ID(*voice_id)),
             NoteEvent::MonoAutomation { .. } => None,
-            NoteEvent::PolyPressure { voice_id, .. } => *voice_id,
-            NoteEvent::PolyVolume { voice_id, .. } => *voice_id,
-            NoteEvent::PolyPan { voice_id, .. } => *voice_id,
-            NoteEvent::PolyTuning { voice_id, .. } => *voice_id,
-            NoteEvent::PolyVibrato { voice_id, .. } => *voice_id,
-            NoteEvent::PolyExpression { voice_id, .. } => *voice_id,
-            NoteEvent::PolyBrightness { voice_id, .. } => *voice_id,
+            NoteEvent::PolyPressure { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyVolume { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyPan { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyTuning { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyVibrato { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyExpression { voice_id, .. } => Some(*voice_id),
+            NoteEvent::PolyBrightness { voice_id, .. } => Some(*voice_id),
             NoteEvent::MidiChannelPressure { .. } => None,
             NoteEvent::MidiPitchBend { .. } => None,
             NoteEvent::MidiCC { .. } => None,
@@ -389,7 +458,7 @@ impl<S> NoteEvent<S> {
     }
 
     /// Returns the event's channel, if it has any.
-    pub fn channel(&self) -> Option<u8> {
+    pub fn channel(&self) -> Option<Channel> {
         match self {
             NoteEvent::NoteOn { channel, .. } => Some(*channel),
             NoteEvent::NoteOff { channel, .. } => Some(*channel),
@@ -404,10 +473,10 @@ impl<S> NoteEvent<S> {
             NoteEvent::PolyVibrato { channel, .. } => Some(*channel),
             NoteEvent::PolyExpression { channel, .. } => Some(*channel),
             NoteEvent::PolyBrightness { channel, .. } => Some(*channel),
-            NoteEvent::MidiChannelPressure { channel, .. } => Some(*channel),
-            NoteEvent::MidiPitchBend { channel, .. } => Some(*channel),
-            NoteEvent::MidiCC { channel, .. } => Some(*channel),
-            NoteEvent::MidiProgramChange { channel, .. } => Some(*channel),
+            NoteEvent::MidiChannelPressure { channel, .. } => Some(Channel::Number(*channel)),
+            NoteEvent::MidiPitchBend { channel, .. } => Some(Channel::Number(*channel)),
+            NoteEvent::MidiCC { channel, .. } => Some(Channel::Number(*channel)),
+            NoteEvent::MidiProgramChange { channel, .. } => Some(Channel::Number(*channel)),
             NoteEvent::MidiSysEx { .. } => None,
         }
     }
@@ -430,9 +499,9 @@ impl<S: SysExMessage> NoteEvent<S> {
                 midi::NOTE_ON if midi_data[2] == 0 => {
                     return Ok(NoteEvent::NoteOff {
                         timing,
-                        voice_id: None,
-                        channel,
-                        note: midi_data[1],
+                        voice_id: VoiceID::Wildcard,
+                        channel: Channel::Number(channel),
+                        key: Key::Number(midi_data[1]),
                         // Few things use release velocity. Just having this be zero here is fine, right?
                         velocity: 0.0,
                     });
@@ -440,27 +509,27 @@ impl<S: SysExMessage> NoteEvent<S> {
                 midi::NOTE_ON => {
                     return Ok(NoteEvent::NoteOn {
                         timing,
-                        voice_id: None,
-                        channel,
-                        note: midi_data[1],
+                        voice_id: VoiceID::Wildcard,
+                        channel: Channel::Number(channel),
+                        key: Key::Number(midi_data[1]),
                         velocity: midi_data[2] as f32 / 127.0,
                     });
                 }
                 midi::NOTE_OFF => {
                     return Ok(NoteEvent::NoteOff {
                         timing,
-                        voice_id: None,
-                        channel,
-                        note: midi_data[1],
+                        voice_id: VoiceID::Wildcard,
+                        channel: Channel::Number(channel),
+                        key: Key::Number(midi_data[1]),
                         velocity: midi_data[2] as f32 / 127.0,
                     });
                 }
                 midi::POLYPHONIC_KEY_PRESSURE => {
                     return Ok(NoteEvent::PolyPressure {
                         timing,
-                        voice_id: None,
-                        channel,
-                        note: midi_data[1],
+                        voice_id: VoiceID::Wildcard,
+                        channel: Channel::Number(channel),
+                        key: Key::Number(midi_data[1]),
                         pressure: midi_data[2] as f32 / 127.0,
                     });
                 }
@@ -533,11 +602,11 @@ impl<S: SysExMessage> NoteEvent<S> {
                 timing: _,
                 voice_id: _,
                 channel,
-                note,
+                key,
                 velocity,
             } => Some(MidiResult::Basic([
-                midi::NOTE_ON | channel,
-                *note,
+                midi::NOTE_ON | channel.number().unwrap_or(0),
+                key.number().unwrap_or(0),
                 // MIDI treats note ons with zero velocity as note offs, because reasons
                 (velocity * 127.0).round().clamp(1.0, 127.0) as u8,
             ])),
@@ -545,22 +614,22 @@ impl<S: SysExMessage> NoteEvent<S> {
                 timing: _,
                 voice_id: _,
                 channel,
-                note,
+                key,
                 velocity,
             } => Some(MidiResult::Basic([
-                midi::NOTE_OFF | channel,
-                *note,
+                midi::NOTE_OFF | channel.number().unwrap_or(0),
+                key.number().unwrap_or(0),
                 (velocity * 127.0).round().clamp(0.0, 127.0) as u8,
             ])),
             NoteEvent::PolyPressure {
                 timing: _,
                 voice_id: _,
                 channel,
-                note,
+                key,
                 pressure,
             } => Some(MidiResult::Basic([
-                midi::POLYPHONIC_KEY_PRESSURE | channel,
-                *note,
+                midi::POLYPHONIC_KEY_PRESSURE | channel.number().unwrap_or(0),
+                key.number().unwrap_or(0),
                 (pressure * 127.0).round().clamp(0.0, 127.0) as u8,
             ])),
             NoteEvent::MidiChannelPressure {
@@ -672,9 +741,9 @@ mod tests {
     fn test_note_on_midi_conversion() {
         let event = NoteEvent::<()>::NoteOn {
             timing: TIMING,
-            voice_id: None,
-            channel: 1,
-            note: 2,
+            voice_id: VoiceID::Wildcard,
+            channel: Channel::Number(1),
+            key: Key::Number(2),
             // The value will be rounded in the conversion to MIDI, hence this overly specific value
             velocity: 0.6929134,
         };
@@ -686,9 +755,9 @@ mod tests {
     fn test_note_off_midi_conversion() {
         let event = NoteEvent::<()>::NoteOff {
             timing: TIMING,
-            voice_id: None,
-            channel: 1,
-            note: 2,
+            voice_id: VoiceID::Wildcard,
+            channel: Channel::Number(1),
+            key: Key::Number(2),
             velocity: 0.6929134,
         };
 
@@ -699,9 +768,9 @@ mod tests {
     fn test_poly_pressure_midi_conversion() {
         let event = NoteEvent::<()>::PolyPressure {
             timing: TIMING,
-            voice_id: None,
-            channel: 1,
-            note: 2,
+            voice_id: VoiceID::Wildcard,
+            channel: Channel::Number(1),
+            key: Key::Number(2),
             pressure: 0.6929134,
         };
 

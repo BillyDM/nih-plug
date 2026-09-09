@@ -72,7 +72,7 @@ use nice_plug_core::context::gui::GuiContext;
 use nice_plug_core::context::process::Transport;
 #[cfg(feature = "editor")]
 use nice_plug_core::editor::{Editor, SpawnedEditor};
-use nice_plug_core::midi::{MidiConfig, NoteEvent, PluginNoteEvent};
+use nice_plug_core::midi::{Channel, Key, MidiConfig, NoteEvent, PluginNoteEvent, VoiceID};
 use nice_plug_core::params::internals::ParamPtr;
 use nice_plug_core::params::{ParamFlags, Params};
 use nice_plug_core::plugin::{Plugin, PluginState, ProcessStatus, TaskExecutor};
@@ -1196,6 +1196,28 @@ impl<P: ClapPlugin> Wrapper<P> {
             });
         };
 
+        fn voice_from_i32(v: i32) -> VoiceID {
+            if v >= 0 {
+                VoiceID::ID(v)
+            } else {
+                VoiceID::Wildcard
+            }
+        }
+        fn channel_from_i16(c: i16) -> Channel {
+            if (0..=15).contains(&c) {
+                Channel::Number(c as u8)
+            } else {
+                Channel::Wildcard
+            }
+        }
+        fn key_from_i16(k: i16) -> Key {
+            if (0..=127).contains(&k) {
+                Key::Number(k as u8)
+            } else {
+                Key::Wildcard
+            }
+        }
+
         match (raw_event.space_id, raw_event.type_) {
             (CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE) => {
                 let event = unsafe { &*(event as *const clap_event_param_value) };
@@ -1282,13 +1304,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                             // When splitting up the buffer for sample accurate automation all events
                             // should be relative to the block
                             timing,
-                            voice_id: if event.note_id != -1 {
-                                Some(event.note_id)
-                            } else {
-                                None
-                            },
-                            channel: event.channel as u8,
-                            note: event.key as u8,
+                            voice_id: voice_from_i32(event.note_id),
+                            channel: channel_from_i16(event.channel),
+                            key: key_from_i16(event.key),
                             velocity: event.velocity as f32,
                         },
                     );
@@ -1302,13 +1320,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                         input_events,
                         NoteEvent::NoteOff {
                             timing,
-                            voice_id: if event.note_id != -1 {
-                                Some(event.note_id)
-                            } else {
-                                None
-                            },
-                            channel: event.channel as u8,
-                            note: event.key as u8,
+                            voice_id: voice_from_i32(event.note_id),
+                            channel: channel_from_i16(event.channel),
+                            key: key_from_i16(event.key),
                             velocity: event.velocity as f32,
                         },
                     );
@@ -1322,14 +1336,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                         input_events,
                         NoteEvent::Choke {
                             timing,
-                            voice_id: if event.note_id != -1 {
-                                Some(event.note_id)
-                            } else {
-                                None
-                            },
-                            // FIXME: These values are also allowed to be -1, we need to support that
-                            channel: event.channel as u8,
-                            note: event.key as u8,
+                            voice_id: voice_from_i32(event.note_id),
+                            channel: channel_from_i16(event.channel),
+                            key: key_from_i16(event.key),
                         },
                     );
                 }
@@ -1344,13 +1353,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyPressure {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     pressure: event.value as f32,
                                 },
                             );
@@ -1360,13 +1365,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyVolume {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     gain: event.value as f32,
                                 },
                             );
@@ -1376,13 +1377,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyPan {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     // In CLAP this value goes from [0, 1] instead of [-1, 1]
                                     pan: (event.value as f32 * 2.0) - 1.0,
                                 },
@@ -1393,13 +1390,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyTuning {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     tuning: event.value as f32,
                                 },
                             );
@@ -1409,13 +1402,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyVibrato {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     vibrato: event.value as f32,
                                 },
                             );
@@ -1425,13 +1414,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyExpression {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     expression: event.value as f32,
                                 },
                             );
@@ -1441,13 +1426,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                                 input_events,
                                 NoteEvent::PolyBrightness {
                                     timing,
-                                    voice_id: if event.note_id != -1 {
-                                        Some(event.note_id)
-                                    } else {
-                                        None
-                                    },
-                                    channel: event.channel as u8,
-                                    note: event.key as u8,
+                                    voice_id: voice_from_i32(event.note_id),
+                                    channel: channel_from_i16(event.channel),
+                                    key: key_from_i16(event.key),
                                     brightness: event.value as f32,
                                 },
                             );
