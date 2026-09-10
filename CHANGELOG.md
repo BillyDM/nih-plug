@@ -13,6 +13,16 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.4.1
+
+## Changed
+* `nice-plug-core`, `nice-plug`, bumped to version `0.4.1`
+* Deprecated functions and constants that use "MIDI note" terminology in favor of "MIDI key" for consistency
+
+## Added
+* Added `MIDDLE_C` constant and `number_or_middle_c()` method to `Key` struct
+* Added missing documentation
+
 # nice-plug 0.4.0
 
 ## Breaking Changes
