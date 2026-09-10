@@ -144,9 +144,15 @@ pub trait Plugin: Default + Send + 'static {
     /// Defaults to `1024`
     const INPUT_EVENT_CAPACITY: usize = 1024;
 
+    /// The [`Editor`] (GUI) type used in this plugin.
+    ///
+    /// If this plugin does not have an editor, set this to `()`.
     #[cfg(feature = "editor")]
     type Editor: Editor;
 
+    /// The [`Editor`] (GUI) type used in this plugin.
+    ///
+    /// If this plugin does not have an editor, set this to `()`.
     // To avoid rust-analyzer from getting confused.
     #[cfg(not(feature = "editor"))]
     type Editor;
