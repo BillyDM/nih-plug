@@ -9,7 +9,13 @@ pub use stft::StftHelper;
 
 pub const MINUS_INFINITY_DB: f32 = -100.0;
 pub const MINUS_INFINITY_GAIN: f32 = 1e-5; // 10f32.powf(MINUS_INFINITY_DB / 20)
+
+#[deprecated(since = "0.4.1", note = "Use KEYS instead")]
 pub const NOTES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+
+pub const KEYS: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
@@ -84,23 +90,49 @@ pub fn gain_to_db_fast_epsilon(gain: f32) -> f32 {
 /// Convert a MIDI note ID to a frequency at A4 = 440 Hz equal temperament and middle C = note 60 =
 /// C4.
 #[inline]
+#[deprecated(since = "0.4.1", note = "Use midi_key_to_freq instead")]
 pub fn midi_note_to_freq(note: u8) -> f32 {
-    f32_midi_note_to_freq(note as f32)
+    f32_midi_key_to_freq(note as f32)
 }
 
 /// The same as [`midi_note_to_freq()`], but for arbitrary note numbers including those outside of
 /// the MIDI range. This also supports fractional note numbers, which is useful when working with
 /// cents.
 #[inline]
+#[deprecated(since = "0.4.1", note = "Use f32_midi_key_to_freq instead")]
 pub fn f32_midi_note_to_freq(note: f32) -> f32 {
-    2.0f32.powf((note - 69.0) / 12.0) * 440.0
+    f32_midi_key_to_freq(note)
 }
 
 /// The inverse of [`f32_midi_note_to_freq()`]. This returns a fractional note number. Round to a
 /// whole number, subtract that from the result, and multiply the fractional part by 100 to get the
 /// number of cents.
 #[inline]
+#[deprecated(since = "0.4.1", note = "Use freq_to_midi_key instead")]
 pub fn freq_to_midi_note(freq: f32) -> f32 {
+    freq_to_midi_key(freq)
+}
+
+/// Convert a MIDI key number to a frequency at A4 = 440 Hz equal temperament and middle C = note 60 =
+/// C4.
+#[inline]
+pub fn midi_key_to_freq(key: u8) -> f32 {
+    f32_midi_key_to_freq(key as f32)
+}
+
+/// The same as [`midi_key_to_freq()`], but for arbitrary note numbers including those outside of
+/// the MIDI range. This also supports fractional note numbers, which is useful when working with
+/// cents.
+#[inline]
+pub fn f32_midi_key_to_freq(key: f32) -> f32 {
+    2.0f32.powf((key - 69.0) / 12.0) * 440.0
+}
+
+/// The inverse of [`f32_midi_key_to_freq()`]. This returns a fractional key number. Round to a
+/// whole number, subtract that from the result, and multiply the fractional part by 100 to get the
+/// number of cents.
+#[inline]
+pub fn freq_to_midi_key(freq: f32) -> f32 {
     ((freq / 440.0).log2() * 12.0) + 69.0
 }
 

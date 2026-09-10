@@ -3406,13 +3406,15 @@ impl<P: ClapPlugin> Wrapper<P> {
                 let length_bytes = (serialized.len() as u64).to_le_bytes();
                 if !write_stream(unsafe { &*stream }, &length_bytes) {
                     crate::nice_error!(
-                        "Failed to save state: Error or end of stream while writing the state length"
+                        "Failed to save state: Error or end of stream while writing the state \
+                         length"
                     );
                     return false;
                 }
                 if !write_stream(unsafe { &*stream }, &serialized) {
                     crate::nice_error!(
-                        "Failed to save state: Error or end of stream while writing the state buffer"
+                        "Failed to save state: Error or end of stream while writing the state \
+                         buffer"
                     );
                     return false;
                 }

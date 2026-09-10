@@ -157,7 +157,20 @@ pub fn v2s_f32_hz_then_khz(digits: usize) -> Arc<dyn Fn(f32) -> String + Send + 
 
 /// [`v2s_f32_hz_then_khz()`], but also includes the note name. Can be used with
 /// [`s2v_f32_hz_then_khz()`].
+#[deprecated(
+    since = "0.4.1",
+    note = "Use v2s_f32_hz_then_khz_with_key_name instead"
+)]
 pub fn v2s_f32_hz_then_khz_with_note_name(
+    digits: usize,
+    include_cents: bool,
+) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+    v2s_f32_hz_then_khz_with_key_name(digits, include_cents)
+}
+
+/// [`v2s_f32_hz_then_khz()`], but also includes the MIDI key name. Can be used with
+/// [`s2v_f32_hz_then_khz()`].
+pub fn v2s_f32_hz_then_khz_with_key_name(
     digits: usize,
     include_cents: bool,
 ) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
@@ -168,28 +181,28 @@ pub fn v2s_f32_hz_then_khz_with_note_name(
             return format!("{value:.digits$} Hz");
         }
 
-        // This is the inverse of the formula in `f32_midi_note_to_freq`
-        let fractional_note = util::freq_to_midi_note(value);
-        let note = fractional_note.round();
-        let cents = ((fractional_note - note) * 100.0).round() as i32;
+        // This is the inverse of the formula in `f32_midi_key_to_freq`
+        let fractional_key = util::freq_to_midi_key(value);
+        let key = fractional_key.round();
+        let cents = ((fractional_key - key) * 100.0).round() as i32;
 
-        let note_name = util::NOTES[(note as i32).rem_euclid(12) as usize];
-        // NOTE: This is different compared from `(note as i32 / 12) - 1` because truncating always
+        let key_name = util::KEYS[(key as i32).rem_euclid(12) as usize];
+        // NOTE: This is different compared from `(key as i32 / 12) - 1` because truncating always
         //       rounds towards zero
-        let octave = (note / 12.0).floor() as i32 - 1;
-        let note_str = if cents == 0 || !include_cents {
-            format!("{note_name}{octave}")
+        let octave = (key / 12.0).floor() as i32 - 1;
+        let key_str = if cents == 0 || !include_cents {
+            format!("{key_name}{octave}")
         } else {
-            format!("{note_name}{octave}, {cents:+} ct.")
+            format!("{key_name}{octave}, {cents:+} ct.")
         };
 
         if value < 1000.0 {
-            format!("{value:.digits$} Hz, {note_str}")
+            format!("{value:.digits$} Hz, {key_str}")
         } else {
             format!(
                 "{:.digits$} kHz, {}",
                 value / 1000.0,
-                note_str,
+                key_str,
                 digits = digits.max(1)
             )
         }
@@ -197,47 +210,46 @@ pub fn v2s_f32_hz_then_khz_with_note_name(
 }
 
 /// Convert an input in the same format at that of [`v2s_f32_hz_then_khz()`] to a Hertz value. This
-/// additionally also accepts note names in the same format as [`s2v_i32_note_formatter()`], and
+/// additionally also accepts MIDI key names in the same format as [`s2v_i32_key_formatter()`], and
 /// optionally also with cents in the form of `D#5, -23 ct.`.
 pub fn s2v_f32_hz_then_khz() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
-    // FIXME: This is a very crude way to reuse the note value formatter. There's no real runtime
+    // FIXME: This is a very crude way to reuse the key value formatter. There's no real runtime
     //        penalty for doing it this way, but it does look less pretty.
-    let note_formatter = s2v_i32_note_formatter();
+    let key_formatter = s2v_i32_key_formatter();
 
     Arc::new(move |string| {
         let string = string.trim();
 
-        // The input can contain a frequency in Hz or kHz, a note name, a note name and cents, or
+        // The input can contain a frequency in Hz or kHz, a key name, a key name and cents, or
         // one of those two combined with a frequency. In the last case we'll ignore the frequency.
-        // If the string cannot be parsed as a note name, we'll try parsing it as a frequency
+        // If the string cannot be parsed as a key name, we'll try parsing it as a frequency
         // instead. This is needed for the formatting roundtrip to work correctly. The input will
         // consists of 1 to three segments, so we'll try to unpack them like this so we can pattern
         // match on them
         let mut segments = string.split(',');
         let segments = (segments.next(), segments.next(), segments.next());
 
-        if let (_, Some(midi_note_number_str), Some(cents_str))
-        | (Some(midi_note_number_str), Some(cents_str), None) = segments
+        if let (_, Some(midi_key_number_str), Some(cents_str))
+        | (Some(midi_key_number_str), Some(cents_str), None) = segments
         {
             let cents_str = cents_str
                 .trim_start_matches([' ', '+'])
                 .trim_end_matches([' ', 'C', 'c', 'E', 'e', 'N', 'n', 'T', 't', 'S', 's', '.']);
 
-            if let (Some(midi_note_number), Ok(cents)) = (
-                note_formatter(midi_note_number_str),
-                cents_str.parse::<i32>(),
-            ) {
-                let plain_note_freq = util::f32_midi_note_to_freq(midi_note_number as f32);
+            if let (Some(midi_key_number), Ok(cents)) =
+                (key_formatter(midi_key_number_str), cents_str.parse::<i32>())
+            {
+                let plain_key_freq = util::f32_midi_key_to_freq(midi_key_number as f32);
                 let cents_multiplier = 2.0f32.powf(cents as f32 / 100.0 / 12.0);
-                return Some(plain_note_freq * cents_multiplier);
+                return Some(plain_key_freq * cents_multiplier);
             }
         }
 
-        if let (_, Some(midi_note_number_str), _) | (Some(midi_note_number_str), None, None) =
+        if let (_, Some(midi_key_number_str), _) | (Some(midi_key_number_str), None, None) =
             segments
-            && let Some(midi_note_number) = note_formatter(midi_note_number_str)
+            && let Some(midi_key_number) = key_formatter(midi_key_number_str)
         {
-            return Some(util::f32_midi_note_to_freq(midi_note_number as f32));
+            return Some(util::f32_midi_key_to_freq(midi_key_number as f32));
         }
 
         // Otherwise we'll accept values in either Hz (with or without unit) or kHz
@@ -268,16 +280,29 @@ pub fn s2v_i32_power_of_two() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> 
 
 /// Turns an integer MIDI note number (usually in the range [0, 127]) into a note name, where 60 is
 /// C4 and 69 is A4 (nice).
+#[deprecated(since = "0.4.1", note = "Use v2s_i32_key_formatter instead")]
 pub fn v2s_i32_note_formatter() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
-    Arc::new(move |value| {
-        let note_name = util::NOTES[value.rem_euclid(12) as usize];
-        let octave = (value / 12) - 1;
-        format!("{note_name}{octave}")
-    })
+    v2s_i32_key_formatter()
 }
 
 /// Parse a note name to a MIDI number using the inverse mapping from [`v2s_i32_note_formatter()`].
+#[deprecated(since = "0.4.1", note = "Use s2v_i32_key_formatter instead")]
 pub fn s2v_i32_note_formatter() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
+    s2v_i32_key_formatter()
+}
+
+/// Turns an integer MIDI key number (usually in the range [0, 127]) into a key name, where 60 is
+/// C4 and 69 is A4 (nice).
+pub fn v2s_i32_key_formatter() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
+    Arc::new(move |value| {
+        let key_name = util::KEYS[value.rem_euclid(12) as usize];
+        let octave = (value / 12) - 1;
+        format!("{key_name}{octave}")
+    })
+}
+
+/// Parse a key name to a MIDI key number using the inverse mapping from [`v2s_i32_key_formatter()`].
+pub fn s2v_i32_key_formatter() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
     Arc::new(|string| {
         let string = string.trim();
         if string.len() < 2 {
@@ -286,8 +311,8 @@ pub fn s2v_i32_note_formatter() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync
 
         // A valid trimmed string will either be be at least two characters (we already checked the
         // length) or at least three characters if the second character is a hash, and there may be
-        // spaces in between the note name and the octave number
-        let (note_name, octave) = string
+        // spaces in between the key name and the octave number
+        let (key_name, octave) = string
             .split_once(|c: char| c.is_whitespace())
             .unwrap_or_else(|| {
                 // Sharps need to be handled separately
@@ -298,14 +323,14 @@ pub fn s2v_i32_note_formatter() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync
                 }
             });
 
-        let note_id = util::NOTES
+        let key_number = util::KEYS
             .iter()
-            .position(|&candidate| note_name.eq_ignore_ascii_case(candidate))?
+            .position(|&candidate| key_name.eq_ignore_ascii_case(candidate))?
             as i32;
         let octave: i32 = octave.trim().parse().ok()?;
 
         // 0 = C-1, 12 = C0, 24 = C1
-        Some(note_id + (12 * (octave + 1)))
+        Some(key_number + (12 * (octave + 1)))
     })
 }
 
@@ -354,8 +379,8 @@ mod tests {
     // More of these validators could use tests, but this one in particular is tricky and I noticed
     // an issue where it didn't roundtrip correctly
     #[test]
-    fn f32_hz_then_khz_with_note_name_roundtrip() {
-        let v2s = v2s_f32_hz_then_khz_with_note_name(1, true);
+    fn f32_hz_then_khz_with_key_name_roundtrip() {
+        let v2s = v2s_f32_hz_then_khz_with_key_name(1, true);
         let s2v = s2v_f32_hz_then_khz();
 
         for freq in [0.0, 5.0, 7.18, 8.18, 69.420, 18181.8, 133333.7] {

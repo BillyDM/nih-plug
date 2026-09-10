@@ -1397,7 +1397,8 @@ impl<P: Vst3Plugin> IAudioProcessorTrait for Wrapper<P> {
                                     // is not much we can do except to just accept the allocation.
                                     if input_note_events.len() == input_note_events.capacity() {
                                         crate::nice_warn!(
-                                            "Input note event buffer filled up! This will cause an allocation."
+                                            "Input note event buffer filled up! This will cause \
+                                             an allocation."
                                         );
                                     }
                                     input_note_events.push_back(event);

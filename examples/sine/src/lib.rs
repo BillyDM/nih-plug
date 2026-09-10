@@ -173,7 +173,7 @@ impl Plugin for Sine {
                     match event {
                         NoteEvent::NoteOn { key, velocity, .. } => {
                             self.midi_key_number = key.number().unwrap_or(0);
-                            self.midi_note_freq = util::midi_note_to_freq(self.midi_key_number);
+                            self.midi_note_freq = util::midi_key_to_freq(self.midi_key_number);
                             self.midi_note_gain.set_target(self.sample_rate, velocity);
                         }
                         NoteEvent::NoteOff { key, .. }
