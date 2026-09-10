@@ -19,4 +19,5 @@ pub mod editor;
 pub mod debug;
 
 /// A re-export of the `tracing` crate for use in the debug macros. This should not be used directly.
+#[doc(no_inline)]
 pub use tracing;

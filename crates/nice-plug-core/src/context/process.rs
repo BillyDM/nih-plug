@@ -105,12 +105,16 @@ pub trait ProcessContext<P: Plugin> {
     // fn set_parameter<P: Param>(&self, param: &P, value: P::Plain);
 }
 
+/// An error occurred while sending an event with [`ProcessContext::try_send_event()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SendEventError {
+    /// The host's output event buffer is full.
     #[error("Failed to send output event: Host output event buffer is full")]
     HostBufferFull,
+    /// The host does not have an output event buffer.
     #[error("Failed to send output event: Host does not have output event buffer")]
     NoOutputBuffer,
+    /// Invalid event type for the plugin's [`Plugin::MIDI_OUTPUT`] configuration.
     #[error(
         "Failed to send output event: Invalid event type for output config {midi_output_config:?}"
     )]

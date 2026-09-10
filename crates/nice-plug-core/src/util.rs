@@ -7,14 +7,22 @@ pub use atomic_float::{AtomicF32, AtomicF64};
 
 pub use stft::StftHelper;
 
+/// A good default gain threshold value in decibels where a signal is considered "silent".
+///
+/// Equal to `-100.0`.
 pub const MINUS_INFINITY_DB: f32 = -100.0;
+/// A good default gain threshold value in raw amplitude where a signal is considered "silent".
+///
+/// Equal to `1e-5` (The equivalant of [`MINUS_INFINITY_DB`] (-100.0 dB))
 pub const MINUS_INFINITY_GAIN: f32 = 1e-5; // 10f32.powf(MINUS_INFINITY_DB / 20)
 
 #[deprecated(since = "0.4.1", note = "Use KEYS instead")]
+/// The list of MIDI note names in an octave.
 pub const NOTES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
+/// The list of MIDI key names in an octave.
 pub const KEYS: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];

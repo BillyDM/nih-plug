@@ -14,6 +14,7 @@ use self::dpi::{LogicalSize, NativeSize, PhysicalSize, Size};
 
 pub mod dpi;
 
+/// An [`EditorHandle`] and window pair spawned with [`Editor::spawn()`].
 pub struct SpawnedEditor<E: EditorHandle> {
     /// A handle to the instance of an open [`Editor`].
     ///
@@ -74,8 +75,24 @@ pub trait HostMainThreadCaller: Send + 'static {
     fn call_main_thread(&mut self);
 }
 
+/// Callbacks that baseview windows can use to interact with the host.
 pub struct HostMethods {
+    /// A handler for baseview windows to interact with their host.
+    ///
+    /// (This is a re-implementation of
+    /// [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)
+    /// to avoid directly depending on `baseview` until it is stabilized.)
     pub callbacks: Box<dyn HostCallbacks>,
+
+    /// A special handler for the Window thread to wake up and call methods on the main thread.
+    ///
+    /// (This is a re-implementation of
+    /// [`baseview::host::HostMainThreadCaller`](https://docs.rs/baseview/latest/baseview/host/trait.HostMainThreadCaller.html)
+    /// to avoid directly depending on `baseview` until it is stabilized.)
+    ///
+    /// # Platform compatibility notes
+    ///
+    /// This is only needed on X11, as Windows and macOS windows already run on the main thread.
     pub main_thread_caller: Box<dyn HostMainThreadCaller>,
 }
 
@@ -83,13 +100,21 @@ pub struct HostMethods {
 ///
 /// The host uses this to resize the editor's window and to dispatch key events.
 pub trait EditorHandle: Send + 'static {
+    /// The window handle typed used by the editor. This will typically be
+    /// [`baseview::Window`](https://docs.rs/baseview/latest/baseview/struct.Window.html).
     type Window;
+
+    /// The error type associated with this editor.
+    ///
+    /// This will typically include
+    /// [`baseview::Error`](https://docs.rs/baseview/latest/baseview/struct.Error.html).
     type Error: Error;
 
     /// Open the window, and block the current thread until the window is
     /// closed. Used only for standalone targets.
     fn run_until_closed(window: Self::Window) -> Result<(), Self::Error>;
 
+    /// Attach the editor's window to the host's parent window.
     fn set_parent(
         &self,
         parent: ParentWindowHandle,
@@ -116,6 +141,7 @@ pub trait EditorHandle: Send + 'static {
     fn set_size(&self, new_size: NativeSize<u32>, window: &Self::Window)
     -> Result<(), Self::Error>;
 
+    /// Called by the host in response to a request from the [`HostMainThreadCaller`].
     fn host_main_thread_callback(&self, window: &Self::Window);
 
     /// Return the closest supported size.
@@ -346,12 +372,15 @@ impl Editor for () {
     }
 }
 
+/// The minimum/maximum size constraints for an editor window.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SizeConstraints {
+    /// Min/max size in logical points (before scaling is applied).
     Logical {
         min_size: Option<LogicalSize<f32>>,
         max_size: Option<LogicalSize<f32>>,
     },
+    /// Min/max size in physical pixels.
     Physical {
         min_size: Option<PhysicalSize<u32>>,
         max_size: Option<PhysicalSize<u32>>,
@@ -359,6 +388,7 @@ pub enum SizeConstraints {
 }
 
 impl SizeConstraints {
+    /// Minimum size in logical points (before scaling is applied).
     pub const fn min_logical_size(min_size: LogicalSize<f32>) -> Self {
         Self::Logical {
             min_size: Some(min_size),
@@ -366,6 +396,7 @@ impl SizeConstraints {
         }
     }
 
+    /// Minimum size in physical pixels.
     pub const fn min_physical_size(min_size: PhysicalSize<u32>) -> Self {
         Self::Physical {
             min_size: Some(min_size),
@@ -373,6 +404,7 @@ impl SizeConstraints {
         }
     }
 
+    /// Min/max size in logical points (before scaling is applied).
     pub const fn logical(
         min_size: Option<LogicalSize<f32>>,
         max_size: Option<LogicalSize<f32>>,
@@ -380,6 +412,7 @@ impl SizeConstraints {
         Self::Logical { min_size, max_size }
     }
 
+    /// Min/max size in physical pixels.
     pub const fn physical(
         min_size: Option<PhysicalSize<u32>>,
         max_size: Option<PhysicalSize<u32>>,
@@ -420,6 +453,7 @@ pub struct ResizeHint {
     pub aspect_ratio_width: u32,
     /// Aspect-ratio denominator (only used when `preserve_aspect_ratio` is `true`).
     pub aspect_ratio_height: u32,
+    /// The minimum/maximum size constraints for the window.
     pub size_constraints: SizeConstraints,
 }
 
@@ -455,14 +489,18 @@ impl ResizeHint {
         ..Self::NON_RESIZABLE
     };
 
+    /// A non-resizable editor. This is the default value.
     pub const fn non_resizable() -> Self {
         Self::NON_RESIZABLE
     }
 
+    /// A freely resizable editor: both axes, no aspect-ratio lock. Convenience
+    /// for the common case.
     pub const fn resizable() -> Self {
         Self::RESIZABLE
     }
 
+    /// Set the minimum size for the window in logical points (before scaling is applied).
     pub const fn with_min_logical_size(mut self, min_size: LogicalSize<f32>) -> Self {
         self.size_constraints = SizeConstraints::Logical {
             min_size: Some(min_size),
@@ -471,6 +509,7 @@ impl ResizeHint {
         self
     }
 
+    /// Set the minimum/maximum size for the window in logical points (before scaling is applied).
     pub const fn with_min_max_logical_size(
         mut self,
         min_size: Option<LogicalSize<f32>>,
@@ -480,6 +519,7 @@ impl ResizeHint {
         self
     }
 
+    /// Set the minimum size for the window in physical pixels.
     pub const fn with_min_physical_size(mut self, min_size: PhysicalSize<u32>) -> Self {
         self.size_constraints = SizeConstraints::Physical {
             min_size: Some(min_size),
@@ -488,6 +528,7 @@ impl ResizeHint {
         self
     }
 
+    /// Set the minimum/maximum size for the window in physical pixels.
     pub const fn with_min_max_physical_size(
         mut self,
         min_size: Option<PhysicalSize<u32>>,
@@ -497,11 +538,14 @@ impl ResizeHint {
         self
     }
 
+    /// Use the given minimum/maximum size constraints.
     pub const fn with_size_constraints(mut self, size_constraints: SizeConstraints) -> Self {
         self.size_constraints = size_constraints;
         self
     }
 
+    /// Lock the window to the given aspect ratio.
+    ///
     /// * `aspect_ratio_width`: aspect-ratio numerator
     /// * `aspect_ratio_height`: aspect-ratio denominator
     pub const fn with_aspect_ratio(

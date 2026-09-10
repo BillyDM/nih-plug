@@ -36,6 +36,7 @@ pub enum MidiConfig {
     MidiCCs,
 }
 
+/// The identifier given to a specific voice. This is also known as the "note ID".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum VoiceID {
     /// The note can belong to any voice.
@@ -45,6 +46,8 @@ pub enum VoiceID {
 }
 
 impl VoiceID {
+    /// Return the ID of the voice if it exists, or return `None` if it is a wildcard (the note
+    /// can belong to any voice).
     pub const fn id(&self) -> Option<i32> {
         if let Self::ID(id) = self {
             Some(*id)
@@ -53,6 +56,7 @@ impl VoiceID {
         }
     }
 
+    /// Returns `true` if this is a wildcard (the note can belong to any voice).
     pub const fn is_wildcard(&self) -> bool {
         matches!(self, Self::Wildcard)
     }
@@ -64,15 +68,18 @@ impl VoiceID {
     }
 }
 
+/// The channel number of the note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Channel {
     /// The note can belong to any channel.
     Wildcard,
-    /// The note's channel number, in `0..16`.
+    /// The note's channel number, in `0..15`.
     Number(u8),
 }
 
 impl Channel {
+    /// Return the channel number if it exists, or return `None` if it is a wildcard (the note
+    /// can belong to any channel).
     pub const fn number(&self) -> Option<u8> {
         if let Self::Number(number) = self {
             Some(*number)
@@ -81,11 +88,15 @@ impl Channel {
         }
     }
 
+    /// Returns `true` if this is a wildcard (the note can belong to any channel).
     pub const fn is_wildcard(&self) -> bool {
         matches!(self, Self::Wildcard)
     }
 }
 
+/// The key number of the note. This is also sometimes referred to as the "pitch".
+///
+/// Same as MIDI1 Key Number (60 == Middle C)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Key {
     /// The note can belong to any key.
@@ -96,6 +107,11 @@ pub enum Key {
 }
 
 impl Key {
+    /// The key number equal to Middle C (60)
+    pub const MIDDLE_C: Self = Self::Number(60);
+
+    /// Return the key number if it exists, or return `None` if it is a wildcard (the note
+    /// can belong to any key).
     pub const fn number(&self) -> Option<u8> {
         if let Self::Number(number) = self {
             Some(*number)
@@ -104,6 +120,16 @@ impl Key {
         }
     }
 
+    /// Return the key number if it exists, or return Middle C (60) if it is a wildcard.
+    pub const fn number_or_middle_c(&self) -> u8 {
+        if let Self::Number(number) = self {
+            *number
+        } else {
+            60
+        }
+    }
+
+    /// Returns `true` if this is a wildcard (the note can belong to any channel).
     pub const fn is_wildcard(&self) -> bool {
         matches!(self, Self::Wildcard)
     }
