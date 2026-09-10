@@ -235,7 +235,7 @@ impl Plugin for PolyModSynth {
                                 voice.velocity_sqrt = velocity.sqrt();
                                 voice.phase = initial_phase;
                                 voice.phase_delta =
-                                    util::midi_key_to_freq(key.number().unwrap_or(0)) / sample_rate;
+                                    util::midi_key_to_freq(key.number_or_middle_c()) / sample_rate;
                                 voice.amp_envelope = amp_envelope;
                             }
                             NoteEvent::NoteOff {
