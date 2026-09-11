@@ -155,9 +155,13 @@ impl WgpuWindow {
             cache: None,
         });
 
-        let surface_config = surface
+        let mut surface_config = surface
             .get_default_config(&adapter, size.physical.width, size.physical.height)
             .unwrap(); // TODO
+
+        // IMPORTANT! Plugins should not use vsync as it blocks the host's main thread.
+        surface_config.present_mode = wgpu::PresentMode::AutoNoVsync;
+
         surface.configure(&device, &surface_config);
 
         Ok(Self {
