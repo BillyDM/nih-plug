@@ -45,6 +45,8 @@ a minimum and making it easy to experiment with different approaches to things.
 See [Getting Started with nice-plug](https://codeberg.org/RustAudio/nice-plug/src/branch/main/GETTING_STARTED.md)
 for a quick guide on getting started with using nice-plug to develop your own plugins.
 
+A [cookiecutter template](https://codeberg.org/RustAudio/nice-plug-template) is also available.
+
 # Features
 
 > For a list of available crate flags, see
