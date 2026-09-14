@@ -306,7 +306,7 @@ pub trait Editor: Send {
     ///
     /// Here you can call
     /// [`baseview::assume_standalone_in_process()`](https://docs.rs/baseview/0.3.4/baseview/fn.assume_standalone_in_process.html)
-    /// as a fix for https://github.com/RustAudio/baseview/issues/321.
+    /// as a fix for <https://github.com/RustAudio/baseview/issues/321>.
     ///
     /// # Safety
     ///
