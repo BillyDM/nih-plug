@@ -8,6 +8,11 @@ authors = ["Billy Messenger <60663878+BillyDM@users.noreply.github.com>"]
 description = "A simple example plugin with a raw OpenGL context for rendering"
 publish = false
 
+# Stifles the "binary should have a kebab-case name" warning
+[[bin]]
+name = "byo-gui-gl"
+path = "src/main.rs"
+
 [lib]
 # The `lib` artifact is needed for the standalone target
 crate-type = ["cdylib", "lib"]

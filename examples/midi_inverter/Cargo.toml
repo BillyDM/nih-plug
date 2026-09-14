@@ -7,6 +7,11 @@ repository = "https://codeberg.org/RustAudio/nice-plug"
 authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
 publish = false
 
+# Stifles the "binary should have a kebab-case name" warning
+[[bin]]
+name = "midi-inverter"
+path = "src/main.rs"
+
 [lib]
 # The `lib` artifact is needed for the standalone target
 crate-type = ["cdylib", "lib"]

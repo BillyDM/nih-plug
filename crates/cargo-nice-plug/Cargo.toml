@@ -8,7 +8,6 @@ license.workspace = true
 repository.workspace = true
 categories = ["multimedia::audio"]
 keywords = ["plugin", "clap", "vst3"]
-readme = "README.md"
 
 [dependencies]
 nice-plug-xtask = { path = "../nice-plug-xtask", version = "0.1.1" }

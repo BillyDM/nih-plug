@@ -11,6 +11,11 @@ license = "ISC"
 repository = "https://codeberg.org/RustAudio/nice-plug"
 publish = false
 
+# Stifles the "binary should have a kebab-case name" warning
+[[bin]]
+name = "gain-egui"
+path = "src/main.rs"
+
 [lib]
 # The `lib` artifact is needed for the standalone target
 crate-type = ["cdylib", "lib"]
