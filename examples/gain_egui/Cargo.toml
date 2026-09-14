@@ -27,7 +27,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     # the following applies:
     # * Multiple `baseview` versions are present in the final binary
     # * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`, `SDL`, etc.)
-    # * The current process may host other plugins that need to interact with the platform’s GUI capabilities
+    # * The current process may host other plugins that need to interact with the platform's GUI capabilities
     "unsafe_standalone_dpi_fix",
 ] }
 nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.5.1" }
