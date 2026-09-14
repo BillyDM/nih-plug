@@ -16,11 +16,20 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nice-plug = { version = "0.4.0", features = [
+nice-plug = { version = "0.4.2", features = [
     "assert_process_allocs",
     "standalone",
+    # Allows editors to use a workaround for https://github.com/RustAudio/baseview/issues/321
+    # when running in standalone mode.
+    #
+    # This is generally safe to enable for most plugins. However, do *NOT* enable this if any of
+    # the following applies:
+    # * Multiple `baseview` versions are present in the final binary
+    # * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`, `SDL`, etc.)
+    # * The current process may host other plugins that need to interact with the platform’s GUI capabilities
+    "unsafe_standalone_dpi_fix",
 ] }
 # The `canvas` feature must be enabled for iced_audio widgets to work.
-nice-plug-iced = { version = "0.4.0", features = ["canvas"] }
+nice-plug-iced = { version = "0.4.1", features = ["canvas"] }
 iced_audio = { version = "0.17.0", features = ["nice-plug"] }
 atomic_float = "1.1"

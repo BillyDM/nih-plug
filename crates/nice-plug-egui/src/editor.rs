@@ -247,6 +247,14 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
         self.user_app.lock().track_info_changed(info);
         self.repaint_notifier.request_repaint();
     }
+
+    unsafe fn assume_standalone_in_process(&self) {
+        // Safety: Editor::assume_standalone_in_process() has the same invariants as
+        // baseview::assume_standalone_in_process()
+        unsafe {
+            baseview::assume_standalone_in_process();
+        }
+    }
 }
 
 /// A handle to a spawned instance of an [`EguiEditor`].

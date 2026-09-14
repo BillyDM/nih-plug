@@ -300,6 +300,22 @@ pub trait Editor: Send {
     fn track_info_updated(&self, info: TrackInfo) {
         let _ = info;
     }
+
+    /// Called right after the editor is initialized when running in standalone mode (if the
+    /// user has enabled the `unsafe_standalone_dpi_fix` feature in nice-plug).
+    ///
+    /// Here you can call
+    /// [`baseview::assume_standalone_in_process()`](https://docs.rs/baseview/0.3.4/baseview/fn.assume_standalone_in_process.html)
+    /// as a fix for https://github.com/RustAudio/baseview/issues/321.
+    ///
+    /// # Safety
+    ///
+    /// This method must *NOT* be called in the following cases:
+    /// * The current binary is a plugin that can be loaded into an external host
+    /// * Multiple baseview versions are present in the final binary
+    /// * baseview is being used in conjunction with other platform windowing libraries (e.g. winit, SDL, etc.)
+    /// * The current process may host other plugins that need to interact with the platform’s GUI capabilities.
+    unsafe fn assume_standalone_in_process(&self) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

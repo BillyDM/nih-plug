@@ -267,7 +267,16 @@ impl<P: Plugin, B: Backend<P>> Wrapper<P, B> {
                         }
                     }),
                 ))
-                .map(|editor| Arc::new(Mutex::new(editor)));
+                .map(|editor| {
+                    // Safety: This is only called in standalone mode, and only if the user has
+                    // enabled the `unsafe_standalone_dpi_fix` feature.
+                    #[cfg(feature = "unsafe_standalone_dpi_fix")]
+                    unsafe {
+                        editor.assume_standalone_in_process();
+                    }
+
+                    Arc::new(Mutex::new(editor))
+                });
         }
 
         // Before initializing the plugin, make sure all smoothers are set the the default values

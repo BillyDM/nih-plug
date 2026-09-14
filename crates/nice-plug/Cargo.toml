@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -53,6 +53,15 @@ zstd = ["dep:zstd"]
 # Enables using `tracing-subscriber` as a fallback if the user has not set up a
 # logger in Plugin::setup_logger().
 tracing-subscriber = ["dep:tracing-subscriber"]
+# Allows editors to use a workaround for https://github.com/RustAudio/baseview/issues/321
+# when running in standalone mode.
+#
+# This is generally safe to enable for most plugins. However, do *NOT* enable this if any of
+# the following applies:
+# * Multiple `baseview` versions are present in the final binary
+# * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`, `SDL`, etc.)
+# * The current process may host other plugins that need to interact with the platform’s GUI capabilities
+unsafe_standalone_dpi_fix = []
 # Enables setting the "flush to zero" CPU flag to avoid denormal numbers when
 # processing. This can lead to a significant performance increases in some cases.
 #
@@ -75,7 +84,7 @@ unsafe_flush_denormals = []
 
 [dependencies]
 nice-plug-derive = { path = "../nice-plug-derive", version = "0.1.2" }
-nice-plug-core = { path = "../nice-plug-core", version = "0.4.1", default-features = false }
+nice-plug-core = { path = "../nice-plug-core", version = "0.4.2", default-features = false }
 nice-assert-no-alloc = { version = "1.0", features = ["backtrace", "log"], optional = true }
 nice-log = { path = "../nice-log", version = "0.3.1" }
 clap-sys = "0.5.0"
