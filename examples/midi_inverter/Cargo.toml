@@ -7,11 +7,6 @@ repository = "https://codeberg.org/RustAudio/nice-plug"
 authors = ["Robbert van der Helm <mail@robbertvanderhelm.nl>"]
 publish = false
 
-# Stifles the "binary should have a kebab-case name" warning
-[[bin]]
-name = "midi-inverter"
-path = "src/main.rs"
-
 [lib]
 # The `lib` artifact is needed for the standalone target
 crate-type = ["cdylib", "lib"]
@@ -23,3 +18,8 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.1", default-featur
     "assert_process_allocs",
     "standalone",
 ] }
+
+[lints.cargo]
+# Changing binaries to use kebab case when their library counterpart uses
+# snake case breaks the bundler.
+non_kebab_case_bins = "allow"
