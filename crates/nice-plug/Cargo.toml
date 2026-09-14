@@ -60,7 +60,7 @@ tracing-subscriber = ["dep:tracing-subscriber"]
 # the following applies:
 # * Multiple `baseview` versions are present in the final binary
 # * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`, `SDL`, etc.)
-# * The current process may host other plugins that need to interact with the platform’s GUI capabilities
+# * The current process may host other plugins that need to interact with the platform's GUI capabilities
 unsafe_standalone_dpi_fix = []
 # Enables setting the "flush to zero" CPU flag to avoid denormal numbers when
 # processing. This can lead to a significant performance increases in some cases.

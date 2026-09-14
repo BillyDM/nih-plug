@@ -314,7 +314,7 @@ pub trait Editor: Send {
     /// * The current binary is a plugin that can be loaded into an external host
     /// * Multiple baseview versions are present in the final binary
     /// * baseview is being used in conjunction with other platform windowing libraries (e.g. winit, SDL, etc.)
-    /// * The current process may host other plugins that need to interact with the platform’s GUI capabilities.
+    /// * The current process may host other plugins that need to interact with the platform's GUI capabilities.
     unsafe fn assume_standalone_in_process(&self) {}
 }
 
