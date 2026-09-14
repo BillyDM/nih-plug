@@ -37,8 +37,3 @@ crossbeam = "0.8"
 atomic_float = "1.1"
 # To make the state persistable
 serde = { version = "1.0", features = ["derive"] }
-
-[lints.cargo]
-# Changing binaries to use kebab case when their library counterpart uses
-# snake case breaks the bundler.
-non_kebab_case_bins = "allow"

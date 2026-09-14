@@ -40,8 +40,3 @@ rtrb = "0.4.0"
 # Optional, only include if you want to sync complex state between
 # the GUI and the audio thread.
 triple_buffer = "9.0.0"
-
-[lints.cargo]
-# Changing binaries to use kebab case when their library counterpart uses
-# snake case breaks the bundler.
-non_kebab_case_bins = "allow"

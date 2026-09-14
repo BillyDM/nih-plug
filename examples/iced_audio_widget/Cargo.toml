@@ -35,8 +35,3 @@ nice-plug = { version = "0.4.2", features = [
 nice-plug-iced = { version = "0.4.1", features = ["canvas"] }
 iced_audio = { version = "0.17.0", features = ["nice-plug"] }
 atomic_float = "1.1"
-
-[lints.cargo]
-# Changing binaries to use kebab case when their library counterpart uses
-# snake case breaks the bundler.
-non_kebab_case_bins = "allow"

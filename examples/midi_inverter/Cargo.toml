@@ -18,8 +18,3 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.1", default-featur
     "assert_process_allocs",
     "standalone",
 ] }
-
-[lints.cargo]
-# Changing binaries to use kebab case when their library counterpart uses
-# snake case breaks the bundler.
-non_kebab_case_bins = "allow"
