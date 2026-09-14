@@ -13,6 +13,30 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug 0.4.2
+
+## Added
+
+Added a new `unsafe_standalone_dpi_fix` feature to `nice-plug`. This is used in conjuction with the new
+`Editor::assume_standalone_in_process()` method added to `nice-plug-core` to fix broken dpi scaling issues on
+Windows when running in standalone mode. (see: https://github.com/RustAudio/baseview/issues/321)
+
+Editor implementations should call `baseview::assume_standalone_in_process()` inside of the
+`Editor::assume_standalone_in_process()` method.
+
+Enabling this feature is generally safe for most plugins. The only case where it *should not* be enabled is if
+your plugin hosts other plugins.
+
+More specifically, do *NOT* enable this if any of the following applies:
+* Multiple `baseview` versions are present in the final binary
+* `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`, `SDL`, etc.)
+* The current process may host other plugins that need to interact with the platform's GUI capabilities
+
+## Changed
+* `nice-plug-core`, `nice-plug`, bumped to version `0.4.2`
+* `nice-plug-egui` bumped to version `0.5.1`
+* `nice-plug-iced` bumped to version `0.4.1`
+
 # nice-plug 0.4.1
 
 ## Changed
