@@ -17,7 +17,7 @@ members = [
   "examples/gain",
   "examples/gain_egui",
   "examples/gain_iced",
-  "examples/iced_audio_widget",
+  #"examples/iced_audio_widget",
   "examples/midi_inverter",
   "examples/poly_mod_synth",
   "examples/sine",
@@ -44,14 +44,9 @@ atomic_float = "1.1"
 atomic_refcell = "0.1"
 bitflags = "2"
 raw-window-handle = "0.6"
-realfft = "3.0"
 approx = "0.5.1"
 crossbeam = "0.8"
-triple_buffer = "9.0.0"
 rtrb = "0.4.0"
-crossbeam-utils = "0.8.21"
-semver = "1.0.27"
-pollster = "1.0.1"
 parking_lot = "0.12"
 thiserror = "2"
 windows = ">=0.59, <=0.62"

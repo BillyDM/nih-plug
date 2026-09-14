@@ -417,6 +417,14 @@ impl Editor for WgpuEditor {
     fn resize_hint(&self) -> ResizeHint {
         RESIZE_HINT
     }
+
+    unsafe fn assume_standalone_in_process(&self) {
+        // Safety: Editor::assume_standalone_in_process() has the same invariants as
+        // baseview::assume_standalone_in_process()
+        unsafe {
+            baseview::assume_standalone_in_process();
+        }
+    }
 }
 
 /// A handle to a spawned instance of our Editor.

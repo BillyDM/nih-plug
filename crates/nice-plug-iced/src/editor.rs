@@ -169,6 +169,14 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
 
         self.notifier.notify();
     }
+
+    unsafe fn assume_standalone_in_process(&self) {
+        // Safety: Editor::assume_standalone_in_process() has the same invariants as
+        // baseview::assume_standalone_in_process()
+        unsafe {
+            baseview::assume_standalone_in_process();
+        }
+    }
 }
 
 /// The window handle used for [`IcedEditor`](crate::IcedEditor).

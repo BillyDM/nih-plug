@@ -54,6 +54,13 @@ impl Editor for IcedEditor {
     fn track_info_updated(&self, info: nice_plug_core::plugin::TrackInfo) {
         self.inner.track_info_updated(info);
     }
+
+    unsafe fn assume_standalone_in_process(&self) {
+        // Safety: This has the same invariants.
+        unsafe {
+            self.inner.assume_standalone_in_process();
+        }
+    }
 }
 
 /// Create a new `Editor` using the Iced GUI framework.
