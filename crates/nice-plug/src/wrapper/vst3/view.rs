@@ -556,6 +556,8 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
             let fallback_scale_factor = self.fallback_scale_factor.load().map(|s| s as f64);
 
+            inner.is_editor_open.store(true, Ordering::SeqCst);
+
             match self.editor.upgrade().unwrap().lock().spawn(
                 Some(parent_handle),
                 false,
@@ -569,15 +571,16 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
                 Ok(editor_window) => match editor_window.handle.show(&editor_window.window) {
                     Ok(()) => {
                         *window = Some(Fragile::new(editor_window));
-                        inner.is_editor_open.store(true, Ordering::SeqCst);
                         kResultOk
                     }
                     Err(e) => {
+                        inner.is_editor_open.store(false, Ordering::SeqCst);
                         crate::nice_error!("Failed to show editor: {}", e);
                         kResultFalse
                     }
                 },
                 Err(e) => {
+                    inner.is_editor_open.store(false, Ordering::SeqCst);
                     crate::nice_error!("Failed to create editor: {}", e);
                     kResultFalse
                 }
