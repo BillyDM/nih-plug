@@ -465,8 +465,7 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
             return kResultFalse;
         };
 
-        let mut window = inner.editor_window.borrow_mut();
-        if window.is_none() {
+        if inner.editor_window.borrow().is_none() {
             let parent_handle = if unsafe { fid_matches(type_, kPlatformTypeX11EmbedWindowID) } {
                 #[allow(clippy::unnecessary_cast)]
                 let w = parent as usize as c_ulong;
@@ -556,35 +555,55 @@ impl<P: Vst3Plugin> IPlugViewTrait for WrapperView<P> {
 
             let fallback_scale_factor = self.fallback_scale_factor.load().map(|s| s as f64);
 
-            inner.is_editor_open.store(true, Ordering::SeqCst);
+            let res = {
+                self.editor.upgrade().unwrap().lock().spawn(
+                    Some(parent_handle),
+                    false,
+                    fallback_scale_factor,
+                    inner.clone().make_gui_context(),
+                    Some(HostMethods {
+                        callbacks,
+                        main_thread_caller,
+                    }),
+                )
+            };
 
-            match self.editor.upgrade().unwrap().lock().spawn(
-                Some(parent_handle),
-                false,
-                fallback_scale_factor,
-                inner.clone().make_gui_context(),
-                Some(HostMethods {
-                    callbacks,
-                    main_thread_caller,
-                }),
-            ) {
-                Ok(editor_window) => match editor_window.handle.show(&editor_window.window) {
-                    Ok(()) => {
-                        *window = Some(Fragile::new(editor_window));
-                        kResultOk
+            let mut error_occured = false;
+
+            let ret = match res {
+                Ok(editor_window) => {
+                    {
+                        *inner.editor_window.borrow_mut() = Some(Fragile::new(editor_window));
                     }
-                    Err(e) => {
-                        inner.is_editor_open.store(false, Ordering::SeqCst);
-                        crate::nice_error!("Failed to show editor: {}", e);
-                        kResultFalse
+
+                    inner.is_editor_open.store(true, Ordering::SeqCst);
+
+                    let editor_window = inner.editor_window.borrow();
+                    let editor_window = editor_window.as_ref().unwrap().get();
+
+                    match editor_window.handle.show(&editor_window.window) {
+                        Ok(()) => kResultOk,
+                        Err(e) => {
+                            error_occured = true;
+                            inner.is_editor_open.store(false, Ordering::SeqCst);
+                            crate::nice_error!("Failed to show editor: {}", e);
+                            kResultFalse
+                        }
                     }
-                },
+                }
                 Err(e) => {
+                    error_occured = true;
                     inner.is_editor_open.store(false, Ordering::SeqCst);
                     crate::nice_error!("Failed to create editor: {}", e);
                     kResultFalse
                 }
+            };
+
+            if error_occured {
+                *inner.editor_window.borrow_mut() = None;
             }
+
+            ret
         } else {
             #[cfg(debug_assertions)]
             crate::nice_warn!("Host tried to attach editor while the editor is already attached");

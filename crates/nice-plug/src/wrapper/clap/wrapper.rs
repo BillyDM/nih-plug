@@ -2772,16 +2772,20 @@ impl<P: ClapPlugin> Wrapper<P> {
 
                 let fallback_scale_factor = wrapper.fallback_scale_factor.load();
 
-                match wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
-                    None,
-                    true,
-                    fallback_scale_factor,
-                    wrapper.clone().make_gui_context(),
-                    Some(HostMethods {
-                        callbacks,
-                        main_thread_caller,
-                    }),
-                ) {
+                let res = {
+                    wrapper.editor.borrow().as_ref().unwrap().lock().spawn(
+                        None,
+                        true,
+                        fallback_scale_factor,
+                        wrapper.clone().make_gui_context(),
+                        Some(HostMethods {
+                            callbacks,
+                            main_thread_caller,
+                        }),
+                    )
+                };
+
+                match res {
                     Ok(editor_window) => {
                         *wrapper.editor_window.borrow_mut() =
                             Some(fragile::Fragile::new(editor_window));
@@ -3058,7 +3062,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if let Some(editor_window) = wrapper.editor_window.borrow().as_ref() {
             let editor_window = editor_window.get();
 
-            if let Err(e) = editor_window.handle.show(editor_window.window.borrow()) {
+            if let Err(e) = editor_window.handle.show(&editor_window.window) {
                 crate::nice_error!("Failed to show editor window: {}", e);
                 false
             } else {
