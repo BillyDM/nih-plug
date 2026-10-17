@@ -1,6 +1,7 @@
 use std::{
     error::Error,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use iced_baseview::{PollSubNotifier, Program, baseview::HandlerError};
@@ -126,6 +127,14 @@ pub struct IcedNiceSettings {
     ///
     /// By default this is set to `false`.
     pub always_redraw: bool,
+
+    /// The rate at which the [`poll_events`](iced_baseview::poll_events) subscription will trigger.
+    ///
+    /// This subscription may trigger more often than this, but it will not trigger slower
+    /// than this (or at least as long as the backend's timer is precise enough).
+    ///
+    /// Defaults to `1.0 / 64.0` seconds.
+    pub poll_interval: Duration,
 }
 
 impl IcedNiceSettings {
@@ -172,6 +181,15 @@ impl IcedNiceSettings {
     #[inline]
     pub fn with_always_redraw(mut self, always_redraw: bool) -> Self {
         self.always_redraw = always_redraw;
+        self
+    }
+
+    /// The rate at which the [`poll_events`](crate::poll_events) subscription will trigger.
+    ///
+    /// Defaults to `1.0 / 64.0` seconds.
+    #[inline]
+    pub fn with_poll_interval(mut self, interval: Duration) -> Self {
+        self.poll_interval = interval;
         self
     }
 }

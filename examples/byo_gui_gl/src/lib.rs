@@ -15,6 +15,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use crate::OpenGlError::GlError;
@@ -114,6 +115,7 @@ pub struct GlWindow {
     _gui_context: GuiContext,
     gl: Arc<glow::Context>,
     window: WindowContext,
+    poll_timer_handle: baseview::TimerHandle,
 
     vertex_array: glow::NativeVertexArray,
     program: glow::NativeProgram,
@@ -142,6 +144,7 @@ impl GlWindow {
         params: Arc<MyPluginParams>,
         editor_state: Arc<GlEditorState>,
         redraw_requested: Arc<AtomicBool>,
+        poll_timer_handle: baseview::TimerHandle,
     ) -> Result<Self, OpenGlError> {
         use glow::HasContext as _;
 
@@ -225,16 +228,19 @@ impl GlWindow {
             editor_state,
             window,
             redraw_requested,
+            poll_timer_handle,
         })
     }
 }
 
 impl baseview::WindowHandler for GlWindow {
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
-            return Ok(());
+    fn poll(&self) {
+        if self.redraw_requested.swap(false, Ordering::Relaxed) {
+            self.window.request_redraw();
         }
+    }
 
+    fn draw(&self) -> Result<(), HandlerError> {
         // Do rendering here.
 
         use glow::HasContext as _;
@@ -298,6 +304,12 @@ impl baseview::WindowHandler for GlWindow {
         self.redraw_requested.store(true, Ordering::Relaxed);
 
         Ok(())
+    }
+
+    fn on_timer(&self, timer: &baseview::TimerHandle) {
+        if timer == self.poll_timer_handle {
+            self.poll();
+        }
     }
 }
 
@@ -391,12 +403,15 @@ impl Editor for GlEditor {
             move |window: WindowContext| -> Result<GlWindow, HandlerError> {
                 editor_state.scale_factor.store(window.size().scale_factor);
 
+                let poll_timer_handle = window.create_timer(Duration::from_secs_f64(1.0 / 64.0))?;
+
                 GlWindow::new(
                     window,
                     gui_context,
                     params,
                     editor_state,
                     redraw_requested_2,
+                    poll_timer_handle,
                 )
                 .map_err(|e| e.into())
             },

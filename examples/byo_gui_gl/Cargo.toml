@@ -29,7 +29,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     "unsafe_standalone_dpi_fix",
     "tracing-subscriber",
 ] }
-baseview = { version = "0.3.4", features = ["opengl", "tracing"] }
+baseview = { version = "0.4.1", features = ["opengl", "tracing"] }
 glow = "0.18"
 crossbeam = "0.8"
 atomic_float = "1.1"

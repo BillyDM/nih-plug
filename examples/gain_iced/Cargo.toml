@@ -31,5 +31,5 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     # * The current process may host other plugins that need to interact with the platform's GUI capabilities
     "unsafe_standalone_dpi_fix",
 ] }
-nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.4.1" }
+nice-plug-iced = { path = "../../crates/nice-plug-iced", version = "0.5.0" }
 atomic_float = "1.1"

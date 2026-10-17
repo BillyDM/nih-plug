@@ -8,6 +8,7 @@ use nice_plug::editor::{EditorHandle, HostMethods, SpawnedEditor};
 use nice_plug::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
+use std::time::Duration;
 use std::{
     borrow::Cow,
     sync::{
@@ -22,6 +23,7 @@ const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MI
 pub struct WgpuWindow {
     _gui_context: GuiContext,
     window: WindowContext,
+    poll_timer_handle: baseview::TimerHandle,
 
     surface: RefCell<Surface>,
 
@@ -46,6 +48,7 @@ impl WgpuWindow {
         params: Arc<MyPluginParams>,
         editor_state: Arc<WgpuEditorState>,
         redraw: Arc<AtomicBool>,
+        poll_timer_handle: baseview::TimerHandle,
     ) -> Result<Self, HandlerError> {
         pollster::block_on(Self::create(
             window,
@@ -53,6 +56,7 @@ impl WgpuWindow {
             params,
             editor_state,
             redraw,
+            poll_timer_handle,
         ))
     }
 
@@ -62,6 +66,7 @@ impl WgpuWindow {
         params: Arc<MyPluginParams>,
         editor_state: Arc<WgpuEditorState>,
         redraw: Arc<AtomicBool>,
+        poll_timer_handle: baseview::TimerHandle,
     ) -> Result<Self, HandlerError> {
         let size = window.size();
 
@@ -177,16 +182,19 @@ impl WgpuWindow {
             params,
             editor_state,
             redraw_requested: redraw,
+            poll_timer_handle,
         })
     }
 }
 
 impl baseview::WindowHandler for WgpuWindow {
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
-            return Ok(());
+    fn poll(&self) {
+        if self.redraw_requested.swap(false, Ordering::Relaxed) {
+            self.window.request_redraw();
         }
+    }
 
+    fn draw(&self) -> Result<(), HandlerError> {
         // Do rendering here.
         let mut surface = self.surface.borrow_mut();
         let Surface {
@@ -226,6 +234,7 @@ impl baseview::WindowHandler for WgpuWindow {
             }
 
             surface.configure(device, surface_config);
+            self.window.request_redraw();
             return Ok(());
         };
 
@@ -307,6 +316,12 @@ impl baseview::WindowHandler for WgpuWindow {
 
         Ok(())
     }
+
+    fn on_timer(&self, timer: &baseview::TimerHandle) {
+        if timer == self.poll_timer_handle {
+            self.poll();
+        }
+    }
 }
 
 pub struct WgpuEditor {
@@ -385,12 +400,15 @@ impl Editor for WgpuEditor {
                 .with_wait_for_parent(wait_for_parent)
                 .with_fallback_scale_factor(fallback_scale_factor),
             move |window: WindowContext| -> Result<WgpuWindow, HandlerError> {
+                let poll_timer_handle = window.create_timer(Duration::from_secs_f64(1.0 / 64.0))?;
+
                 WgpuWindow::new(
                     window,
                     gui_context,
                     params,
                     editor_state,
                     redraw_requested_2,
+                    poll_timer_handle,
                 )
             },
             host,
