@@ -16,7 +16,7 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-egui = { version = "0.36.1", features = ["default_fonts"] }
+egui = { version = "0.37.0", features = ["default_fonts"] }
 nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     "assert_process_allocs",
     "standalone",

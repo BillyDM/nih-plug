@@ -1,8 +1,12 @@
 //! Resizable window wrapper for Egui editor.
 
+use std::sync::LazyLock;
+
 use egui::emath::GuiRounding;
 use egui::{CentralPanel, Id, Rect, Response, Sense, Ui, Vec2, pos2};
 use egui::{InnerResponse, UiBuilder};
+
+static ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::unique((file!(), 0)));
 
 /// Adds a corner to the plugin window that can be dragged in order to resize it.
 /// Resizing happens through plugin API, hence a custom implementation is needed.
@@ -13,9 +17,9 @@ pub struct ResizableWindow {
 }
 
 impl ResizableWindow {
-    pub fn new(id_source: impl egui::AsId) -> Self {
+    pub fn new(id_source: impl egui::AsIdSalt) -> Self {
         Self {
-            id: Id::new(id_source),
+            id: ID.with(id_source),
             min_size: Vec2 { x: 1.0, y: 1.0 },
             max_size: None,
         }
@@ -42,9 +46,7 @@ impl ResizableWindow {
             let corner_size = Vec2::splat(ui.visuals().resize_corner_size);
             let corner_rect = Rect::from_min_size(ui_rect.max - corner_size, corner_size);
 
-            let id = self.id.with("cr");
-
-            let corner_response = ui.interact(corner_rect, id, Sense::drag());
+            let corner_response = ui.interact(corner_rect, self.id, Sense::drag());
 
             #[derive(Clone, Copy)]
             struct State {
@@ -55,7 +57,7 @@ impl ResizableWindow {
                 && let Some(total_drag_delta) = corner_response.total_drag_delta()
             {
                 let state = ui.data_mut(|d| {
-                    *d.get_persisted_mut_or_default::<Option<State>>(id)
+                    *d.get_persisted_mut_or_default::<Option<State>>(self.id)
                         .get_or_insert_with(|| State {
                             start_window_size: ui_rect.max.to_vec2(),
                         })
@@ -70,7 +72,7 @@ impl ResizableWindow {
 
                 ui.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
             } else if corner_response.drag_stopped() {
-                ui.data_mut(|d| *d.get_persisted_mut_or_default::<Option<State>>(id) = None);
+                ui.data_mut(|d| *d.get_persisted_mut_or_default::<Option<State>>(self.id) = None);
             }
 
             paint_resize_corner(&content_ui, &corner_response);
