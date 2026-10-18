@@ -184,7 +184,7 @@ impl IcedNiceSettings {
         self
     }
 
-    /// The rate at which the [`poll_events`](crate::poll_events) subscription will trigger.
+    /// The rate at which the [`poll_events`](iced_baseview::poll_events) subscription will trigger.
     ///
     /// Defaults to `1.0 / 64.0` seconds.
     #[inline]

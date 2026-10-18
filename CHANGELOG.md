@@ -16,6 +16,8 @@ state is to list breaking changes.
 # nice-plug-egui 0.6.0 and nice-plug-iced 0.5.0
 
 ## Breaking Changes
+* `nice-plug-egui` bumped to version `0.6.0`
+* `nice-plug-iced` bumped to version `0.5.0`
 * Updated `nice-plug-egui` and `nice-plug-iced` to `baseview` version `0.4.1`
 * Updated `nice-plug-egui` to `egui` version `0.37.0`
 
