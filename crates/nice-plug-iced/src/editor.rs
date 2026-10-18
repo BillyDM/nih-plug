@@ -75,7 +75,8 @@ impl<P: Program + 'static, State: Send + 'static> Editor for IcedEditorInner<P, 
             .with_wait_for_parent(wait_for_parent)
             .with_fallback_scale_factor(fallback_scale_factor)
             .with_ignore_non_modifier_keys(self.settings.ignore_non_modifier_keys)
-            .with_always_redraw(self.settings.always_redraw);
+            .with_always_redraw(self.settings.always_redraw)
+            .with_poll_interval(self.settings.poll_interval);
 
         // The host is a re-implementation of
         // [`baseview::host::HostCallbacks`](https://docs.rs/baseview/latest/baseview/host/trait.HostCallbacks.html)

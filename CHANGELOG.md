@@ -13,6 +13,20 @@ state is to list breaking changes.
 > to crates.io, this changelog has been reset. To see the old changelog, go to
 > https://codeberg.org/RustAudio/nice-plug/src/commit/aefe2eac919aae5ad43f626d0fbd51748c7371ba/CHANGELOG.md
 
+# nice-plug-egui 0.6.0 and nice-plug-iced 0.5.0
+
+## Breaking Changes
+* `nice-plug-egui` bumped to version `0.6.0`
+* `nice-plug-iced` bumped to version `0.5.0`
+* Updated `nice-plug-egui` and `nice-plug-iced` to `baseview` version `0.4.1`
+* Updated `nice-plug-egui` to `egui` version `0.37.0`
+
+## Added
+* New settings in `nice-plug-egui` and `nice-plug-iced` to configure the poll timer interval
+
+## Changed
+* Updated examples to `baseview` version `0.4.1`
+
 # nice-plug 0.4.2
 
 ## Added

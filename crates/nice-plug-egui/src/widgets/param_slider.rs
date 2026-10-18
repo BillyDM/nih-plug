@@ -16,10 +16,10 @@ use super::util;
 const GRANULAR_DRAG_MULTIPLIER: f32 = 0.0015;
 
 static DRAG_NORMALIZED_START_VALUE_MEMORY_ID: LazyLock<egui::Id> =
-    LazyLock::new(|| egui::Id::new((file!(), 0)));
-static DRAG_AMOUNT_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::new((file!(), 1)));
-static IS_DRAGGING_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::new((file!(), 2)));
-static VALUE_ENTRY_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::new((file!(), 3)));
+    LazyLock::new(|| egui::Id::unique((file!(), 0)));
+static DRAG_AMOUNT_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::unique((file!(), 1)));
+static IS_DRAGGING_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::unique((file!(), 2)));
+static VALUE_ENTRY_MEMORY_ID: LazyLock<egui::Id> = LazyLock::new(|| egui::Id::unique((file!(), 3)));
 
 /// A slider widget similar to [`egui::widgets::Slider`] that knows about nice-plug parameters ranges
 /// and can get values for it. The slider supports double click and control click to reset,

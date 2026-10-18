@@ -15,6 +15,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 const MIN_SIZE: LogicalSize<f32> = LogicalSize::new(200.0, 150.0);
@@ -22,7 +23,8 @@ const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MI
 
 pub struct SoftbufferWindow {
     _gui_context: GuiContext,
-    _window: WindowContext,
+    window: WindowContext,
+    poll_timer_handle: baseview::TimerHandle,
 
     surface: RefCell<Surface>,
 
@@ -44,6 +46,7 @@ impl SoftbufferWindow {
         params: Arc<MyPluginParams>,
         editor_state: Arc<SoftbufferEditorState>,
         redraw_requested: Arc<AtomicBool>,
+        poll_timer_handle: baseview::TimerHandle,
     ) -> Result<Self, SoftBufferError> {
         let size = window.size();
 
@@ -57,7 +60,7 @@ impl SoftbufferWindow {
 
         Ok(Self {
             _gui_context: gui_context,
-            _window: window,
+            window,
             surface: RefCell::new(Surface {
                 _sb_context: sb_context,
                 sb_surface,
@@ -65,16 +68,19 @@ impl SoftbufferWindow {
             params,
             editor_state,
             redraw_requested,
+            poll_timer_handle,
         })
     }
 }
 
 impl baseview::WindowHandler for SoftbufferWindow {
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.redraw_requested.swap(false, Ordering::Relaxed) {
-            return Ok(());
+    fn poll(&self) {
+        if self.redraw_requested.swap(false, Ordering::Relaxed) {
+            self.window.request_redraw();
         }
+    }
 
+    fn draw(&self) -> Result<(), HandlerError> {
         // Do rendering here.
 
         let mut surface = self.surface.borrow_mut();
@@ -138,6 +144,12 @@ impl baseview::WindowHandler for SoftbufferWindow {
         self.redraw_requested.store(true, Ordering::Relaxed);
 
         Ok(())
+    }
+
+    fn on_timer(&self, timer: &baseview::TimerHandle) {
+        if timer == self.poll_timer_handle {
+            self.poll();
+        }
     }
 }
 
@@ -219,12 +231,15 @@ impl Editor for SoftbufferEditor {
             move |window: WindowContext| -> Result<SoftbufferWindow, HandlerError> {
                 editor_state.scale_factor.store(window.size().scale_factor);
 
+                let poll_timer_handle = window.create_timer(Duration::from_secs_f64(1.0 / 64.0))?;
+
                 SoftbufferWindow::new(
                     window,
                     gui_context,
                     params,
                     editor_state,
                     redraw_requested_2,
+                    poll_timer_handle,
                 )
                 .map_err(|e| e.into())
             },

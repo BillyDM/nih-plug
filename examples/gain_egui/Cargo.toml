@@ -16,7 +16,7 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-egui = { version = "0.36.1", features = ["default_fonts"] }
+egui = { version = "0.37.0", features = ["default_fonts"] }
 nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     "assert_process_allocs",
     "standalone",
@@ -32,7 +32,7 @@ nice-plug = { path = "../../crates/nice-plug", version = "0.4.2", features = [
     # * The current process may host other plugins that need to interact with the platform's GUI capabilities
     "unsafe_standalone_dpi_fix",
 ] }
-nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.5.1" }
+nice-plug-egui = { path = "../../crates/nice-plug-egui", version = "0.6.0" }
 atomic_float = "1.1"
 # Optional, only include if you want to pass messages between the
 # GUI and the audio thread.

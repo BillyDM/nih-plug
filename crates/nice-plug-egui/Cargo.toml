@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-egui"
-version = "0.5.1"
+version = "0.6.0"
 authors = [
     "Billy Messenger <billydm@noreply.codeberg.org>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
@@ -23,8 +23,9 @@ keyboard_focus_workaround = ["egui-baseview/keyboard_focus_workaround"]
 [dependencies]
 raw-window-handle.workspace = true
 nice-plug-core = { path = "../nice-plug-core", version = "0.4.2" }
-egui = { version = "0.36.1", default-features = false, features = ["bytemuck"] }
-egui-baseview = { version = "0.7.1", default-features = false, features = [
+egui = { version = "0.37.0", default-features = false, features = ["bytemuck"] }
+#egui-baseview = { git = "https://codeberg.org/RustAudio/egui-baseview.git", rev = "36444c18967f330effe3b7544da1f1797642b778", default-features = false, features = [
+egui-baseview = { version = "0.9.0", default-features = false, features = [
     "tracing",
 ] }
 crossbeam.workspace = true

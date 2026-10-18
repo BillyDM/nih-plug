@@ -32,6 +32,6 @@ nice-plug = { version = "0.4.2", features = [
     "unsafe_standalone_dpi_fix",
 ] }
 # The `canvas` feature must be enabled for iced_audio widgets to work.
-nice-plug-iced = { version = "0.4.1", features = ["canvas"] }
+nice-plug-iced = { version = "0.5.0", features = ["canvas"] }
 iced_audio = { version = "0.17.0", features = ["nice-plug"] }
 atomic_float = "1.1"

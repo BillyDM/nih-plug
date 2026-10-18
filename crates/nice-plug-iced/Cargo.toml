@@ -1,6 +1,6 @@
 [package]
 name = "nice-plug-iced"
-version = "0.4.1"
+version = "0.5.0"
 description = "An adapter to use iced GUIs with nice-plug"
 edition.workspace = true
 license.workspace = true
@@ -84,7 +84,8 @@ nice-plug-core = { path = "../../crates/nice-plug-core", version = "0.4.2" }
 iced_futures = "0.14"
 iced_debug = "0.14"
 iced_program = "0.14"
-iced_baseview = { version = "0.5.1", default-features = false, features = [
+#iced_baseview = { git = "https://codeberg.org/RustAudio/iced_baseview.git", rev = "8ebc8f74d62bddb44bb091625832b9df3d15c178", default-features = false, features = [
+iced_baseview = { version = "0.6.0", default-features = false, features = [
     "tracing",
 ] }
 crossbeam-utils = "0.8"

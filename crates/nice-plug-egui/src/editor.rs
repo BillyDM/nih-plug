@@ -19,8 +19,8 @@ use parking_lot::Mutex;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-#[derive(Default)]
 pub struct EguiNiceSettings {
     /// The window title
     pub title: String,
@@ -35,6 +35,23 @@ pub struct EguiNiceSettings {
     /// fixed-size behavior. To make an editor resizable, return a hint with
     /// `can_resize: true`; the per-axis flags and aspect-ratio fields refine how.
     pub resize_hint: ResizeHint,
+
+    /// The rate at which the [`repaint_notifier`](egui-baseview::repaint_notifier)
+    /// will be polled.
+    ///
+    /// Defaults to `1.0 / 64.0` seconds.
+    pub repaint_poll_interval: Duration,
+}
+
+impl Default for EguiNiceSettings {
+    fn default() -> Self {
+        Self {
+            title: Default::default(),
+            graphics: Default::default(),
+            resize_hint: Default::default(),
+            repaint_poll_interval: Duration::from_secs_f64(1.0 / 64.0),
+        }
+    }
 }
 
 impl EguiNiceSettings {
@@ -66,6 +83,16 @@ impl EguiNiceSettings {
     #[inline]
     pub fn with_resize_hint(mut self, resize_hint: ResizeHint) -> Self {
         self.resize_hint = resize_hint;
+        self
+    }
+
+    /// The rate at which the [`repaint_notifier`](egui-baseview::repaint_notifier)
+    /// will be polled.
+    ///
+    /// Defaults to `1.0 / 64.0` seconds.
+    #[inline]
+    pub fn with_repaint_poll_interval(mut self, interval: Duration) -> Self {
+        self.repaint_poll_interval = interval;
         self
     }
 }
@@ -161,7 +188,8 @@ impl<A: NiceEguiApp> Editor for EguiEditor<A> {
             .with_parent(parent.as_ref())
             .with_fallback_scale_factor(fallback_scale_factor)
             .with_wait_for_parent(wait_for_parent)
-            .with_repaint_notifier(self.repaint_notifier.clone());
+            .with_repaint_notifier(self.repaint_notifier.clone())
+            .with_repaint_poll_interval(self.settings.repaint_poll_interval);
 
         let egui_ctx = Arc::new(Mutex::new(None));
 
